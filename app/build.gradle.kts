@@ -93,6 +93,8 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
 
+    implementation(libs.accompanist.systemuicontroller)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
