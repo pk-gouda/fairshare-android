@@ -1,6 +1,5 @@
-package com.fairshare.fairshare_android.ui.theme
+package com.prathik.fairshare.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme

@@ -1,4 +1,4 @@
-package com.fairshare.fairshare_android
+package com.prathik.fairshare
 
 import org.junit.Test
 
