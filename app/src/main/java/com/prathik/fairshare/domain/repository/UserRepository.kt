@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.repository
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.User
 
 /**
@@ -11,13 +12,14 @@ interface UserRepository {
     /**
      * Fetches the currently authenticated user's profile.
      */
-    suspend fun getMyProfile(): Result<User>
+    suspend fun getMyProfile(): ApiResult<User>
 
     /**
      * Fetches another user's public profile by their ID.
      * Used when viewing group members or friend profiles.
+     * Returns [ApiResult.NotFound] if user doesn't exist.
      */
-    suspend fun getUserProfile(userId: String): Result<User>
+    suspend fun getUserProfile(userId: String): ApiResult<User>
 
     /**
      * Updates the current user's profile fields.
@@ -29,22 +31,22 @@ interface UserRepository {
         preferredCurrency: String?,
         language: String?,
         notificationEnabled: Boolean?,
-    ): Result<User>
+    ): ApiResult<User>
 
     /**
      * Deactivates the current user's account.
      * Soft delete — account can be reactivated.
      */
-    suspend fun deactivateAccount(): Result<Unit>
+    suspend fun deactivateAccount(): ApiResult<Unit>
 
     /**
      * Reactivates a previously deactivated account.
      */
-    suspend fun reactivateAccount(): Result<Unit>
+    suspend fun reactivateAccount(): ApiResult<Unit>
 
     /**
      * Permanently deletes the current user's account.
      * This is irreversible — all data is removed.
      */
-    suspend fun deleteAccount(): Result<Unit>
+    suspend fun deleteAccount(): ApiResult<Unit>
 }

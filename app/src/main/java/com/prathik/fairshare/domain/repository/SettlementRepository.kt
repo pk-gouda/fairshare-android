@@ -1,6 +1,8 @@
 package com.prathik.fairshare.domain.repository
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Settlement
+import com.prathik.fairshare.domain.model.SettleType
 
 /**
  * Contract for settlement-related operations.
@@ -10,42 +12,52 @@ interface SettlementRepository {
 
     /**
      * Settles balances with another user.
-     * type — "ALL", "GROUP", "NON_GROUP", "PARTIAL"
      * Settlements are immediately COMPLETED — no confirmation step.
+     *
+     * [type] determines the scope:
+     * - ALL       — settles everything between two users
+     * - GROUP     — settles only a specific group (requires groupId)
+     * - NON_GROUP — settles only non-group direct expenses
+     * - PARTIAL   — settles a custom amount (requires amount + currency)
+     *
+     * Returns [ApiResult.Conflict] if there is nothing to settle.
      */
     suspend fun settle(
         otherUserId: String,
-        type: String,
+        type: SettleType,
         groupId: String?,
         amount: Double?,
         currency: String?,
         paymentMethod: String?,
         notes: String?,
-    ): Result<List<Settlement>>
+    ): ApiResult<List<Settlement>>
 
     /**
-     * Fetches the full settlement history with a specific user.
+     * Fetches the full settlement history between the current user
+     * and another user, ordered by date descending.
      */
-    suspend fun getHistory(otherUserId: String): Result<List<Settlement>>
+    suspend fun getHistory(otherUserId: String): ApiResult<List<Settlement>>
 
     /**
      * Fetches all pending settlements where current user is the receiver.
      */
-    suspend fun getPending(): Result<List<Settlement>>
+    suspend fun getPending(): ApiResult<List<Settlement>>
 
     /**
      * Fetches all settlements initiated by the current user.
      */
-    suspend fun getInitiated(): Result<List<Settlement>>
+    suspend fun getInitiated(): ApiResult<List<Settlement>>
 
     /**
      * Cancels a settlement.
+     * Returns [ApiResult.Forbidden] if user did not initiate the settlement.
      */
-    suspend fun cancelSettlement(settlementId: String): Result<Settlement>
+    suspend fun cancelSettlement(settlementId: String): ApiResult<Settlement>
 
     /**
-     * Fetches a breakdown of what is owed between current user and another user.
-     * Broken down by group and non-group expenses.
+     * Fetches the breakdown of what is owed between the current user
+     * and another user, split by group and non-group expenses.
+     * Used by the Settle Up screen to show per-group amounts.
      */
-    suspend fun getBreakdown(otherUserId: String): Result<Map<String, Any>>
+    suspend fun getBreakdown(otherUserId: String): ApiResult<Map<String, Any>>
 }

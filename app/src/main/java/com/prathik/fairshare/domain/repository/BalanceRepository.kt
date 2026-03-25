@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.repository
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 
 /**
@@ -9,20 +10,27 @@ import com.prathik.fairshare.domain.model.Balance
 interface BalanceRepository {
 
     /**
-     * Fetches all balances for the current user across all groups and direct expenses.
-     * Positive amount = other user owes you.
-     * Negative amount = you owe other user.
+     * Fetches all balances for the current user across all groups
+     * and direct (non-group) expenses.
+     *
+     * Positive amount = other user owes you (green).
+     * Negative amount = you owe other user (orange).
      */
-    suspend fun getAllBalances(): Result<List<Balance>>
+    suspend fun getAllBalances(): ApiResult<List<Balance>>
 
     /**
-     * Fetches the detailed balance breakdown between the current user and one other user.
-     * Broken down per group.
+     * Fetches the detailed balance breakdown between the current user
+     * and one other user, broken down per group.
+     * Used by the Settle Up screen to show per-group amounts.
      */
-    suspend fun getBalanceWithUser(otherUserId: String): Result<Map<String, Any>>
+    suspend fun getBalanceWithUser(otherUserId: String): ApiResult<Map<String, Any>>
 
     /**
-     * Fetches a summary of total owed and total owing for the current user.
+     * Fetches a summary of totals for the current user:
+     * - Total amount owed to you across all groups
+     * - Total amount you owe across all groups
+     * - Net balance
+     * Used by the Groups Home screen balance hero section.
      */
-    suspend fun getBalanceSummary(): Result<Map<String, Any>>
+    suspend fun getBalanceSummary(): ApiResult<Map<String, Any>>
 }

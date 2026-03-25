@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.repository
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.User
 
 /**
@@ -10,14 +11,17 @@ interface AuthRepository {
 
     /**
      * Authenticates user with email and password.
-     * On success, tokens are automatically saved to DataStore.
-     * Returns the logged-in [User] or failure with error message.
+     * On success, tokens are automatically saved to EncryptedTokenStore.
+     * Returns [ApiResult.Unauthorized] if credentials are wrong.
+     * Returns [ApiResult.Conflict] if account is suspended or not verified.
      */
-    suspend fun login(email: String, password: String): Result<User>
+    suspend fun login(email: String, password: String): ApiResult<User>
 
     /**
-     * Creates a new account. User is set to INVITED status until email is verified.
-     * Sends a verification email automatically after registration.
+     * Creates a new account. User starts with INVITED status.
+     * Sends a verification email automatically.
+     * Returns [ApiResult.Conflict] if email is already registered.
+     * Returns [ApiResult.ValidationError] if inputs are invalid.
      */
     suspend fun register(
         email: String,
@@ -26,46 +30,45 @@ interface AuthRepository {
         phoneNumber: String?,
         preferredCurrency: String?,
         language: String?,
-    ): Result<User>
+    ): ApiResult<User>
 
     /**
-     * Verifies the user's email using the token sent to their inbox.
+     * Verifies the user's email using the token from the verification email.
      * On success, account status changes from INVITED to ACTIVE.
      */
-    suspend fun verifyEmail(userId: String, token: String): Result<Unit>
+    suspend fun verifyEmail(userId: String, token: String): ApiResult<Unit>
 
     /**
      * Sends a password reset link to the given email.
-     * Always returns success even if email doesn't exist (security best practice).
+     * Always returns Success even if email doesn't exist (prevents enumeration).
      */
-    suspend fun forgotPassword(email: String): Result<Unit>
+    suspend fun forgotPassword(email: String): ApiResult<Unit>
 
     /**
-     * Resets the password using the token from the reset email.
+     * Resets password using the token from the reset email.
      */
-    suspend fun resetPassword(token: String, newPassword: String): Result<Unit>
+    suspend fun resetPassword(token: String, newPassword: String): ApiResult<Unit>
 
     /**
      * Changes password for the currently authenticated user.
-     * Requires the current password for verification.
+     * Returns [ApiResult.Unauthorized] if current password is wrong.
      */
-    suspend fun changePassword(currentPassword: String, newPassword: String): Result<Unit>
+    suspend fun changePassword(currentPassword: String, newPassword: String): ApiResult<Unit>
 
     /**
      * Uses the stored refresh token to get a new access token.
-     * Called automatically by TokenRefreshInterceptor when a 401 is received.
+     * Called automatically by TokenRefreshInterceptor on 401.
      */
-    suspend fun refreshToken(): Result<Unit>
+    suspend fun refreshToken(): ApiResult<Unit>
 
     /**
-     * Logs out the current user.
-     * Invalidates the refresh token on the server and clears local tokens.
+     * Logs out — invalidates refresh token on server and clears local tokens.
      */
-    suspend fun logout(): Result<Unit>
+    suspend fun logout(): ApiResult<Unit>
 
     /**
-     * Checks if a valid access token exists in DataStore.
-     * Used by the Splash screen to decide whether to go to Login or Home.
+     * Checks if a valid access token exists in EncryptedTokenStore.
+     * Used by SplashScreen to decide: Login or GroupsHome.
      */
     suspend fun isLoggedIn(): Boolean
 }
