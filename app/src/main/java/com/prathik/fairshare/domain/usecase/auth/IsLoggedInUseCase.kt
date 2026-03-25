@@ -5,8 +5,9 @@ import javax.inject.Inject
 
 /**
  * Checks if the user is currently logged in.
- * Used by the Splash screen to decide navigation destination —
- * if logged in → Groups Home, if not → Login.
+ * Used by SplashScreen to decide navigation destination:
+ * true  → GroupsHome
+ * false → Login
  */
 class IsLoggedInUseCase @Inject constructor(
     private val authRepository: AuthRepository,

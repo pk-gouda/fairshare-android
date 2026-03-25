@@ -1,44 +1,39 @@
 package com.prathik.fairshare.domain.usecase.settlement
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Settlement
+import com.prathik.fairshare.domain.model.SettleType
 import com.prathik.fairshare.domain.repository.SettlementRepository
 import javax.inject.Inject
 
 /**
  * Settles balances with another user.
- *
- * type options:
- * - "ALL"       — settles everything between two users across all groups
- * - "GROUP"     — settles only a specific group's balance (requires groupId)
- * - "NON_GROUP" — settles only non-group direct expenses
- * - "PARTIAL"   — settles a custom amount (requires amount + currency)
- *
- * Settlements are immediately COMPLETED — no confirmation step needed.
+ * Validates required fields based on settlement type.
  */
 class SettleUseCase @Inject constructor(
     private val settlementRepository: SettlementRepository,
 ) {
     suspend operator fun invoke(
         otherUserId: String,
-        type: String,
+        type: SettleType,
         groupId: String?,
         amount: Double?,
         currency: String?,
         paymentMethod: String?,
         notes: String?,
-    ): Result<List<Settlement>> {
+    ): ApiResult<List<Settlement>> {
         if (otherUserId.isBlank()) {
-            return Result.failure(IllegalArgumentException("User ID cannot be empty"))
+            return ApiResult.ValidationError("User ID cannot be empty")
         }
-        if (type == "GROUP" && groupId.isNullOrBlank()) {
-            return Result.failure(IllegalArgumentException("Group ID is required for GROUP settlement"))
+        if (type == SettleType.GROUP && groupId.isNullOrBlank()) {
+            return ApiResult.ValidationError("Group ID is required for GROUP settlement")
         }
-        if (type == "PARTIAL") {
+        if (type == SettleType.PARTIAL) {
             if (amount == null || amount <= 0) {
-                return Result.failure(IllegalArgumentException("Amount must be greater than 0 for partial settlement"))
+                return ApiResult.ValidationError("Amount must be greater than 0 for partial settlement")
             }
             if (currency.isNullOrBlank()) {
-                return Result.failure(IllegalArgumentException("Currency is required for partial settlement"))
+                return ApiResult.ValidationError("Currency is required for partial settlement")
             }
         }
         return settlementRepository.settle(

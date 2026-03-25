@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.usecase.expense
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
 import com.prathik.fairshare.domain.model.SplitType
@@ -28,21 +29,21 @@ class CreateExpenseUseCase @Inject constructor(
         payerData: Map<String, Double>?,
         splitData: Map<String, Double>?,
         receiptId: String?,
-    ): Result<Expense> {
+    ): ApiResult<Expense> {
         if (groupId.isBlank()) {
-            return Result.failure(IllegalArgumentException("Group ID cannot be empty"))
+            return ApiResult.ValidationError("Group ID cannot be empty")
         }
         if (description.isBlank()) {
-            return Result.failure(IllegalArgumentException("Description cannot be empty"))
+            return ApiResult.ValidationError("Description cannot be empty")
         }
         if (description.trim().length < 2) {
-            return Result.failure(IllegalArgumentException("Description must be at least 2 characters"))
+            return ApiResult.ValidationError("Description must be at least 2 characters")
         }
         if (totalAmount <= 0) {
-            return Result.failure(IllegalArgumentException("Amount must be greater than 0"))
+            return ApiResult.ValidationError("Amount must be greater than 0")
         }
         if (currency.isBlank()) {
-            return Result.failure(IllegalArgumentException("Currency cannot be empty"))
+            return ApiResult.ValidationError("Currency cannot be empty")
         }
         return expenseRepository.createExpense(
             groupId     = groupId,

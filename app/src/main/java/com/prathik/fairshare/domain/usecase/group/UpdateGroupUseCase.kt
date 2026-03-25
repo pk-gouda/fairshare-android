@@ -1,12 +1,13 @@
 package com.prathik.fairshare.domain.usecase.group
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.repository.GroupRepository
 import javax.inject.Inject
 
 /**
  * Updates group name, description, or simplifyDebts setting.
- * Only passes non-null values to the repository — null means no change.
+ * Only non-null values are updated.
  */
 class UpdateGroupUseCase @Inject constructor(
     private val groupRepository: GroupRepository,
@@ -16,15 +17,15 @@ class UpdateGroupUseCase @Inject constructor(
         name: String?,
         description: String?,
         simplifyDebts: Boolean?,
-    ): Result<Group> {
+    ): ApiResult<Group> {
         if (groupId.isBlank()) {
-            return Result.failure(IllegalArgumentException("Group ID cannot be empty"))
+            return ApiResult.ValidationError("Group ID cannot be empty")
         }
         if (name != null && name.isBlank()) {
-            return Result.failure(IllegalArgumentException("Group name cannot be empty"))
+            return ApiResult.ValidationError("Group name cannot be empty")
         }
         if (name != null && name.trim().length < 2) {
-            return Result.failure(IllegalArgumentException("Group name must be at least 2 characters"))
+            return ApiResult.ValidationError("Group name must be at least 2 characters")
         }
         return groupRepository.updateGroup(
             groupId       = groupId,

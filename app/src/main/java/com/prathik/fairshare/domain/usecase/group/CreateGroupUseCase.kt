@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.usecase.group
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.repository.GroupRepository
 import javax.inject.Inject
@@ -15,15 +16,15 @@ class CreateGroupUseCase @Inject constructor(
         name: String,
         type: String,
         description: String?,
-    ): Result<Group> {
+    ): ApiResult<Group> {
         if (name.isBlank()) {
-            return Result.failure(IllegalArgumentException("Group name cannot be empty"))
+            return ApiResult.ValidationError("Group name cannot be empty")
         }
         if (name.trim().length < 2) {
-            return Result.failure(IllegalArgumentException("Group name must be at least 2 characters"))
+            return ApiResult.ValidationError("Group name must be at least 2 characters")
         }
         if (name.trim().length > 50) {
-            return Result.failure(IllegalArgumentException("Group name cannot exceed 50 characters"))
+            return ApiResult.ValidationError("Group name cannot exceed 50 characters")
         }
         return groupRepository.createGroup(
             name        = name.trim(),

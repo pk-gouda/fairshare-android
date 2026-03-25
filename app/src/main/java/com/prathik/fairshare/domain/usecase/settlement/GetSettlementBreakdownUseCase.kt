@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.usecase.settlement
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.repository.SettlementRepository
 import javax.inject.Inject
 
@@ -11,9 +12,9 @@ import javax.inject.Inject
 class GetSettlementBreakdownUseCase @Inject constructor(
     private val settlementRepository: SettlementRepository,
 ) {
-    suspend operator fun invoke(otherUserId: String): Result<Map<String, Any>> {
+    suspend operator fun invoke(otherUserId: String): ApiResult<Map<String, Any>> {
         if (otherUserId.isBlank()) {
-            return Result.failure(IllegalArgumentException("User ID cannot be empty"))
+            return ApiResult.ValidationError("User ID cannot be empty")
         }
         return settlementRepository.getBreakdown(otherUserId)
     }

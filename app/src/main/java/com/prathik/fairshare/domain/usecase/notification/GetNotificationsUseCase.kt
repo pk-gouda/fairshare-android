@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.usecase.notification
 
+import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Notification
 import com.prathik.fairshare.domain.repository.NotificationRepository
 import javax.inject.Inject
@@ -11,7 +12,7 @@ import javax.inject.Inject
 class GetNotificationsUseCase @Inject constructor(
     private val notificationRepository: NotificationRepository,
 ) {
-    suspend operator fun invoke(): Result<List<Notification>> {
+    suspend operator fun invoke(): ApiResult<List<Notification>> {
         return notificationRepository.getAll()
     }
 }
