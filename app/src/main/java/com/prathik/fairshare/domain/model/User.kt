@@ -1,5 +1,9 @@
 package com.prathik.fairshare.domain.model
 
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
+
+@Parcelize
 data class User(
     val id: String,
     val email: String,
@@ -10,4 +14,4 @@ data class User(
     val language: String,
     val notificationEnabled: Boolean,
     val isActive: Boolean,
-)
+) : Parcelable

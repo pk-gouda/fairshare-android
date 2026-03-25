@@ -1,7 +1,9 @@
 package com.prathik.fairshare.domain.model
 
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
 
-
+@Parcelize
 data class Expense(
     val id: String,
     val description: String,
@@ -25,13 +27,16 @@ data class Expense(
     val yourBalance: Double,
     val createdAt: String,
     val updatedAt: String,
-) {
+) : Parcelable {
+
+    @Parcelize
     data class PayerDetail(
         val userId: String,
         val fullName: String,
         val amountPaid: Double,
-    )
+    ) : Parcelable
 
+    @Parcelize
     data class SplitDetail(
         val userId: String,
         val fullName: String,
@@ -39,5 +44,5 @@ data class Expense(
         val percentage: Double?,
         val shares: Int?,
         val isSettled: Boolean,
-    )
+    ) : Parcelable
 }

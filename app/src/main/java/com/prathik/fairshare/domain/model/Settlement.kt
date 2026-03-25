@@ -1,6 +1,9 @@
 package com.prathik.fairshare.domain.model
 
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
 
+@Parcelize
 data class Settlement(
     val id: String,
     val payerId: String,
@@ -19,4 +22,4 @@ data class Settlement(
     val settlementDate: String,
     val completedAt: String?,
     val createdAt: String,
-)
+) : Parcelable

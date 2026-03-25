@@ -1,6 +1,9 @@
 package com.prathik.fairshare.domain.model
 
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
 
+@Parcelize
 data class Group(
     val id: String,
     val name: String,
@@ -14,5 +17,7 @@ data class Group(
     val groupNotes: String?,
     val groupImage: String?,
     val lastActivityDate: String?,
+    val tripStartDate: String?,
+    val tripEndDate: String?,
     val createdAt: String,
-)
+) : Parcelable

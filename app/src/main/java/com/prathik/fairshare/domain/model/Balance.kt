@@ -1,11 +1,15 @@
 package com.prathik.fairshare.domain.model
 
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
+
+@Parcelize
 data class Balance(
     val userId: String,
     val otherUserId: String,
     val otherUserName: String,
-    val amount: Double,       // negative = you owe, positive = they owe you
+    val amount: Double,
     val currency: String,
     val groupId: String?,
     val groupName: String?,
-)
+) : Parcelable

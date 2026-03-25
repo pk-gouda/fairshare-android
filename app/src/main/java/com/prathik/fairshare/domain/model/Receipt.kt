@@ -1,5 +1,9 @@
 package com.prathik.fairshare.domain.model
 
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
+
+@Parcelize
 data class Receipt(
     val id: String,
     val expenseId: String?,
@@ -17,4 +21,4 @@ data class Receipt(
     val scanConfidence: String?,
     val itemCount: Int?,
     val createdAt: String,
-)
+) : Parcelable

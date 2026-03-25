@@ -1,7 +1,9 @@
 package com.prathik.fairshare.domain.model
 
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
 
-
+@Parcelize
 data class Notification(
     val id: String,
     val title: String,
@@ -11,4 +13,4 @@ data class Notification(
     val referenceType: String?,
     val isRead: Boolean,
     val createdAt: String,
-)
+) : Parcelable
