@@ -1,0 +1,54 @@
+package com.prathik.fairshare.domain.usecase.auth
+
+import com.prathik.fairshare.domain.model.User
+import com.prathik.fairshare.domain.repository.AuthRepository
+import javax.inject.Inject
+
+/**
+ * Handles new user registration.
+ * Validates all inputs before hitting the network.
+ * Returns the newly created [User] or a descriptive failure.
+ */
+class RegisterUseCase @Inject constructor(
+    private val authRepository: AuthRepository,
+) {
+    suspend operator fun invoke(
+        email: String,
+        fullName: String,
+        password: String,
+        confirmPassword: String,
+        phoneNumber: String?,
+        preferredCurrency: String?,
+        language: String?,
+    ): Result<User> {
+        if (fullName.isBlank()) {
+            return Result.failure(IllegalArgumentException("Full name cannot be empty"))
+        }
+        if (fullName.trim().length < 2) {
+            return Result.failure(IllegalArgumentException("Full name must be at least 2 characters"))
+        }
+        if (email.isBlank()) {
+            return Result.failure(IllegalArgumentException("Email cannot be empty"))
+        }
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            return Result.failure(IllegalArgumentException("Invalid email address"))
+        }
+        if (password.isBlank()) {
+            return Result.failure(IllegalArgumentException("Password cannot be empty"))
+        }
+        if (password.length < 6) {
+            return Result.failure(IllegalArgumentException("Password must be at least 6 characters"))
+        }
+        if (password != confirmPassword) {
+            return Result.failure(IllegalArgumentException("Passwords do not match"))
+        }
+        return authRepository.register(
+            email         = email.trim(),
+            fullName      = fullName.trim(),
+            password      = password,
+            phoneNumber   = phoneNumber?.trim(),
+            preferredCurrency = preferredCurrency,
+            language      = language,
+        )
+    }
+}
