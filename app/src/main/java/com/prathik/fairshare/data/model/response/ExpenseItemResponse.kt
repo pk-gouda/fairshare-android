@@ -1,34 +1,24 @@
 package com.prathik.fairshare.data.model.response
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * API response DTO for an individual line item within a receipt.
- * Maps to ExpenseItemResponse.java record on the backend.
- * Used in the Item Assignment screen after receipt scanning.
- *
- * assignedTo is null until items are assigned to group members.
- * taxCode, taxRate, taxAmount, totalWithTax are null for items without tax breakdown.
- */
 @Serializable
 data class ExpenseItemResponse(
-    val id: String,
-    val name: String,
-    val price: Double,
-    val quantity: Int? = null,
-    val totalPrice: Double,
-    val taxCode: String? = null,
-    val taxRate: Double? = null,
-    val taxAmount: Double? = null,
-    val totalWithTax: Double? = null,
-    val assignedTo: List<AssignedUser>? = null,
+    @SerialName("id")           val id: String,
+    @SerialName("name")         val name: String,
+    @SerialName("price")        val price: Double,
+    @SerialName("quantity")     val quantity: Int? = null,
+    @SerialName("totalPrice")   val totalPrice: Double,
+    @SerialName("taxCode")      val taxCode: String? = null,
+    @SerialName("taxRate")      val taxRate: Double? = null,
+    @SerialName("taxAmount")    val taxAmount: Double? = null,
+    @SerialName("totalWithTax") val totalWithTax: Double? = null,
+    @SerialName("assignedTo")   val assignedTo: List<AssignedUser>? = null,
 ) {
-    /**
-     * A user assigned to this receipt line item.
-     */
     @Serializable
     data class AssignedUser(
-        val userId: String,
-        val fullName: String,
+        @SerialName("userId")   val userId: String,
+        @SerialName("fullName") val fullName: String,
     )
 }

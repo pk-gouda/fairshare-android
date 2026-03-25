@@ -2,24 +2,20 @@ package com.prathik.fairshare.data.model.response
 
 import com.prathik.fairshare.domain.model.AccountStatus
 import com.prathik.fairshare.domain.model.AuthProvider
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * API response DTO for a user profile.
- * Maps to UserResponse.java record on the backend.
- * Convert to domain model User via UserResponse.toDomain().
- */
 @Serializable
 data class UserResponse(
-    val id: String,
-    val email: String,
-    val fullName: String,
-    val phoneNumber: String? = null,
-    val profilePictureUrl: String? = null,
-    val authProvider: AuthProvider,
-    val accountStatus: AccountStatus,
-    val preferredCurrency: String,
-    val language: String,
-    val notificationEnabled: Boolean,
-    val createdAt: String,
+    @SerialName("id")                  val id: String,
+    @SerialName("email")               val email: String,
+    @SerialName("fullName")            val fullName: String,
+    @SerialName("phoneNumber")         val phoneNumber: String? = null,
+    @SerialName("profilePictureUrl")   val profilePictureUrl: String? = null,
+    @SerialName("authProvider")        val authProvider: AuthProvider,
+    @SerialName("accountStatus")       val accountStatus: AccountStatus,
+    @SerialName("preferredCurrency")   val preferredCurrency: String,
+    @SerialName("language")            val language: String,
+    @SerialName("notificationEnabled") val notificationEnabled: Boolean,
+    @SerialName("createdAt")           val createdAt: String,
 )

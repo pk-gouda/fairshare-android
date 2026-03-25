@@ -112,8 +112,8 @@ val FairShareTypography = Typography(
     bodySmall = TextStyle(
         fontFamily    = InterFontFamily,
         fontWeight    = FontWeight.Normal,
-        fontSize      = 11.sp,
-        lineHeight    = 16.sp,
+        fontSize      = 12.sp,
+        lineHeight    = 17.sp,
         letterSpacing = 0.sp,
     ),
 

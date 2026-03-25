@@ -1,35 +1,27 @@
 package com.prathik.fairshare.data.model.response
 
 import com.prathik.fairshare.domain.model.SettlementStatus
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * API response DTO for a settlement record.
- * Maps to SettlementResponse.java record on the backend.
- *
- * Note: Settlements are immediately COMPLETED in the current backend —
- * there is no PENDING → confirm step. completedAt will equal settlementDate.
- *
- * groupId and groupName are null for non-group (direct) settlements.
- */
 @Serializable
 data class SettlementResponse(
-    val id: String,
-    val payerId: String,
-    val payerName: String,
-    val receiverId: String,
-    val receiverName: String,
-    val amount: Double,
-    val currency: String,
-    val groupId: String? = null,
-    val groupName: String? = null,
-    val status: SettlementStatus,
-    val notes: String? = null,
-    val paymentMethod: String? = null,
-    val paymentProofImage: String? = null,
-    val recordedById: String,
-    val recordedByName: String,
-    val settlementDate: String,
-    val completedAt: String? = null,
-    val createdAt: String,
+    @SerialName("id")                val id: String,
+    @SerialName("payerId")           val payerId: String,
+    @SerialName("payerName")         val payerName: String,
+    @SerialName("receiverId")        val receiverId: String,
+    @SerialName("receiverName")      val receiverName: String,
+    @SerialName("amount")            val amount: Double,
+    @SerialName("currency")          val currency: String,
+    @SerialName("groupId")           val groupId: String? = null,
+    @SerialName("groupName")         val groupName: String? = null,
+    @SerialName("status")            val status: SettlementStatus,
+    @SerialName("notes")             val notes: String? = null,
+    @SerialName("paymentMethod")     val paymentMethod: String? = null,
+    @SerialName("paymentProofImage") val paymentProofImage: String? = null,
+    @SerialName("recordedById")      val recordedById: String,
+    @SerialName("recordedByName")    val recordedByName: String,
+    @SerialName("settlementDate")    val settlementDate: String,
+    @SerialName("completedAt")       val completedAt: String? = null,
+    @SerialName("createdAt")         val createdAt: String,
 )

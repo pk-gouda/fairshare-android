@@ -1,31 +1,24 @@
 package com.prathik.fairshare.data.model.response
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * API response DTO for a scanned receipt.
- * Maps to ReceiptResponse.java record on the backend.
- * Returned by POST /api/receipts/scan after AI extraction.
- *
- * scanConfidence indicates AI extraction quality: "HIGH", "MEDIUM", or "LOW".
- * expenseId is null until the receipt is attached to an expense.
- */
 @Serializable
 data class ReceiptResponse(
-    val id: String,
-    val expenseId: String? = null,
-    val scannedById: String,
-    val imageUrl: String? = null,
-    val merchantName: String? = null,
-    val merchantAddress: String? = null,
-    val subtotal: Double? = null,
-    val taxAmount: Double? = null,
-    val tipAmount: Double? = null,
-    val totalAmount: Double,
-    val currency: String? = null,
-    val paymentMethod: String? = null,
-    val receiptDate: String? = null,
-    val scanConfidence: String? = null,
-    val itemCount: Int? = null,
-    val createdAt: String,
+    @SerialName("id")              val id: String,
+    @SerialName("expenseId")       val expenseId: String? = null,
+    @SerialName("scannedById")     val scannedById: String,
+    @SerialName("imageUrl")        val imageUrl: String? = null,
+    @SerialName("merchantName")    val merchantName: String? = null,
+    @SerialName("merchantAddress") val merchantAddress: String? = null,
+    @SerialName("subtotal")        val subtotal: Double? = null,
+    @SerialName("taxAmount")       val taxAmount: Double? = null,
+    @SerialName("tipAmount")       val tipAmount: Double? = null,
+    @SerialName("totalAmount")     val totalAmount: Double,
+    @SerialName("currency")        val currency: String? = null,
+    @SerialName("paymentMethod")   val paymentMethod: String? = null,
+    @SerialName("receiptDate")     val receiptDate: String? = null,
+    @SerialName("scanConfidence")  val scanConfidence: String? = null,
+    @SerialName("itemCount")       val itemCount: Int? = null,
+    @SerialName("createdAt")       val createdAt: String,
 )

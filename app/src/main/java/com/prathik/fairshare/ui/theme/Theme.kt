@@ -3,9 +3,7 @@ package com.prathik.fairshare.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
 private val FairShareColorScheme = darkColorScheme(
     primary              = Green400,
@@ -42,20 +40,6 @@ private val FairShareColorScheme = darkColorScheme(
 
 @Composable
 fun FairShareTheme(content: @Composable () -> Unit) {
-    val systemUiController = rememberSystemUiController()
-
-    SideEffect {
-        systemUiController.setSystemBarsColor(
-            color      = Color.Transparent,
-            darkIcons  = false,
-        )
-        systemUiController.setNavigationBarColor(
-            color                = Surface1,
-            darkIcons            = false,
-            navigationBarContrastEnforced = false,
-        )
-    }
-
     MaterialTheme(
         colorScheme = FairShareColorScheme,
         typography  = FairShareTypography,

@@ -1,17 +1,14 @@
 package com.prathik.fairshare.data.model.response
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * API response DTO for a group member.
- * Maps to GroupMemberResponse.java record on the backend.
- */
 @Serializable
 data class GroupMemberResponse(
-    val id: String,
-    val userId: String,
-    val fullName: String,
-    val email: String,
-    val profilePictureUrl: String? = null,
-    val joinedAt: String,
+    @SerialName("id")                val id: String,
+    @SerialName("userId")            val userId: String,
+    @SerialName("fullName")          val fullName: String,
+    @SerialName("email")             val email: String,
+    @SerialName("profilePictureUrl") val profilePictureUrl: String? = null,
+    @SerialName("joinedAt")          val joinedAt: String,
 )
