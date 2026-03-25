@@ -1,6 +1,6 @@
 package com.prathik.fairshare.data.model.request
 
-import com.prathik.fairshare.data.model.enums.GroupType
+import com.prathik.fairshare.domain.model.GroupType
 import kotlinx.serialization.Serializable
 
 /**

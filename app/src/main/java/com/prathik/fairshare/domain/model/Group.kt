@@ -1,8 +1,5 @@
 package com.prathik.fairshare.domain.model
 
-enum class GroupType {
-    TRIP, HOME, COUPLE, APARTMENT, OFFICE, FRIENDS, EVENT, OTHER
-}
 
 data class Group(
     val id: String,

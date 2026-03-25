@@ -1,7 +1,7 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.data.model.enums.FriendStatus
-import com.prathik.fairshare.data.model.enums.FriendshipType
+import com.prathik.fairshare.domain.model.FriendStatus
+import com.prathik.fairshare.domain.model.FriendshipType
 import kotlinx.serialization.Serializable
 
 /**

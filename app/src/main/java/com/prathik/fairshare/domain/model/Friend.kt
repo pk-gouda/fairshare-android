@@ -1,13 +1,5 @@
 package com.prathik.fairshare.domain.model
 
-enum class FriendStatus {
-    PENDING, ACCEPTED, GROUP, BLOCKED, REPORTED
-}
-
-enum class FriendshipType {
-    DIRECT, GROUP
-}
-
 data class Friend(
     val id: String,
     val fullName: String,

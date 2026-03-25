@@ -1,7 +1,7 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.data.model.enums.AccountStatus
-import com.prathik.fairshare.data.model.enums.AuthProvider
+import com.prathik.fairshare.domain.model.AccountStatus
+import com.prathik.fairshare.domain.model.AuthProvider
 import kotlinx.serialization.Serializable
 
 /**

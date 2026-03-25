@@ -1,6 +1,6 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.data.model.enums.SettlementStatus
+import com.prathik.fairshare.domain.model.SettlementStatus
 import kotlinx.serialization.Serializable
 
 /**

@@ -1,5 +1,6 @@
 package com.prathik.fairshare.data.model.request
 
+import com.prathik.fairshare.domain.model.SettleType
 import kotlinx.serialization.Serializable
 
 /**
@@ -17,7 +18,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SettleRequest(
     val otherUserId: String,
-    val type: String,
+    val type: SettleType,
     val groupId: String? = null,
     val amount: Double? = null,
     val currency: String? = null,

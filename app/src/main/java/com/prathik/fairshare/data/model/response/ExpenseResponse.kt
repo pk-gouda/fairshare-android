@@ -1,7 +1,7 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.data.model.enums.ExpenseCategory
-import com.prathik.fairshare.data.model.enums.SplitType
+import com.prathik.fairshare.domain.model.ExpenseCategory
+import com.prathik.fairshare.domain.model.SplitType
 import kotlinx.serialization.Serializable
 
 /**

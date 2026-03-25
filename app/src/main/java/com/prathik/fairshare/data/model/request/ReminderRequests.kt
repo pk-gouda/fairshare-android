@@ -1,6 +1,6 @@
 package com.prathik.fairshare.data.model.request
 
-import com.prathik.fairshare.data.model.enums.ReminderFrequency
+import com.prathik.fairshare.domain.model.ReminderFrequency
 import kotlinx.serialization.Serializable
 
 /**

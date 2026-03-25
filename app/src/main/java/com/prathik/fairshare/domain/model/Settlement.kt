@@ -1,8 +1,5 @@
 package com.prathik.fairshare.domain.model
 
-enum class SettlementStatus {
-    PENDING, COMPLETED, CANCELLED
-}
 
 data class Settlement(
     val id: String,

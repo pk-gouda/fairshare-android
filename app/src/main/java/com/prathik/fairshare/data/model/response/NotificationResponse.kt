@@ -1,6 +1,6 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.data.model.enums.NotificationType
+import com.prathik.fairshare.domain.model.NotificationType
 import kotlinx.serialization.Serializable
 
 /**

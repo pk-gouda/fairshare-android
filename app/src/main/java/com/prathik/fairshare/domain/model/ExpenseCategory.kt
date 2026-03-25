@@ -1,4 +1,4 @@
-package com.prathik.fairshare.data.model.enums
+package com.prathik.fairshare.domain.model
 
 /**
  * Categories for classifying expenses.
@@ -7,23 +7,17 @@ package com.prathik.fairshare.data.model.enums
 enum class ExpenseCategory {
     // Entertainment
     GAMES, MOVIES, MUSIC, SPORTS,
-
     // Food and drink
     DINING_OUT, GROCERIES, LIQUOR,
-
     // Home
     ELECTRONICS, FURNITURE, HOUSEHOLD_SUPPLIES, MAINTENANCE,
     MORTGAGE, PETS, RENT, SERVICES,
-
     // Life
     CHILDCARE, CLOTHING, EDUCATION, GIFTS, INSURANCE, MEDICAL, TAXES,
-
     // Transportation
     BICYCLE, BUS_TRAIN, CAR, GAS_FUEL, HOTEL, PARKING, PLANE, TAXI,
-
     // Utilities
     CLEANING, ELECTRICITY, HEAT_GAS, TRASH, TV_PHONE_INTERNET, WATER,
-
-    // Uncategorized
+    // Misc
     GENERAL, OTHER
 }

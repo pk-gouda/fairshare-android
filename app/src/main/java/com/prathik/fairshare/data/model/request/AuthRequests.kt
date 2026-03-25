@@ -1,6 +1,6 @@
 package com.prathik.fairshare.data.model.request
 
-import com.prathik.fairshare.data.model.enums.AuthProvider
+import com.prathik.fairshare.domain.model.AuthProvider
 import kotlinx.serialization.Serializable
 
 /**

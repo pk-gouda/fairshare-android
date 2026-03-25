@@ -1,26 +1,6 @@
 package com.prathik.fairshare.domain.model
 
-enum class SplitType {
-    EQUAL, UNEQUAL, PERCENTAGE, SHARES
-}
 
-enum class ExpenseCategory {
-    // Entertainment
-    GAMES, MOVIES, MUSIC, SPORTS,
-    // Food
-    DINING_OUT, GROCERIES, LIQUOR,
-    // Home
-    ELECTRONICS, FURNITURE, HOUSEHOLD_SUPPLIES, MAINTENANCE,
-    MORTGAGE, PETS, RENT, SERVICES,
-    // Life
-    CHILDCARE, CLOTHING, EDUCATION, GIFTS, INSURANCE, MEDICAL, TAXES,
-    // Transportation
-    BICYCLE, BUS_TRAIN, CAR, GAS_FUEL, HOTEL, PARKING, PLANE, TAXI,
-    // Utilities
-    CLEANING, ELECTRICITY, HEAT_GAS, TRASH, TV_PHONE_INTERNET, WATER,
-    // Misc
-    GENERAL, OTHER
-}
 
 data class Expense(
     val id: String,
