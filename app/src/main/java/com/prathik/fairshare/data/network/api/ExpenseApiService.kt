@@ -16,10 +16,6 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
-/**
- * Retrofit interface for /api/expenses/** endpoints.
- * 11 expense endpoints + 3 comment endpoints = 14 total.
- */
 interface ExpenseApiService {
 
     @POST("api/expenses")
@@ -61,7 +57,6 @@ interface ExpenseApiService {
     @POST("api/expenses/{expenseId}/stop-recurring")
     suspend fun stopRecurring(@Path("expenseId") expenseId: String): ApiResponse<Unit>
 
-    // Comments
     @POST("api/expenses/{expenseId}/comments")
     suspend fun addComment(
         @Path("expenseId") expenseId: String,

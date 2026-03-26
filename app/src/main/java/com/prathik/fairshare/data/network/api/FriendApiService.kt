@@ -8,19 +8,13 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 
-/**
- * Retrofit interface for /api/friends/** endpoints.
- * 12 endpoints covering the full friendship lifecycle.
- */
 interface FriendApiService {
 
     @POST("api/friends/request/{receiverId}")
     suspend fun sendRequest(@Path("receiverId") receiverId: String): ApiResponse<FriendshipResponse>
 
     @POST("api/friends/{friendshipId}/accept")
-    suspend fun acceptRequest(
-        @Path("friendshipId") friendshipId: String,
-    ): ApiResponse<FriendshipResponse>
+    suspend fun acceptRequest(@Path("friendshipId") friendshipId: String): ApiResponse<FriendshipResponse>
 
     @POST("api/friends/{friendshipId}/decline")
     suspend fun declineRequest(@Path("friendshipId") friendshipId: String): ApiResponse<Unit>

@@ -6,10 +6,6 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 
-/**
- * Retrofit interface for /api/notifications/** endpoints.
- * 5 endpoints for notification management.
- */
 interface NotificationApiService {
 
     @GET("api/notifications")

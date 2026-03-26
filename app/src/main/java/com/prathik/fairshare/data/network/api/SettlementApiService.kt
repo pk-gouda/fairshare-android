@@ -9,34 +9,22 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 
-/**
- * Retrofit interface for /api/settlements/** endpoints.
- * 7 endpoints covering settlement lifecycle.
- */
 interface SettlementApiService {
 
     @GET("api/settlements/breakdown/{otherUserId}")
-    suspend fun getBreakdown(
-        @Path("otherUserId") otherUserId: String,
-    ): ApiResponse<List<BalanceResponse>>
+    suspend fun getBreakdown(@Path("otherUserId") otherUserId: String): ApiResponse<List<BalanceResponse>>
 
     @POST("api/settlements")
     suspend fun settle(@Body request: SettleRequest): ApiResponse<List<SettlementResponse>>
 
     @POST("api/settlements/{settlementId}/confirm")
-    suspend fun confirmSettlement(
-        @Path("settlementId") settlementId: String,
-    ): ApiResponse<SettlementResponse>
+    suspend fun confirmSettlement(@Path("settlementId") settlementId: String): ApiResponse<SettlementResponse>
 
     @POST("api/settlements/{settlementId}/cancel")
-    suspend fun cancelSettlement(
-        @Path("settlementId") settlementId: String,
-    ): ApiResponse<SettlementResponse>
+    suspend fun cancelSettlement(@Path("settlementId") settlementId: String): ApiResponse<SettlementResponse>
 
     @GET("api/settlements/history/{otherUserId}")
-    suspend fun getHistory(
-        @Path("otherUserId") otherUserId: String,
-    ): ApiResponse<List<SettlementResponse>>
+    suspend fun getHistory(@Path("otherUserId") otherUserId: String): ApiResponse<List<SettlementResponse>>
 
     @GET("api/settlements/pending")
     suspend fun getPending(): ApiResponse<List<SettlementResponse>>

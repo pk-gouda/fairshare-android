@@ -5,13 +5,6 @@ import com.prathik.fairshare.data.model.response.BalanceResponse
 import retrofit2.http.GET
 import retrofit2.http.Path
 
-/**
- * Retrofit interface for /api/balances/** endpoints.
- * 3 endpoints for balance retrieval.
- *
- * Note: summary and breakdown endpoints return Map<String, Any> from backend.
- * We use JsonObject (kotlinx) to handle dynamic response shapes.
- */
 interface BalanceApiService {
 
     @GET("api/balances")

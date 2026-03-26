@@ -11,10 +11,6 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 
-/**
- * Retrofit interface for /api/import/** endpoints.
- * 7 endpoints for Splitwise CSV import flow.
- */
 interface ImportApiService {
 
     @POST("api/import/group")
@@ -24,9 +20,7 @@ interface ImportApiService {
     suspend fun importFriend(@Body request: ImportRequest): ApiResponse<Map<String, Any>>
 
     @GET("api/import/groups/{groupId}/unclaimed")
-    suspend fun getUnclaimedMembers(
-        @Path("groupId") groupId: String,
-    ): ApiResponse<List<GroupMemberResponse>>
+    suspend fun getUnclaimedMembers(@Path("groupId") groupId: String): ApiResponse<List<GroupMemberResponse>>
 
     @GET("api/import/groups/{groupId}/preview/{placeholderUserId}")
     suspend fun previewPlaceholder(

@@ -12,10 +12,9 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Query
 
-/**
- * Retrofit interface for /api/auth/** endpoints.
- * 9 endpoints covering the full authentication lifecycle.
- */
+
+// Retrofit interface for /api/auth/** endpoints.
+// 9 endpoints covering the full authentication lifecycle.
 interface AuthApiService {
 
     @POST("api/auth/register")

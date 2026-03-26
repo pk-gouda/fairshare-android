@@ -11,10 +11,6 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
-/**
- * Retrofit interface for /api/users/** endpoints.
- * 6 endpoints for user profile management.
- */
 interface UserApiService {
 
     @GET("api/users/me")
