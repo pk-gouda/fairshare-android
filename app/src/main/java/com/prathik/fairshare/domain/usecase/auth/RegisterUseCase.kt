@@ -8,6 +8,8 @@ import javax.inject.Inject
 /**
  * Handles new user registration.
  * Validates all inputs before hitting the network.
+ * Uses regex instead of android.util.Patterns so this use case
+ * can be unit tested on a plain JVM without Robolectric.
  */
 class RegisterUseCase @Inject constructor(
     private val authRepository: AuthRepository,
@@ -30,7 +32,7 @@ class RegisterUseCase @Inject constructor(
         if (email.isBlank()) {
             return ApiResult.ValidationError("Email cannot be empty")
         }
-        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+        if (!EMAIL_REGEX.matches(email.trim())) {
             return ApiResult.ValidationError("Invalid email address")
         }
         if (password.isBlank()) {
@@ -49,6 +51,12 @@ class RegisterUseCase @Inject constructor(
             phoneNumber       = phoneNumber?.trim(),
             preferredCurrency = preferredCurrency,
             language          = language,
+        )
+    }
+
+    companion object {
+        private val EMAIL_REGEX = Regex(
+            "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
         )
     }
 }

@@ -2,6 +2,7 @@ package com.prathik.fairshare.data.network
 
 import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.FieldError
 import kotlinx.serialization.json.Json
 import retrofit2.HttpException
 import java.io.IOException
@@ -14,11 +15,6 @@ import java.io.IOException
  *     suspend fun login(email: String, password: String): ApiResult<User> =
  *         safeApiCall { authService.login(LoginRequest(email, password)) }
  *             .mapSuccess { it.toDomain() }
- *
- * Why this exists:
- * Without safeApiCall(), every repository method needs its own try-catch
- * and HTTP error parsing logic. That's 90+ methods all duplicating the
- * same boilerplate. safeApiCall() centralizes it in one place.
  *
  * Error mapping:
  * - IOException          → NetworkError (no internet / timeout)
@@ -60,37 +56,43 @@ suspend fun <T> safeApiCall(
 
 /**
  * Parses HttpException into the correct ApiResult failure type.
- * Attempts to read the backend's ApiResponse error body for the message.
+ *
+ * IMPORTANT: errorBody().string() consumes the stream on first call.
+ * We read it ONCE, then extract both message and errors from the same string.
  */
 private fun parseHttpException(e: HttpException): ApiResult<Nothing> {
     val code = e.code()
-    val message = try {
-        val errorBody = e.response()?.errorBody()?.string()
-        if (!errorBody.isNullOrBlank()) {
+
+    // Read the error body exactly once
+    val errorBodyString = try {
+        e.response()?.errorBody()?.string()
+    } catch (ex: Exception) {
+        null
+    }
+
+    // Parse the error body into ApiResponse — extract message + errors together
+    val (message, errors) = if (!errorBodyString.isNullOrBlank()) {
+        try {
             val apiResponse = Json {
                 ignoreUnknownKeys = true
                 coerceInputValues = true
-            }.decodeFromString<ApiResponse<Unit>>(errorBody)
-            apiResponse.message ?: defaultMessage(code)
-        } else {
-            defaultMessage(code)
-        }
-    } catch (parseException: Exception) {
-        defaultMessage(code)
-    }
+            }.decodeFromString<ApiResponse<Unit>>(errorBodyString)
 
-    val errors = try {
-        val errorBody = e.response()?.errorBody()?.string()
-        if (!errorBody.isNullOrBlank()) {
-            val apiResponse = Json {
-                ignoreUnknownKeys = true
-            }.decodeFromString<ApiResponse<Unit>>(errorBody)
-            apiResponse.errors ?: emptyList()
-        } else {
-            emptyList()
+            val parsedMessage = apiResponse.message ?: defaultMessage(code)
+            val parsedErrors = apiResponse.errors?.map { fieldError ->
+                FieldError(
+                    field = fieldError.field,
+                    message = fieldError.message,
+                    rejectedValue = fieldError.rejectedValue,
+                )
+            } ?: emptyList()
+
+            Pair(parsedMessage, parsedErrors)
+        } catch (parseEx: Exception) {
+            Pair(defaultMessage(code), emptyList())
         }
-    } catch (parseException: Exception) {
-        emptyList()
+    } else {
+        Pair(defaultMessage(code), emptyList())
     }
 
     return when (code) {
@@ -121,10 +123,6 @@ private fun defaultMessage(code: Int): String = when (code) {
 /**
  * Maps a successful ApiResult<T> to ApiResult<R> using the given transform.
  * Passes through all failure types unchanged.
- *
- * Usage:
- *     safeApiCall { service.getGroup(groupId) }
- *         .mapSuccess { it.toDomain() }
  */
 fun <T, R> ApiResult<T>.mapSuccess(transform: (T) -> R): ApiResult<R> {
     return when (this) {

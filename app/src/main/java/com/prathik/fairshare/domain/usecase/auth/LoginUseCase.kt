@@ -8,6 +8,8 @@ import javax.inject.Inject
 /**
  * Handles user login.
  * Validates inputs before hitting the network.
+ * Uses regex instead of android.util.Patterns so this use case
+ * can be unit tested on a plain JVM without Robolectric.
  */
 class LoginUseCase @Inject constructor(
     private val authRepository: AuthRepository,
@@ -16,7 +18,7 @@ class LoginUseCase @Inject constructor(
         if (email.isBlank()) {
             return ApiResult.ValidationError("Email cannot be empty")
         }
-        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+        if (!EMAIL_REGEX.matches(email.trim())) {
             return ApiResult.ValidationError("Invalid email address")
         }
         if (password.isBlank()) {
@@ -26,5 +28,11 @@ class LoginUseCase @Inject constructor(
             return ApiResult.ValidationError("Password must be at least 6 characters")
         }
         return authRepository.login(email.trim(), password)
+    }
+
+    companion object {
+        private val EMAIL_REGEX = Regex(
+            "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
+        )
     }
 }
