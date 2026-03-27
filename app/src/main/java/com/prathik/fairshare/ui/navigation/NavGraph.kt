@@ -43,7 +43,11 @@ fun NavGraph(
         composable(
             route = Screen.VerifyEmail.route,
             arguments = listOf(
-                navArgument("email") { type = NavType.StringType }
+                navArgument("email") {
+                    type         = NavType.StringType
+                    nullable     = true
+                    defaultValue = null
+                }
             )
         ) { backStackEntry ->
             PlaceholderScreen("Verify Email — ${backStackEntry.arguments?.getString("email")}")
@@ -114,12 +118,19 @@ fun NavGraph(
         }
         composable(
             route = Screen.JoinGroup.route,
+            arguments = listOf(
+                navArgument("inviteCode") {
+                    type         = NavType.StringType
+                    nullable     = true
+                    defaultValue = null
+                }
+            ),
             deepLinks = listOf(
                 navDeepLink { uriPattern = "fairshare://join/{inviteCode}" },
                 navDeepLink { uriPattern = "https://fairshare.app/join/{inviteCode}" },
             )
-        ) {
-            PlaceholderScreen("Join Group")
+        ) { backStackEntry ->
+            PlaceholderScreen("Join Group — ${backStackEntry.arguments?.getString("inviteCode")}")
         }
 
         // ── Expense ───────────────────────────────────────────────────────────

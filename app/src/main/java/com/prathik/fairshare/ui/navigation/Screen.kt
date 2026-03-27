@@ -16,10 +16,9 @@ sealed class Screen(val route: String) {
     object Splash : Screen("splash")
     object Login : Screen("login")
     object Register : Screen("register")
-    object VerifyEmail : Screen("verify_email/{email}") {
-        fun route(email: String) = "verify_email/$email"
+    object VerifyEmail : Screen("verify_email?email={email}") {
+        fun route(email: String) = "verify_email?email=$email"
     }
-
     object ForgotPassword : Screen("forgot_password")
 
     // ── Main tabs ─────────────────────────────────────────────────────────────
@@ -58,7 +57,11 @@ sealed class Screen(val route: String) {
     }
 
     object CreateGroup : Screen("create_group")
-    object JoinGroup : Screen("join_group")
+    object JoinGroup : Screen("join_group?inviteCode={inviteCode}") {
+        fun route(inviteCode: String? = null) =
+            if (inviteCode != null) "join_group?inviteCode=$inviteCode"
+            else "join_group"
+    }
 
     // ── Expense ───────────────────────────────────────────────────────────────
     object AddExpense : Screen("add_expense?groupId={groupId}") {
