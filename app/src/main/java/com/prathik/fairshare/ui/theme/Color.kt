@@ -30,6 +30,8 @@ val Positive   = Green400
 val Negative   = Orange400
 val PositiveBg = Green900
 val NegativeBg = Orange900
+val Danger          = Color(0xFFFF6B35)   // Destructive actions — delete, leave, block
+val DangerContainer = Color(0xFF2A1500)   // Orange-tinted surface for danger buttons
 
 // ── Avatar colors — assigned by hashing userId ────────────────────────────────
 val AvatarColors = listOf(

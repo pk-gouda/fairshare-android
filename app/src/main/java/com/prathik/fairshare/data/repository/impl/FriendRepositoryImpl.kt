@@ -54,7 +54,10 @@ class FriendRepositoryImpl @Inject constructor(
 
     override suspend fun getFriendStatus(otherUserId: String): ApiResult<FriendStatus> =
         safeApiCall { friendService.getFriendStatus(otherUserId) }
-            .mapSuccess { FriendStatus.valueOf(it) }
+            .mapSuccess {
+                try { FriendStatus.valueOf(it) }
+                catch (e: IllegalArgumentException) { FriendStatus.PENDING }
+            }
 
     override suspend fun getBlocked(): ApiResult<List<Friend>> =
         safeApiCall { friendService.getBlocked() }
