@@ -15,7 +15,7 @@ interface NotificationApiService {
     suspend fun getUnread(): ApiResponse<List<NotificationResponse>>
 
     @GET("api/notifications/unread/count")
-    suspend fun getUnreadCount(): ApiResponse<Int>
+    suspend fun getUnreadCount(): ApiResponse<Map<String, Int>>
 
     @POST("api/notifications/{notificationId}/read")
     suspend fun markRead(@Path("notificationId") notificationId: String): ApiResponse<Unit>

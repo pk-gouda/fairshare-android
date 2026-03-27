@@ -13,7 +13,7 @@ import com.prathik.fairshare.ui.auth.LoginScreen
 import com.prathik.fairshare.ui.auth.RegisterScreen
 import com.prathik.fairshare.ui.auth.ForgotPasswordScreen
 import com.prathik.fairshare.ui.auth.VerifyEmailScreen
-
+import com.prathik.fairshare.ui.shell.MainShell
 /**
  * Wires all 39 screens into the navigation graph.
  *
@@ -98,16 +98,7 @@ fun NavGraph(
 
         // ── Main tabs ─────────────────────────────────────────────────────────
         composable(Screen.Groups.route) {
-            PlaceholderScreen("Groups")
-        }
-        composable(Screen.Friends.route) {
-            PlaceholderScreen("Friends")
-        }
-        composable(Screen.Activity.route) {
-            PlaceholderScreen("Activity")
-        }
-        composable(Screen.Account.route) {
-            PlaceholderScreen("Account")
+            MainShell(rootNavController = navController)
         }
 
         // ── Group ─────────────────────────────────────────────────────────────

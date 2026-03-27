@@ -25,7 +25,7 @@ class NotificationRepositoryImpl @Inject constructor(
 
     override suspend fun getUnreadCount(): ApiResult<Int> =
         safeApiCall { notificationService.getUnreadCount() }
-            .mapSuccess { it }
+            .mapSuccess { map -> map["unreadCount"] ?: 0 }
 
     override suspend fun markRead(notificationId: String): ApiResult<Unit> =
         safeApiCall { notificationService.markRead(notificationId) }.mapSuccess { }
