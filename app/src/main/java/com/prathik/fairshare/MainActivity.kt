@@ -4,17 +4,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import com.prathik.fairshare.ui.theme.Green400
+import androidx.compose.material3.Surface
+import androidx.navigation.compose.rememberNavController
+import com.prathik.fairshare.ui.navigation.NavGraph
 import com.prathik.fairshare.ui.theme.FairShareTheme
-import dagger.hilt.android.AndroidEntryPoint
-import androidx.compose.foundation.background
 import com.prathik.fairshare.ui.theme.Surface0
+import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -23,15 +19,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             FairShareTheme {
-                Box(
-                    modifier          = Modifier.fillMaxSize().background(Surface0),
-                    contentAlignment  = Alignment.Center,
+                Surface(
+                    color    = Surface0,
+                    modifier = androidx.compose.ui.Modifier.fillMaxSize(),
                 ) {
-                    Text(
-                        text  = "FairShare",
-                        style = MaterialTheme.typography.displayMedium,
-                        color = Green400,
-                    )
+                    val navController = rememberNavController()
+                    NavGraph(navController = navController)
                 }
             }
         }
