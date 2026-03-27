@@ -1,7 +1,5 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.domain.model.ExpenseCategory
-import com.prathik.fairshare.domain.model.SplitType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -17,8 +15,8 @@ data class ExpenseResponse(
     @SerialName("addedByName")   val addedByName: String,
     @SerialName("updatedById")   val updatedById: String? = null,
     @SerialName("updatedByName") val updatedByName: String? = null,
-    @SerialName("splitType")     val splitType: SplitType,
-    @SerialName("category")      val category: ExpenseCategory? = null,
+    @SerialName("splitType")     val splitType: String,
+    @SerialName("category")      val category: String? = null,
     @SerialName("receipt")       val receipt: ReceiptSummary? = null,
     @SerialName("notes")         val notes: String? = null,
     @SerialName("expenseDate")   val expenseDate: String,

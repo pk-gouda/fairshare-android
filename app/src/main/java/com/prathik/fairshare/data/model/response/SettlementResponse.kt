@@ -1,6 +1,5 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.domain.model.SettlementStatus
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -15,7 +14,7 @@ data class SettlementResponse(
     @SerialName("currency")          val currency: String,
     @SerialName("groupId")           val groupId: String? = null,
     @SerialName("groupName")         val groupName: String? = null,
-    @SerialName("status")            val status: SettlementStatus,
+    @SerialName("status")            val status: String,
     @SerialName("notes")             val notes: String? = null,
     @SerialName("paymentMethod")     val paymentMethod: String? = null,
     @SerialName("paymentProofImage") val paymentProofImage: String? = null,

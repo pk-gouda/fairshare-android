@@ -10,7 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.FairShareTheme
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.compose.foundation.background
@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
                     Text(
                         text  = "FairShare",
                         style = MaterialTheme.typography.displayMedium,
-                        color = Color(0xFF22C97A),
+                        color = Green400,
                     )
                 }
             }

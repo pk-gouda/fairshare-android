@@ -1,6 +1,5 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.domain.model.GroupType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -9,7 +8,7 @@ data class GroupResponse(
     @SerialName("id")               val id: String,
     @SerialName("name")             val name: String,
     @SerialName("groupImage")       val groupImage: String? = null,
-    @SerialName("type")             val type: GroupType,
+    @SerialName("type")             val type: String,
     @SerialName("createdById")      val createdById: String,
     @SerialName("createdByName")    val createdByName: String,
     @SerialName("tripStartDate")    val tripStartDate: String? = null,

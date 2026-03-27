@@ -1,9 +1,11 @@
 package com.prathik.fairshare.domain.model
 
+import kotlinx.serialization.Serializable
 /**
  * The type of notification — determines icon, color,
  * and deep link destination when tapped.
  */
+@Serializable
 enum class NotificationType {
     EXPENSE_ADDED,
     EXPENSE_UPDATED,

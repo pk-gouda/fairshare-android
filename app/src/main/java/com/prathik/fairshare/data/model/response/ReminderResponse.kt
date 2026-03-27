@@ -1,6 +1,5 @@
 package com.prathik.fairshare.data.model.response
 
-import com.prathik.fairshare.domain.model.ReminderFrequency
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -11,7 +10,7 @@ data class ReminderResponse(
     @SerialName("groupName")      val groupName: String,
     @SerialName("createdById")    val createdById: String,
     @SerialName("createdByName")  val createdByName: String,
-    @SerialName("frequency")      val frequency: ReminderFrequency,
+    @SerialName("frequency")      val frequency: String,
     @SerialName("dayOfWeek")      val dayOfWeek: Int? = null,
     @SerialName("dayOfMonth")     val dayOfMonth: Int? = null,
     @SerialName("notifyViaApp")   val notifyViaApp: Boolean,

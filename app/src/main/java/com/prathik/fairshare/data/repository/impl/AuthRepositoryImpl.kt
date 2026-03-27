@@ -7,14 +7,12 @@ import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.ChangePasswordRequest
 import com.prathik.fairshare.data.model.request.ForgotPasswordRequest
 import com.prathik.fairshare.data.model.request.LoginRequest
-import com.prathik.fairshare.data.model.request.OAuthLoginRequest
 import com.prathik.fairshare.data.model.request.RegisterRequest
 import com.prathik.fairshare.data.model.request.ResetPasswordRequest
 import com.prathik.fairshare.data.network.api.AuthApiService
-import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.data.network.mapSuccess
+import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.domain.model.ApiResult
-import com.prathik.fairshare.domain.model.AuthProvider
 import com.prathik.fairshare.domain.model.User
 import com.prathik.fairshare.domain.repository.AuthRepository
 import javax.inject.Inject
@@ -41,7 +39,14 @@ class AuthRepositoryImpl @Inject constructor(
                 cacheUser(userResponse.toDomain())
             }
         }
-        return result.mapSuccess { it.user!!.toDomain() }
+        return when (result) {
+            is ApiResult.Success -> {
+                val user = result.data.user
+                if (user != null) ApiResult.Success(user.toDomain())
+                else ApiResult.Conflict("Server returned success but no user data.")
+            }
+            else -> @Suppress("UNCHECKED_CAST") (result as ApiResult<User>)
+        }
     }
 
     override suspend fun register(
@@ -74,7 +79,14 @@ class AuthRepositoryImpl @Inject constructor(
                 cacheUser(userResponse.toDomain())
             }
         }
-        return result.mapSuccess { it.user!!.toDomain() }
+        return when (result) {
+            is ApiResult.Success -> {
+                val user = result.data.user
+                if (user != null) ApiResult.Success(user.toDomain())
+                else ApiResult.Conflict("Server returned success but no user data.")
+            }
+            else -> @Suppress("UNCHECKED_CAST") (result as ApiResult<User>)
+        }
     }
 
     override suspend fun verifyEmail(userId: String, token: String): ApiResult<Unit> =
@@ -113,7 +125,6 @@ class AuthRepositoryImpl @Inject constructor(
         return try {
             safeApiCall { authService.logout() }
         } finally {
-            // Always clear tokens locally even if server call fails
             tokenStore.clearTokens()
             userDao.deleteAll()
         }

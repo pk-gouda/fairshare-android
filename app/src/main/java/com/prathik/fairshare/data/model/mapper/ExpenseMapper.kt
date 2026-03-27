@@ -2,17 +2,15 @@ package com.prathik.fairshare.data.model.mapper
 
 import com.prathik.fairshare.data.model.response.ExpenseResponse
 import com.prathik.fairshare.domain.model.Expense
+import com.prathik.fairshare.domain.model.ExpenseCategory
+import com.prathik.fairshare.domain.model.SplitType
 
 /**
  * Maps ExpenseResponse DTO to Expense domain model.
  *
- * payers and splits default to empty lists if null —
- * the backend omits these on list endpoints for performance,
- * they are only populated on single expense fetch.
- *
- * yourBalance sign convention (preserved from backend):
- * Positive = you lent money (green in UI)
- * Negative = you owe money (orange in UI)
+ * splitType and category are stored as String in the DTO to prevent
+ * deserialization crashes when the backend adds new enum values.
+ * Safe conversion with fallback: unknown splitType → EQUAL, unknown category → OTHER.
  */
 fun ExpenseResponse.toDomain(): Expense = Expense(
     id           = id,
@@ -23,8 +21,8 @@ fun ExpenseResponse.toDomain(): Expense = Expense(
     groupName    = groupName,
     addedById    = addedById,
     addedByName  = addedByName,
-    splitType    = splitType,
-    category     = category,
+    splitType    = splitType.toSplitTypeSafe(),
+    category     = category?.toExpenseCategorySafe(),
     notes        = notes,
     expenseDate  = expenseDate,
     isDeleted    = isDeleted,
@@ -39,18 +37,12 @@ fun ExpenseResponse.toDomain(): Expense = Expense(
     updatedAt    = updatedAt,
 )
 
-/**
- * Maps PayerDetail DTO to domain PayerDetail.
- */
 fun ExpenseResponse.PayerDetail.toDomain(): Expense.PayerDetail = Expense.PayerDetail(
     userId     = userId,
     fullName   = fullName,
     amountPaid = amountPaid,
 )
 
-/**
- * Maps SplitDetail DTO to domain SplitDetail.
- */
 fun ExpenseResponse.SplitDetail.toDomain(): Expense.SplitDetail = Expense.SplitDetail(
     userId     = userId,
     fullName   = fullName,
@@ -59,3 +51,9 @@ fun ExpenseResponse.SplitDetail.toDomain(): Expense.SplitDetail = Expense.SplitD
     shares     = shares,
     isSettled  = isSettled,
 )
+
+private fun String.toSplitTypeSafe(): SplitType =
+    try { SplitType.valueOf(this) } catch (e: IllegalArgumentException) { SplitType.EQUAL }
+
+private fun String.toExpenseCategorySafe(): ExpenseCategory =
+    try { ExpenseCategory.valueOf(this) } catch (e: IllegalArgumentException) { ExpenseCategory.OTHER }

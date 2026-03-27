@@ -22,6 +22,7 @@ junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 securityCrypto = "1.1.0-alpha06"
 room = "2.6.1"
+security = "1.1.0-alpha06"
 
 [libraries]
 # Core
@@ -34,6 +35,7 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
 
 # Compose BOM
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }

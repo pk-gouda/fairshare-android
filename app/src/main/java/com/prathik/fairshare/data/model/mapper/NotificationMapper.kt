@@ -2,21 +2,25 @@ package com.prathik.fairshare.data.model.mapper
 
 import com.prathik.fairshare.data.model.response.NotificationResponse
 import com.prathik.fairshare.domain.model.Notification
+import com.prathik.fairshare.domain.model.NotificationType
 
 /**
  * Maps NotificationResponse DTO to Notification domain model.
  *
- * referenceId and referenceType are used for deep linking —
- * they tell the app which screen to navigate to when
- * the notification is tapped in the Activity feed.
+ * type is stored as String in the DTO to prevent deserialization crashes
+ * when the backend adds new notification types.
+ * Safe conversion with fallback: unknown type → EXPENSE_ADDED.
  */
 fun NotificationResponse.toDomain(): Notification = Notification(
     id            = id,
     title         = title,
     message       = message,
-    type          = type,
+    type          = type.toNotificationTypeSafe(),
     referenceId   = referenceId,
     referenceType = referenceType,
     isRead        = isRead,
     createdAt     = createdAt,
 )
+
+private fun String.toNotificationTypeSafe(): NotificationType =
+    try { NotificationType.valueOf(this) } catch (e: IllegalArgumentException) { NotificationType.EXPENSE_ADDED }

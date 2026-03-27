@@ -25,7 +25,7 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080/\"")
+            buildConfigField("String", "BASE_URL", "\"${project.findProperty("BASE_URL") ?: "http://10.0.2.2:8080/"}\"")
         }
         release {
             isMinifyEnabled = true
@@ -98,6 +98,8 @@ dependencies {
 
     // Coil
     implementation(libs.coil.compose)
+
+    implementation(libs.androidx.security.crypto)
 
     // Testing
     testImplementation(libs.junit)

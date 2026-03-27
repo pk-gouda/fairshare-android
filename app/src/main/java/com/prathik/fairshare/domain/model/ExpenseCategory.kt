@@ -1,9 +1,11 @@
 package com.prathik.fairshare.domain.model
 
+import kotlinx.serialization.Serializable
 /**
  * Categories for classifying expenses.
  * Used for analytics breakdown and auto-detection from description keywords.
  */
+@Serializable
 enum class ExpenseCategory {
     // Entertainment
     GAMES, MOVIES, MUSIC, SPORTS,

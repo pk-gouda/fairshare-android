@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.model
 
+import kotlinx.serialization.Serializable
 /**
  * The scope of a settlement operation.
  * Used instead of a raw String to enforce valid values at compile time.
@@ -9,6 +10,7 @@ package com.prathik.fairshare.domain.model
  * NON_GROUP — settle only non-group direct expenses
  * PARTIAL   — settle a custom amount
  */
+@Serializable
 enum class SettleType {
     ALL,
     GROUP,

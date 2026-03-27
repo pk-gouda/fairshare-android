@@ -2,29 +2,33 @@ package com.prathik.fairshare.data.model.mapper
 
 import com.prathik.fairshare.data.model.response.SettlementResponse
 import com.prathik.fairshare.domain.model.Settlement
+import com.prathik.fairshare.domain.model.SettlementStatus
 
 /**
  * Maps SettlementResponse DTO to Settlement domain model.
  *
- * Note: In the current backend, settlements are immediately COMPLETED.
- * completedAt will equal settlementDate in most cases.
+ * status is stored as String in the DTO.
+ * Safe conversion with fallback: unknown status → PENDING.
  */
 fun SettlementResponse.toDomain(): Settlement = Settlement(
-    id              = id,
-    payerId         = payerId,
-    payerName       = payerName,
-    receiverId      = receiverId,
-    receiverName    = receiverName,
-    amount          = amount,
-    currency        = currency,
-    groupId         = groupId,
-    groupName       = groupName,
-    status          = status,
-    notes           = notes,
-    paymentMethod   = paymentMethod,
-    recordedById    = recordedById,
-    recordedByName  = recordedByName,
-    settlementDate  = settlementDate,
-    completedAt     = completedAt,
-    createdAt       = createdAt,
+    id             = id,
+    payerId        = payerId,
+    payerName      = payerName,
+    receiverId     = receiverId,
+    receiverName   = receiverName,
+    amount         = amount,
+    currency       = currency,
+    groupId        = groupId,
+    groupName      = groupName,
+    status         = status.toSettlementStatusSafe(),
+    notes          = notes,
+    paymentMethod  = paymentMethod,
+    recordedById   = recordedById,
+    recordedByName = recordedByName,
+    settlementDate = settlementDate,
+    completedAt    = completedAt,
+    createdAt      = createdAt,
 )
+
+private fun String.toSettlementStatusSafe(): SettlementStatus =
+    try { SettlementStatus.valueOf(this) } catch (e: IllegalArgumentException) { SettlementStatus.PENDING }

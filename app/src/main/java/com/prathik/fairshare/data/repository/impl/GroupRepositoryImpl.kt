@@ -17,6 +17,7 @@ import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.repository.GroupRepository
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.prathik.fairshare.domain.model.GroupType
 
 @Singleton
 class GroupRepositoryImpl @Inject constructor(
@@ -48,8 +49,17 @@ class GroupRepositoryImpl @Inject constructor(
         description: String?,
     ): ApiResult<Group> =
         safeApiCall {
-            groupService.createGroup(CreateGroupRequest(name = name, type = com.prathik.fairshare.domain.model.GroupType.valueOf(type), description = description))
+            groupService.createGroup(
+                CreateGroupRequest(
+                    name        = name,
+                    type        = type.toGroupTypeSafe(),
+                    description = description,
+                )
+            )
         }.mapSuccess { it.toDomain() }
+
+    private fun String.toGroupTypeSafe(): GroupType =
+        try { GroupType.valueOf(this) } catch (e: IllegalArgumentException) { GroupType.OTHER }
 
     override suspend fun updateGroup(
         groupId: String,
@@ -99,7 +109,7 @@ class GroupRepositoryImpl @Inject constructor(
     private fun com.prathik.fairshare.data.model.response.GroupResponse.toEntity() = GroupEntity(
         id               = id,
         name             = name,
-        type             = type.name,
+        type             = type,
         groupImage       = groupImage,
         createdById      = createdById,
         createdByName    = createdByName,

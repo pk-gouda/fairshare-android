@@ -4,18 +4,19 @@ import com.prathik.fairshare.data.model.response.GroupMemberResponse
 import com.prathik.fairshare.data.model.response.GroupResponse
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
+import com.prathik.fairshare.domain.model.GroupType
 
 /**
  * Maps GroupResponse DTO to Group domain model.
  *
- * tripStartDate and tripEndDate are kept as String here —
- * they are "yyyy-MM-dd" date strings from the backend.
- * DateFormatter in util/ handles display formatting.
+ * type is stored as String in the DTO to prevent deserialization crashes
+ * when the backend adds new GroupType values.
+ * Safe conversion with fallback: unknown type → OTHER.
  */
 fun GroupResponse.toDomain(): Group = Group(
     id               = id,
     name             = name,
-    type             = type,
+    type             = type.toGroupTypeSafe(),
     createdById      = createdById,
     createdByName    = createdByName,
     inviteCode       = inviteCode,
@@ -30,9 +31,6 @@ fun GroupResponse.toDomain(): Group = Group(
     createdAt        = createdAt,
 )
 
-/**
- * Maps GroupMemberResponse DTO to GroupMember domain model.
- */
 fun GroupMemberResponse.toDomain(): GroupMember = GroupMember(
     id                = id,
     userId            = userId,
@@ -41,3 +39,6 @@ fun GroupMemberResponse.toDomain(): GroupMember = GroupMember(
     profilePictureUrl = profilePictureUrl,
     joinedAt          = joinedAt,
 )
+
+private fun String.toGroupTypeSafe(): GroupType =
+    try { GroupType.valueOf(this) } catch (e: IllegalArgumentException) { GroupType.OTHER }

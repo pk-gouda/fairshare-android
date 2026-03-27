@@ -19,6 +19,14 @@ import javax.inject.Singleton
  * - accessToken  — JWT access token (expires in 15 minutes)
  * - refreshToken — JWT refresh token (expires in 7 days)
  * - userId       — current user's UUID
+ *
+ * Why commit() instead of apply():
+ * apply() writes to memory immediately but flushes to disk asynchronously.
+ * If the app crashes between the memory write and disk flush, tokens are lost
+ * and the user gets silently logged out on next launch.
+ * commit() is synchronous — it only returns after the disk write succeeds.
+ * The blocking time on EncryptedSharedPreferences is negligible (a few ms)
+ * and these functions are always called from background threads.
  */
 @Singleton
 class EncryptedTokenStore @Inject constructor(
@@ -44,23 +52,25 @@ class EncryptedTokenStore @Inject constructor(
 
     /**
      * Saves all three tokens atomically after successful login or register.
+     * Uses commit() for guaranteed disk persistence before returning.
      */
     fun saveTokens(accessToken: String, refreshToken: String, userId: String) {
         prefs.edit()
             .putString(KEY_ACCESS_TOKEN, accessToken)
             .putString(KEY_REFRESH_TOKEN, refreshToken)
             .putString(KEY_USER_ID, userId)
-            .apply()
+            .commit()
     }
 
     /**
      * Updates only the access token — called by TokenRefreshInterceptor
      * after a successful token refresh without disturbing other stored values.
+     * Uses commit() so the new token is on disk before the retried request fires.
      */
     fun updateAccessToken(accessToken: String) {
         prefs.edit()
             .putString(KEY_ACCESS_TOKEN, accessToken)
-            .apply()
+            .commit()
     }
 
     /**
@@ -86,13 +96,13 @@ class EncryptedTokenStore @Inject constructor(
 
     /**
      * Clears all stored tokens — called on logout.
-     * After this, isLoggedIn() returns false and all API calls will 401.
+     * Uses commit() to guarantee tokens are wiped from disk before navigating to Login.
      */
     fun clearTokens() {
         prefs.edit()
             .remove(KEY_ACCESS_TOKEN)
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_USER_ID)
-            .apply()
+            .commit()
     }
 }

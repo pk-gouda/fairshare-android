@@ -6,8 +6,9 @@ import com.prathik.fairshare.domain.model.User
 /**
  * Maps UserResponse DTO to User domain model.
  *
- * AccountStatus.ACTIVE → isActive = true
- * All other statuses   → isActive = false
+ * authProvider and accountStatus are stored as String in the DTO.
+ * isActive = true only when accountStatus == "ACTIVE".
+ * Unknown accountStatus values default to inactive for safety.
  */
 fun UserResponse.toDomain(): User = User(
     id                  = id,
@@ -18,5 +19,5 @@ fun UserResponse.toDomain(): User = User(
     preferredCurrency   = preferredCurrency,
     language            = language,
     notificationEnabled = notificationEnabled,
-    isActive            = accountStatus.name == "ACTIVE",
+    isActive            = accountStatus == "ACTIVE",
 )
