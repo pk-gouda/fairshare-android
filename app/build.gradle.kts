@@ -101,6 +101,8 @@ dependencies {
 
     implementation(libs.androidx.security.crypto)
 
+    implementation(libs.androidx.biometric)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

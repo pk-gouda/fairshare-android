@@ -130,7 +130,7 @@ class AuthRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun isLoggedIn(): Boolean = tokenStore.isLoggedIn()
+    override fun isLoggedIn(): Boolean = tokenStore.isLoggedIn()
 
     private suspend fun cacheUser(user: User) {
         userDao.insert(

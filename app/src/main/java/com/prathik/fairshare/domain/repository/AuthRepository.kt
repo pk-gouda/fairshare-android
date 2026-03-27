@@ -70,5 +70,5 @@ interface AuthRepository {
      * Checks if a valid access token exists in EncryptedTokenStore.
      * Used by SplashScreen to decide: Login or GroupsHome.
      */
-    suspend fun isLoggedIn(): Boolean
+    fun isLoggedIn(): Boolean
 }
