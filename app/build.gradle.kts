@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -19,13 +21,18 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        //buildConfigField("String", "BASE_URL", "\"${project.findProperty("BASE_URL") ?: "http://10.0.2.2:8080/"}\"")
     }
 
     buildTypes {
         debug {
             isDebuggable = true
-            buildConfigField("String", "BASE_URL", "\"${project.findProperty("BASE_URL") ?: "http://10.0.2.2:8080/"}\"")
+            val localProps = Properties()
+            val localPropsFile = rootProject.file("local.properties")
+            if (localPropsFile.exists()) {
+                localPropsFile.inputStream().use { localProps.load(it) }
+            }
+            val baseUrl = localProps.getProperty("BASE_URL") ?: "http://10.0.2.2:8080/"
+            buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
         }
         release {
             isMinifyEnabled = true

@@ -8,6 +8,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import com.prathik.fairshare.ui.auth.SplashScreen
+import com.prathik.fairshare.ui.auth.LoginScreen
+import com.prathik.fairshare.ui.auth.RegisterScreen
+import com.prathik.fairshare.ui.auth.ForgotPasswordScreen
+import com.prathik.fairshare.ui.auth.VerifyEmailScreen
 
 /**
  * Wires all 39 screens into the navigation graph.
@@ -32,13 +37,39 @@ fun NavGraph(
 
         // ── Auth ──────────────────────────────────────────────────────────────
         composable(Screen.Splash.route) {
-            PlaceholderScreen("Splash")
+            SplashScreen(
+                onNavigateToLogin = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
+                onNavigateToGroups = {
+                    navController.navigate(Screen.Groups.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
+            )
         }
         composable(Screen.Login.route) {
-            PlaceholderScreen("Login")
+            LoginScreen(
+                onNavigateToRegister      = { navController.navigate(Screen.Register.route) },
+                onNavigateToForgotPassword = { navController.navigate(Screen.ForgotPassword.route) },
+                onNavigateToGroups        = {
+                    navController.navigate(Screen.Groups.route) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
+                    }
+                },
+            )
         }
         composable(Screen.Register.route) {
-            PlaceholderScreen("Register")
+            RegisterScreen(
+                onNavigateToLogin       = { navController.popBackStack() },
+                onNavigateToVerifyEmail = { email ->
+                    navController.navigate(Screen.VerifyEmail.route(email)) {
+                        popUpTo(Screen.Register.route) { inclusive = true }
+                    }
+                },
+            )
         }
         composable(
             route = Screen.VerifyEmail.route,
@@ -50,10 +81,19 @@ fun NavGraph(
                 }
             )
         ) { backStackEntry ->
-            PlaceholderScreen("Verify Email — ${backStackEntry.arguments?.getString("email")}")
+            VerifyEmailScreen(
+                email             = backStackEntry.arguments?.getString("email"),
+                onNavigateToLogin = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.Login.route) { inclusive = false }
+                    }
+                },
+            )
         }
         composable(Screen.ForgotPassword.route) {
-            PlaceholderScreen("Forgot Password")
+            ForgotPasswordScreen(
+                onBack = { navController.popBackStack() },
+            )
         }
 
         // ── Main tabs ─────────────────────────────────────────────────────────

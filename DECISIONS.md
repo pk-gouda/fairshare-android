@@ -698,3 +698,8 @@ One interface per backend controller. All registered as singletons in
 *This document is a living record. Add an entry for every significant decision
 made during development. Small decisions don't need entries — only ones that
 future developers would question or that have non-obvious reasoning.*
+
+[DECISION] Google/Apple OAuth deferred to Day 26 (Polish phase).
+Requires Google Cloud Console OAuth client ID setup outside of coding scope.
+Backend /api/auth/oauth endpoint is ready and waiting.
+Android: add google-auth dependency + configure client ID + wire OAuthLoginRequest.
