@@ -64,6 +64,21 @@ object NetworkModule {
                 HttpLoggingInterceptor.Level.NONE
             }
         }
+
+        // TODO: Day 28 — Add certificate pinning before beta release.
+        // Steps:
+        // 1. Set up HTTPS + domain (api.fairshare.app) on AWS
+        // 2. Extract SHA-256 pin:
+        //    openssl s_client -connect api.fairshare.app:443 | openssl x509 -noout -fingerprint -sha256
+        // 3. Add backup pin from a second cert or CA pin
+        // 4. Replace this comment with:
+        //    .certificatePinner(
+        //        CertificatePinner.Builder()
+        //            .add("api.fairshare.app", "sha256/PRIMARY_PIN_HERE")
+        //            .add("api.fairshare.app", "sha256/BACKUP_PIN_HERE")
+        //            .build()
+        //    )
+
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(tokenRefreshInterceptor)

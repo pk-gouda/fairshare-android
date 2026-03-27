@@ -19,7 +19,8 @@ import javax.inject.Singleton
  * Provides the Room database and all DAOs as singletons.
  *
  * Database name: fairshare_db
- * When schema changes: increment version in FairShareDatabase and add Migration.
+ * Schema changes during beta: fallbackToDestructiveMigration() wipes and recreates.
+ * Before production: replace with proper Migration objects.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -34,7 +35,12 @@ object DatabaseModule {
             context,
             FairShareDatabase::class.java,
             "fairshare_db",
-        ).build()
+        )
+            // TODO: Before production — replace with proper Migration objects.
+            // During beta development, schema changes will wipe and recreate the DB.
+            // This is acceptable since Room is a cache — all data lives on the backend.
+            .fallbackToDestructiveMigration()
+            .build()
 
     @Provides
     @Singleton
