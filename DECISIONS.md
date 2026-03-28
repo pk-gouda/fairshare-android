@@ -703,3 +703,13 @@ future developers would question or that have non-obvious reasoning.*
 Requires Google Cloud Console OAuth client ID setup outside of coding scope.
 Backend /api/auth/oauth endpoint is ready and waiting.
 Android: add google-auth dependency + configure client ID + wire OAuthLoginRequest.
+
+[DECISION] Single SearchScreen with SearchContext enum.
+Context determines what is searched and what happens on tap:
+- GROUPS          → search group names → tap → GroupDetail
+- GROUP_EXPENSES  → search expenses in specific group → tap → ExpenseDetail
+- FRIENDS         → search friend names → tap → FriendDetail
+- FRIEND_EXPENSES → search expenses with specific friend → tap → ExpenseDetail
+- ALL_EXPENSES    → search all expenses → tap → ExpenseDetail
+  entityId passed as optional nav arg (groupId or friendId where relevant).
+  Built on Day 19.

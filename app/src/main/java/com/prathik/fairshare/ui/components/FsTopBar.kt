@@ -75,6 +75,7 @@ fun FsTopBar(
             actions?.invoke()
         },
         modifier = modifier,
+        windowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
             containerColor        = Surface0,
             titleContentColor     = TextPrimary,

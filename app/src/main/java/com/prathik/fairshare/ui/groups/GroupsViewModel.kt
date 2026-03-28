@@ -1,0 +1,114 @@
+package com.prathik.fairshare.ui.groups
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.Balance
+import com.prathik.fairshare.domain.model.Group
+import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
+import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/**
+ * ViewModel for GroupsHomeScreen.
+ *
+ * Loads groups and balances in parallel using async/await.
+ * Exposes separate state flows so the UI can show partial data
+ * while the rest is loading.
+ */
+@HiltViewModel
+class GroupsViewModel @Inject constructor(
+    private val getGroupsUseCase     : GetGroupsUseCase,
+    private val getAllBalancesUseCase : GetAllBalancesUseCase,
+) : ViewModel() {
+
+    // ── Groups state ──────────────────────────────────────────────────────────
+    private val _groupsState = MutableStateFlow<GroupsUiState>(GroupsUiState.Loading)
+    val groupsState: StateFlow<GroupsUiState> = _groupsState.asStateFlow()
+
+    // ── Balance summary state ─────────────────────────────────────────────────
+    private val _balanceSummary = MutableStateFlow<BalanceSummary?>(null)
+    val balanceSummary: StateFlow<BalanceSummary?> = _balanceSummary.asStateFlow()
+
+    init {
+        loadData()
+    }
+
+    /**
+     * Loads groups and balances in parallel.
+     * Both calls start simultaneously — UI gets data as soon as each completes.
+     */
+    fun loadData() {
+        viewModelScope.launch {
+            _groupsState.value = GroupsUiState.Loading
+
+            val groupsDeferred   = async { getGroupsUseCase() }
+            val balancesDeferred = async { getAllBalancesUseCase() }
+
+            // Handle groups result
+            when (val result = groupsDeferred.await()) {
+                is ApiResult.Success -> _groupsState.value = GroupsUiState.Success(result.data)
+                is ApiResult.NetworkError -> _groupsState.value = GroupsUiState.Error(
+                    message   = result.message,
+                    isNetwork = true,
+                )
+                else -> _groupsState.value = GroupsUiState.Error(
+                    message   = "Failed to load groups. Please try again.",
+                    isNetwork = false,
+                )
+            }
+
+            // Handle balances result — silently ignore errors
+            // Balance summary is decorative — groups still show without it
+            when (val result = balancesDeferred.await()) {
+                is ApiResult.Success -> _balanceSummary.value = calculateSummary(result.data)
+                else -> Unit
+            }
+        }
+    }
+
+    /**
+     * Calculates net balance summary from the list of all balances.
+     *
+     * owedToMe  — sum of positive balances (others owe you)
+     * youOwe    — sum of negative balances (you owe others), shown as positive
+     * netBalance — owedToMe - youOwe
+     */
+    private fun calculateSummary(balances: List<Balance>): BalanceSummary {
+        var owedToMe   = 0.0
+        var youOwe     = 0.0
+
+        balances.forEach { balance ->
+            if (balance.amount > 0) owedToMe += balance.amount
+            else youOwe += Math.abs(balance.amount)
+        }
+
+        return BalanceSummary(
+            owedToMe   = owedToMe,
+            youOwe     = youOwe,
+            netBalance = owedToMe - youOwe,
+            currency   = balances.firstOrNull()?.currency ?: "USD",
+        )
+    }
+}
+
+// ── UI State ──────────────────────────────────────────────────────────────────
+
+sealed class GroupsUiState {
+    object Loading : GroupsUiState()
+    data class Success(val groups: List<Group>) : GroupsUiState()
+    data class Error(val message: String, val isNetwork: Boolean) : GroupsUiState()
+}
+
+data class BalanceSummary(
+    val owedToMe  : Double,
+    val youOwe    : Double,
+    val netBalance: Double,
+    val currency  : String,
+)

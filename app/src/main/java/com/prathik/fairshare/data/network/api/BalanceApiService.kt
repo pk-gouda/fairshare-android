@@ -15,6 +15,7 @@ interface BalanceApiService {
         @Path("otherUserId") otherUserId: String,
     ): ApiResponse<List<BalanceResponse>>
 
+    //backend returns mixed types (BigDecimal serialized as Number)
     @GET("api/balances/summary")
     suspend fun getBalanceSummary(): ApiResponse<Map<String, Double>>
 }

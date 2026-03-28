@@ -1,21 +1,15 @@
 package com.prathik.fairshare.ui.shell
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -37,31 +31,34 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.prathik.fairshare.ui.groups.GroupDetailScreen
+import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface1
 import com.prathik.fairshare.ui.theme.Surface4
-import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 
 /**
  * Data class representing a bottom navigation tab.
  *
- * [route]         — the root destination of this tab
- * [selectedIcon]  — filled icon shown when tab is active
- * [unselectedIcon]— outlined icon shown when tab is inactive
- * [label]         — text label below the icon
+ * [route]          — the root destination of this tab
+ * [selectedIcon]   — filled icon shown when tab is active
+ * [unselectedIcon] — outlined icon shown when tab is inactive
+ * [label]          — text label below the icon
  */
 data class BottomNavItem(
-    val route        : String,
-    val selectedIcon : ImageVector,
+    val route         : String,
+    val selectedIcon  : ImageVector,
     val unselectedIcon: ImageVector,
-    val label        : String,
+    val label         : String,
 )
 
 /**
@@ -70,12 +67,12 @@ data class BottomNavItem(
  * Contains:
  * - Scaffold with a bottom NavigationBar
  * - 4 tabs: Groups, Friends, Activity (with unread badge), Account
- * - Each tab has its own independent NavController + back stack
+ * - Shell NavHost handles nested navigation within tabs
  *
  * Back stack behavior:
  * - Switching tabs saves and restores each tab's back stack
  * - Pressing back within a tab navigates back within that tab
- * - Tapping the current tab scrolls to top / pops to root (launchSingleTop)
+ * - Tapping the current tab pops to root (launchSingleTop)
  */
 @Composable
 fun MainShell(
@@ -124,8 +121,8 @@ fun MainShell(
                 tabs.forEachIndexed { index, tab ->
                     val isSelected = selectedTabIndex == index
                     NavigationBarItem(
-                        selected  = isSelected,
-                        onClick   = {
+                        selected = isSelected,
+                        onClick  = {
                             if (selectedTabIndex == index) {
                                 // Already on this tab — pop to root
                                 shellNavController.popBackStack(
@@ -149,7 +146,7 @@ fun MainShell(
                                     badge = {
                                         Badge {
                                             Text(
-                                                text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                                text       = if (unreadCount > 99) "99+" else unreadCount.toString(),
                                                 fontSize   = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                             )
@@ -192,15 +189,53 @@ fun MainShell(
             startDestination = Screen.Groups.route,
             modifier         = Modifier.padding(innerPadding),
         ) {
+            // ── Groups tab ────────────────────────────────────────────────────
             composable(Screen.Groups.route) {
-                PlaceholderScreen("Groups")
+                GroupsHomeScreen(
+                    onNavigateToGroup       = { groupId ->
+                        shellNavController.navigate(Screen.GroupDetail.route(groupId))
+                    },
+                    onNavigateToSearch      = {
+                        shellNavController.navigate(Screen.Search.route)
+                    },
+                    onNavigateToCreateGroup = {
+                        shellNavController.navigate(Screen.CreateGroup.route)
+                    },
+                )
             }
+
+            composable(
+                route     = Screen.GroupDetail.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) {
+                GroupDetailScreen(
+                    onBack                 = { shellNavController.popBackStack() },
+                    onNavigateToSettings   = { groupId ->
+                        shellNavController.navigate(Screen.GroupSettings.route(groupId))
+                    },
+                    onNavigateToExpense    = { expenseId ->
+                        shellNavController.navigate(Screen.ExpenseDetail.route(expenseId))
+                    },
+                    onNavigateToAddExpense = { groupId ->
+                        shellNavController.navigate(Screen.AddExpense.route(groupId))
+                    },
+                    onNavigateToSettle     = { otherUserId ->
+                        shellNavController.navigate(Screen.SettleUp.route(otherUserId))
+                    },
+                )
+            }
+
+            // ── Friends tab ───────────────────────────────────────────────────
             composable(Screen.Friends.route) {
                 PlaceholderScreen("Friends")
             }
+
+            // ── Activity tab ──────────────────────────────────────────────────
             composable(Screen.Activity.route) {
                 PlaceholderScreen("Activity")
             }
+
+            // ── Account tab ───────────────────────────────────────────────────
             composable(Screen.Account.route) {
                 PlaceholderScreen("Account")
             }
