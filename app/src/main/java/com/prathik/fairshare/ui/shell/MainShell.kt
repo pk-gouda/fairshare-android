@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,6 +37,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.prathik.fairshare.ui.expense.AddExpenseScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
@@ -45,14 +47,14 @@ import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface1
 import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextSecondary
+import com.prathik.fairshare.ui.expense.CurrencySelectScreen
+import com.prathik.fairshare.ui.expense.AddExpenseViewModel
+import com.prathik.fairshare.ui.expense.ExpenseDetailScreen
+import com.prathik.fairshare.ui.settlement.SettleUpScreen
+
 
 /**
  * Data class representing a bottom navigation tab.
- *
- * [route]          — the root destination of this tab
- * [selectedIcon]   — filled icon shown when tab is active
- * [unselectedIcon] — outlined icon shown when tab is inactive
- * [label]          — text label below the icon
  */
 data class BottomNavItem(
     val route         : String,
@@ -67,12 +69,11 @@ data class BottomNavItem(
  * Contains:
  * - Scaffold with a bottom NavigationBar
  * - 4 tabs: Groups, Friends, Activity (with unread badge), Account
- * - Shell NavHost handles nested navigation within tabs
+ * - Shell NavHost handles ALL app screens — placeholders replaced
+ *   as we build each screen day by day.
  *
- * Back stack behavior:
- * - Switching tabs saves and restores each tab's back stack
- * - Pressing back within a tab navigates back within that tab
- * - Tapping the current tab pops to root (launchSingleTop)
+ * NavGraph.kt only handles auth flow + hands off here.
+ * All 39 app routes are registered in this NavHost.
  */
 @Composable
 fun MainShell(
@@ -124,7 +125,6 @@ fun MainShell(
                         selected = isSelected,
                         onClick  = {
                             if (selectedTabIndex == index) {
-                                // Already on this tab — pop to root
                                 shellNavController.popBackStack(
                                     route     = tab.route,
                                     inclusive = false,
@@ -189,7 +189,8 @@ fun MainShell(
             startDestination = Screen.Groups.route,
             modifier         = Modifier.padding(innerPadding),
         ) {
-            // ── Groups tab ────────────────────────────────────────────────────
+
+            // ── Tab roots ─────────────────────────────────────────────────────
             composable(Screen.Groups.route) {
                 GroupsHomeScreen(
                     onNavigateToGroup       = { groupId ->
@@ -201,9 +202,25 @@ fun MainShell(
                     onNavigateToCreateGroup = {
                         shellNavController.navigate(Screen.CreateGroup.route)
                     },
+                    onNavigateToAddExpense  = {                              // ← ADD THIS
+                        shellNavController.navigate(Screen.AddExpense.route())
+                    },
                 )
             }
+            composable(Screen.Friends.route) {
+                PlaceholderScreen("Friends")
+            }
+            composable(Screen.Activity.route) {
+                PlaceholderScreen("Activity")
+            }
+            composable(Screen.Account.route) {
+                PlaceholderScreen("Account")
+            }
+            composable(Screen.CurrencySelect.route) {
+                PlaceholderScreen("Currency Select")
+            }
 
+            // ── Group screens ─────────────────────────────────────────────────
             composable(
                 route     = Screen.GroupDetail.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
@@ -224,20 +241,202 @@ fun MainShell(
                     },
                 )
             }
+            composable(
+                route     = Screen.GroupSettings.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Group Settings") }
 
-            // ── Friends tab ───────────────────────────────────────────────────
-            composable(Screen.Friends.route) {
-                PlaceholderScreen("Friends")
+            composable(
+                route     = Screen.GroupMembers.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Group Members") }
+
+            composable(
+                route     = Screen.AddMember.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Add Member") }
+
+            composable(
+                route     = Screen.WhoOwesWho.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Who Owes Who") }
+
+            composable(
+                route     = Screen.TotalsSheet.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Totals Sheet") }
+
+            composable(
+                route     = Screen.GroupAnalytics.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Group Analytics") }
+
+            composable(Screen.CreateGroup.route) {
+                PlaceholderScreen("Create Group")
             }
 
-            // ── Activity tab ──────────────────────────────────────────────────
-            composable(Screen.Activity.route) {
-                PlaceholderScreen("Activity")
+            composable(
+                route     = Screen.JoinGroup.route,
+                arguments = listOf(
+                    navArgument("inviteCode") {
+                        type         = NavType.StringType
+                        nullable     = true
+                        defaultValue = null
+                    }
+                )
+            ) { PlaceholderScreen("Join Group") }
+
+            composable(
+                route     = Screen.RecurringExpenses.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Recurring Expenses") }
+
+            composable(
+                route     = Screen.Reminders.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Reminders") }
+
+            composable(
+                route     = Screen.CreateReminder.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Create Reminder") }
+
+            // ── Expense screens ───────────────────────────────────────────────
+            composable(
+                route     = Screen.AddExpense.route,
+                arguments = listOf(
+                    navArgument("groupId") {
+                        type         = NavType.StringType
+                        nullable     = true
+                        defaultValue = null
+                    }
+                )
+            ) {
+                AddExpenseScreen(
+                    onBack               = { shellNavController.popBackStack() },
+                    onSuccess            = { shellNavController.popBackStack() },
+                    onNavigateToCurrency = {
+                        shellNavController.navigate(Screen.CurrencySelect.route)
+                    },
+                )
+            }
+            composable(Screen.CurrencySelect.route) {
+                // Get ViewModel from parent AddExpense back stack entry
+                val parentEntry = remember(it) {
+                    shellNavController.getBackStackEntry(Screen.AddExpense.route)
+                }
+                val viewModel = hiltViewModel<AddExpenseViewModel>(parentEntry)
+                val currency by viewModel.currency.collectAsState()
+                CurrencySelectScreen(
+                    currentCurrency = currency,
+                    onSelect        = { selected -> viewModel.onCurrencyChanged(selected) },
+                    onBack          = { shellNavController.popBackStack() },
+                )
             }
 
-            // ── Account tab ───────────────────────────────────────────────────
-            composable(Screen.Account.route) {
-                PlaceholderScreen("Account")
+            composable(
+                route     = Screen.EditExpense.route,
+                arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Edit Expense") }
+
+            composable(
+                route     = Screen.ExpenseDetail.route,
+                arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
+            ) {
+                ExpenseDetailScreen(
+                    onBack             = { shellNavController.popBackStack() },
+                    onNavigateToEdit   = { expenseId ->
+                        shellNavController.navigate(Screen.EditExpense.route(expenseId))
+                    },
+                    onNavigateToSettle = { otherUserId ->
+                        shellNavController.navigate(Screen.SettleUp.route(otherUserId))
+                    },
+                    onDeleted          = { shellNavController.popBackStack() },
+                )
+            }
+
+            composable(
+                route     = Screen.ReceiptScan.route,
+                arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Receipt Scan") }
+
+            composable(
+                route     = Screen.ItemAssignment.route,
+                arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Item Assignment") }
+
+            // ── Settlement screens ────────────────────────────────────────────
+            composable(
+                route     = Screen.SettleUp.route,
+                arguments = listOf(
+                    navArgument("otherUserId") { type = NavType.StringType },
+                    navArgument("groupId") {
+                        type         = NavType.StringType
+                        nullable     = true
+                        defaultValue = null
+                    }
+                )
+            ) {
+                SettleUpScreen(
+                    onBack    = { shellNavController.popBackStack() },
+                    onSuccess = { shellNavController.popBackStack() },
+                )
+            }
+
+            composable(
+                route     = Screen.PartialSettle.route,
+                arguments = listOf(
+                    navArgument("otherUserId") { type = NavType.StringType },
+                    navArgument("groupId") {
+                        type         = NavType.StringType
+                        nullable     = true
+                        defaultValue = null
+                    }
+                )
+            ) { PlaceholderScreen("Partial Settle") }
+
+            composable(
+                route     = Screen.SettlementHistory.route,
+                arguments = listOf(navArgument("otherUserId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Settlement History") }
+
+            // ── Friend screens ────────────────────────────────────────────────
+            composable(
+                route     = Screen.FriendDetail.route,
+                arguments = listOf(navArgument("friendId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Friend Detail") }
+
+            composable(
+                route     = Screen.FriendSettings.route,
+                arguments = listOf(navArgument("friendId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Friend Settings") }
+
+            composable(
+                route     = Screen.FriendAnalytics.route,
+                arguments = listOf(navArgument("friendId") { type = NavType.StringType })
+            ) { PlaceholderScreen("Friend Analytics") }
+
+            composable(Screen.AddFriend.route) {
+                PlaceholderScreen("Add Friend")
+            }
+
+            // ── Account screens ───────────────────────────────────────────────
+            composable(Screen.EditProfile.route) {
+                PlaceholderScreen("Edit Profile")
+            }
+            composable(Screen.ChangePassword.route) {
+                PlaceholderScreen("Change Password")
+            }
+            composable(Screen.MyAnalytics.route) {
+                PlaceholderScreen("My Analytics")
+            }
+            composable(Screen.ImportSplitwise.route) {
+                PlaceholderScreen("Import from Splitwise")
+            }
+
+            // ── Search ────────────────────────────────────────────────────────
+            composable(Screen.Search.route) {
+                PlaceholderScreen("Search")
             }
         }
     }

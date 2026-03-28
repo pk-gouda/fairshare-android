@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +48,7 @@ import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsIconButton
 import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSecondaryButton
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -79,19 +81,19 @@ import com.prathik.fairshare.util.MoneyUtils
  * Shows:
  * - Net balance hero section (how much you're owed overall)
  * - LazyVerticalGrid of group tiles with gradients by GroupType
- * - FAB to create a new group (same as top bar + button)
- * - Empty state when user has no groups
- *
- * Top bar has no title — just search + create group icons.
- * Both FAB and top bar + navigate to CreateGroup.
+ * - "Create a group" button at bottom of grid (always visible)
+ * - FAB → Add Expense (quick add)
+ * - Top bar GroupAdd icon → Create Group
+ * - Empty state CTA → Create Group
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsHomeScreen(
-    onNavigateToGroup      : (String) -> Unit,
-    onNavigateToSearch     : () -> Unit,
-    onNavigateToCreateGroup: () -> Unit,
-    viewModel              : GroupsViewModel = hiltViewModel(),
+    onNavigateToGroup       : (String) -> Unit,
+    onNavigateToSearch      : () -> Unit,
+    onNavigateToCreateGroup : () -> Unit,
+    onNavigateToAddExpense  : () -> Unit,
+    viewModel               : GroupsViewModel = hiltViewModel(),
 ) {
     val groupsState    by viewModel.groupsState.collectAsState()
     val balanceSummary by viewModel.balanceSummary.collectAsState()
@@ -117,16 +119,16 @@ fun GroupsHomeScreen(
             )
         },
         floatingActionButton = {
-            // FAB does the same thing as the top bar + button — create a group
+            // FAB → Add Expense (quick action)
             FloatingActionButton(
-                onClick        = onNavigateToCreateGroup,
+                onClick        = onNavigateToAddExpense,
                 containerColor = Green400,
                 contentColor   = Surface0,
                 shape          = RoundedCornerShape(Radius.full),
             ) {
                 Icon(
                     imageVector        = Icons.Filled.Add,
-                    contentDescription = "Create group",
+                    contentDescription = "Add expense",
                     modifier           = Modifier.size(24.dp),
                 )
             }
@@ -186,6 +188,17 @@ fun GroupsHomeScreen(
                                         onClick = { onNavigateToGroup(group.id) },
                                     )
                                 }
+
+                                // "Create a group" button — spans both columns
+                                item(span = { GridItemSpan(2) }) {
+                                    FsSecondaryButton(
+                                        text     = "+ Create a group",
+                                        onClick  = onNavigateToCreateGroup,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = Spacing.sm),
+                                    )
+                                }
                             }
                         }
                     }
@@ -227,8 +240,7 @@ private fun BalanceHeroSection(
 
         Text(
             text       = netText,
-            fontFamily = SyneFontFamily,
-            fontWeight = FontWeight.ExtraBold,
+            fontWeight = FontWeight.Bold,
             fontSize   = 42.sp,
             color      = netColor,
         )
@@ -292,7 +304,6 @@ private fun GroupTile(
             modifier            = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            // Group type emoji
             Text(
                 text     = groupTypeEmoji(group.type),
                 fontSize = 24.sp,

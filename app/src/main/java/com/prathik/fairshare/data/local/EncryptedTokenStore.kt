@@ -45,20 +45,27 @@ class EncryptedTokenStore @Inject constructor(
     )
 
     companion object {
-        private const val KEY_ACCESS_TOKEN  = "access_token"
-        private const val KEY_REFRESH_TOKEN = "refresh_token"
-        private const val KEY_USER_ID       = "user_id"
+        private const val KEY_ACCESS_TOKEN       = "access_token"
+        private const val KEY_REFRESH_TOKEN      = "refresh_token"
+        private const val KEY_USER_ID            = "user_id"
+        private const val KEY_PREFERRED_CURRENCY = "preferred_currency" // ← add
     }
 
     /**
      * Saves all three tokens atomically after successful login or register.
      * Uses commit() for guaranteed disk persistence before returning.
      */
-    fun saveTokens(accessToken: String, refreshToken: String, userId: String) {
+    fun saveTokens(
+        accessToken      : String,
+        refreshToken     : String,
+        userId           : String,
+        preferredCurrency: String = "USD",
+    ) {
         prefs.edit()
             .putString(KEY_ACCESS_TOKEN, accessToken)
             .putString(KEY_REFRESH_TOKEN, refreshToken)
             .putString(KEY_USER_ID, userId)
+            .putString(KEY_PREFERRED_CURRENCY, preferredCurrency)
             .commit()
     }
 
@@ -86,6 +93,9 @@ class EncryptedTokenStore @Inject constructor(
     /**
      * Returns the stored user ID, or null if not logged in.
      */
+    fun getPreferredCurrency(): String =
+        prefs.getString(KEY_PREFERRED_CURRENCY, "USD") ?: "USD"
+
     fun getUserId(): String? = prefs.getString(KEY_USER_ID, null)
 
     /**

@@ -28,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -38,6 +39,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
 import com.prathik.fairshare.ui.components.FsEmptyState
@@ -86,6 +90,14 @@ fun GroupDetailScreen(
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val groupName = (groupState as? GroupDetailUiState.Success)?.group?.name ?: "Group"
+
+    // Auto-refresh expenses every time screen resumes (back from AddExpense/ExpenseDetail)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.refreshExpenses()
+        }
+    }
 
     Scaffold(
         containerColor = Surface0,
@@ -140,7 +152,7 @@ fun GroupDetailScreen(
                         item {
                             BalanceCard(
                                 yourBalance = yourBalance,
-                                currency    = state.group.memberCount.toString(),
+                                currency    = "USD",
                                 onSettle    = { onNavigateToSettle(viewModel.groupId) },
                                 modifier    = Modifier.padding(Spacing.lg),
                             )
@@ -258,8 +270,7 @@ private fun BalanceCard(
 
             Text(
                 text       = balanceText,
-                fontFamily = SyneFontFamily,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Bold,
                 fontSize   = 36.sp,
                 color      = balanceColor,
             )

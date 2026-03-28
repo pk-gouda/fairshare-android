@@ -31,7 +31,7 @@ interface ExpenseApiService {
     ): ApiResponse<ExpenseResponse>
 
     @DELETE("api/expenses/{expenseId}")
-    suspend fun deleteExpense(@Path("expenseId") expenseId: String): ApiResponse<Unit>
+    suspend fun deleteExpense(@Path("expenseId") expenseId: String): ApiResponse<String?>
 
     @POST("api/expenses/{expenseId}/restore")
     suspend fun restoreExpense(@Path("expenseId") expenseId: String): ApiResponse<ExpenseResponse>

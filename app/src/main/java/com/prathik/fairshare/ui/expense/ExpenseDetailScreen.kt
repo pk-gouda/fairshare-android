@@ -1,0 +1,480 @@
+package com.prathik.fairshare.ui.expense
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.Notes
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.prathik.fairshare.domain.model.Expense
+import com.prathik.fairshare.domain.model.SplitType
+import com.prathik.fairshare.ui.components.FsErrorScreen
+import com.prathik.fairshare.ui.components.FsIconButton
+import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsPrimaryButton
+import com.prathik.fairshare.ui.components.FsSectionLabel
+import com.prathik.fairshare.ui.components.FsTextButton
+import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.theme.Green400
+import com.prathik.fairshare.ui.theme.Negative
+import com.prathik.fairshare.ui.theme.Radius
+import com.prathik.fairshare.ui.theme.Spacing
+import com.prathik.fairshare.ui.theme.Surface0
+import com.prathik.fairshare.ui.theme.Surface2
+import com.prathik.fairshare.ui.theme.Surface4
+import com.prathik.fairshare.ui.theme.SyneFontFamily
+import com.prathik.fairshare.ui.theme.TextPrimary
+import com.prathik.fairshare.ui.theme.TextSecondary
+import com.prathik.fairshare.util.MoneyUtils
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
+/**
+ * Expense Detail Screen.
+ *
+ * Shows full expense info:
+ * - Large amount + description header
+ * - Meta: group, date, category, notes
+ * - Who paid section
+ * - Split breakdown (each member's share + settled status)
+ * - Your balance summary
+ * - Settle Up button (if you owe)
+ * - Edit / Delete (if you created the expense)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ExpenseDetailScreen(
+    onBack          : () -> Unit,
+    onNavigateToEdit: (String) -> Unit,
+    onNavigateToSettle: (String) -> Unit,
+    onDeleted       : () -> Unit,
+    viewModel       : ExpenseDetailViewModel = hiltViewModel(),
+) {
+    val expenseState by viewModel.expenseState.collectAsState()
+    val actionState  by viewModel.actionState.collectAsState()
+    val snackbarHost = remember { SnackbarHostState() }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    val isLoading = expenseState is ExpenseDetailUiState.Loading
+
+    LaunchedEffect(actionState) {
+        when (val state = actionState) {
+            is ExpenseActionState.Deleted -> { onDeleted(); viewModel.resetActionState() }
+            is ExpenseActionState.Error   -> { snackbarHost.showSnackbar(state.message); viewModel.resetActionState() }
+            else -> Unit
+        }
+    }
+
+    Scaffold(
+        containerColor = Surface0,
+        topBar = {
+            FsTopBar(
+                title  = "Expense detail",
+                onBack = onBack,
+                actions = {
+                    val expense = (expenseState as? ExpenseDetailUiState.Success)?.expense
+                    if (expense != null && expense.addedById == viewModel.currentUserId) {
+                        FsIconButton(
+                            icon               = Icons.Filled.Edit,
+                            contentDescription = "Edit",
+                            onClick            = { onNavigateToEdit(viewModel.expenseId) },
+                        )
+                        FsIconButton(
+                            icon               = Icons.Filled.Delete,
+                            contentDescription = "Delete",
+                            onClick            = { showDeleteDialog = true },
+                            tint               = Negative,
+                        )
+                    }
+                }
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHost) },
+    ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh    = { viewModel.loadExpense() },
+            modifier     = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
+            when (val state = expenseState) {
+                is ExpenseDetailUiState.Loading -> FsLoadingScreen()
+                is ExpenseDetailUiState.Error   -> FsErrorScreen(
+                    message = state.message, isNetwork = state.isNetwork,
+                    onRetry = { viewModel.loadExpense() })
+                is ExpenseDetailUiState.Success -> ExpenseDetailContent(
+                    expense       = state.expense,
+                    currentUserId = viewModel.currentUserId,
+                    onSettle      = { onNavigateToSettle(it) },
+                    isDeleting    = actionState is ExpenseActionState.Loading,
+                )
+            }
+        }
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title            = { Text("Delete expense?") },
+            text             = { Text("This will permanently delete the expense and update all balances. This cannot be undone.") },
+            confirmButton    = {
+                FsPrimaryButton(
+                    text      = "Delete",
+                    onClick   = { showDeleteDialog = false; viewModel.deleteExpense() },
+                    isLoading = actionState is ExpenseActionState.Loading,
+                )
+            },
+            dismissButton    = {
+                FsTextButton(text = "Cancel", onClick = { showDeleteDialog = false })
+            },
+            containerColor   = Surface2,
+            titleContentColor = TextPrimary,
+            textContentColor  = TextSecondary,
+        )
+    }
+}
+
+// ── Content ───────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ExpenseDetailContent(
+    expense      : Expense,
+    currentUserId: String?,
+    onSettle     : (String) -> Unit,
+    isDeleting   : Boolean,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        // ── Amount hero ───────────────────────────────────────────────────────
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier            = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Spacing.xl),
+        ) {
+            // Category emoji
+            Text(
+                text     = categoryEmoji(expense.category?.name),
+                fontSize = 36.sp,
+            )
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            Text(
+                text       = MoneyUtils.format(expense.totalAmount, expense.currency),
+                fontFamily = SyneFontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize   = 42.sp,
+                color      = TextPrimary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text       = expense.description,
+                fontSize   = 16.sp,
+                color      = TextSecondary,
+                fontWeight = FontWeight.Medium,
+            )
+
+            // Your balance pill
+            Spacer(modifier = Modifier.height(Spacing.md))
+            val balanceColor = when {
+                expense.yourBalance > 0 -> Green400
+                expense.yourBalance < 0 -> Negative
+                else                    -> TextSecondary
+            }
+            val balanceText = when {
+                expense.yourBalance > 0 -> "you get back ${MoneyUtils.format(expense.yourBalance, expense.currency)}"
+                expense.yourBalance < 0 -> "you owe ${MoneyUtils.format(-expense.yourBalance, expense.currency)}"
+                else                    -> "you're settled up"
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.full))
+                    .background(balanceColor.copy(alpha = 0.12f))
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+            ) {
+                Text(text = balanceText, fontSize = 13.sp, color = balanceColor, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+
+        // ── Meta card ─────────────────────────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.lg)
+                .clip(RoundedCornerShape(Radius.xl))
+                .background(Surface2),
+        ) {
+            if (expense.groupName != null) {
+                MetaRow(icon = "👥", label = "Group", value = expense.groupName)
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg))
+            }
+            MetaRow(
+                icon  = "📅",
+                label = "Date",
+                value = formatDate(expense.expenseDate),
+            )
+            if (expense.category != null) {
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg))
+                MetaRow(
+                    icon  = categoryEmoji(expense.category.name),
+                    label = "Category",
+                    value = expense.category.name.lowercase().replace("_", " ")
+                        .replaceFirstChar { it.uppercase() },
+                )
+            }
+            if (!expense.notes.isNullOrBlank()) {
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg))
+                MetaRow(icon = "📝", label = "Notes", value = expense.notes)
+            }
+            HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                modifier = Modifier.padding(horizontal = Spacing.lg))
+            MetaRow(
+                icon  = "👤",
+                label = "Added by",
+                value = if (expense.addedById == currentUserId) "You" else expense.addedByName,
+            )
+        }
+
+        // ── Who paid ──────────────────────────────────────────────────────────
+        Spacer(modifier = Modifier.height(Spacing.sm))
+        FsSectionLabel(
+            text     = "Who paid",
+            modifier = Modifier.padding(horizontal = Spacing.lg),
+        )
+        Spacer(modifier = Modifier.height(Spacing.sm))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg)
+                .clip(RoundedCornerShape(Radius.xl))
+                .background(Surface2),
+        ) {
+            expense.payers.forEachIndexed { index, payer ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    val name = if (payer.userId == currentUserId) "You" else payer.fullName
+                    Text(text = name, fontSize = 15.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                    Text(
+                        text       = MoneyUtils.format(payer.amountPaid, expense.currency),
+                        fontSize   = 15.sp,
+                        color      = Green400,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                if (index < expense.payers.lastIndex) {
+                    HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                        modifier = Modifier.padding(horizontal = Spacing.lg))
+                }
+            }
+        }
+
+        // ── Split breakdown ───────────────────────────────────────────────────
+        Spacer(modifier = Modifier.height(Spacing.lg))
+        FsSectionLabel(
+            text     = "Split breakdown",
+            modifier = Modifier.padding(horizontal = Spacing.lg),
+        )
+        Spacer(modifier = Modifier.height(Spacing.sm))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg)
+                .clip(RoundedCornerShape(Radius.xl))
+                .background(Surface2),
+        ) {
+            expense.splits.forEachIndexed { index, split ->
+                val name     = if (split.userId == currentUserId) "You" else split.fullName
+                val rowColor = when {
+                    split.isSettled      -> TextSecondary
+                    split.userId == currentUserId && expense.yourBalance < 0 -> Negative
+                    else                 -> TextPrimary
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = name, fontSize = 15.sp, color = rowColor, fontWeight = FontWeight.Medium)
+                        if (split.isSettled) {
+                            Spacer(modifier = Modifier.width(Spacing.sm))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(Radius.xs))
+                                    .background(Green400.copy(alpha = 0.12f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            ) {
+                                Text("settled", fontSize = 10.sp, color = Green400, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                    // Show amount + percentage/shares if applicable
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text       = MoneyUtils.format(split.amountOwed, expense.currency),
+                            fontSize   = 15.sp,
+                            color      = if (split.isSettled) TextSecondary else rowColor,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (expense.splitType == SplitType.PERCENTAGE && split.percentage != null) {
+                            Text(
+                                text     = "${split.percentage.toInt()}%",
+                                fontSize = 11.sp,
+                                color    = TextSecondary,
+                            )
+                        }
+                        if (expense.splitType == SplitType.SHARES && split.shares != null) {
+                            Text(
+                                text     = "${split.shares} shares",
+                                fontSize = 11.sp,
+                                color    = TextSecondary,
+                            )
+                        }
+                    }
+                }
+                if (index < expense.splits.lastIndex) {
+                    HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                        modifier = Modifier.padding(horizontal = Spacing.lg))
+                }
+            }
+        }
+
+        // ── Settle Up button (only if you owe) ────────────────────────────────
+        if (expense.yourBalance < 0) {
+            val payer = expense.payers.firstOrNull()
+            if (payer != null) {
+                Spacer(modifier = Modifier.height(Spacing.xl))
+                FsPrimaryButton(
+                    text     = "Settle up · ${MoneyUtils.format(-expense.yourBalance, expense.currency)}",
+                    onClick  = { onSettle(payer.userId) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg),
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(Spacing.xxxl))
+    }
+}
+
+// ── Meta Row ──────────────────────────────────────────────────────────────────
+
+@Composable
+private fun MetaRow(icon: String, label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = icon, fontSize = 16.sp)
+            Spacer(modifier = Modifier.width(Spacing.md))
+            Text(text = label, fontSize = 15.sp, color = TextSecondary)
+        }
+        Text(
+            text       = value,
+            fontSize   = 15.sp,
+            color      = TextPrimary,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+private fun formatDate(isoDate: String): String {
+    return try {
+        val date  = LocalDateTime.parse(isoDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME).toLocalDate()
+        val today = LocalDate.now()
+        when {
+            date == today              -> "Today"
+            date == today.minusDays(1) -> "Yesterday"
+            else -> date.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+        }
+    } catch (e: Exception) { isoDate.take(10) }
+}
+
+private fun categoryEmoji(category: String?): String = when (category) {
+    "DINING_OUT"        -> "🍽️"
+    "GROCERIES"         -> "🛒"
+    "TAXI"              -> "🚕"
+    "BUS_TRAIN"         -> "🚌"
+    "PLANE"             -> "✈️"
+    "HOTEL"             -> "🏨"
+    "RENT"              -> "🏠"
+    "ELECTRICITY"       -> "⚡"
+    "WATER"             -> "💧"
+    "GAS_FUEL"          -> "⛽"
+    "TV_PHONE_INTERNET" -> "📱"
+    "MOVIES"            -> "🎬"
+    "GAMES"             -> "🎮"
+    "MUSIC"             -> "🎵"
+    "SPORTS"            -> "⚽"
+    "MEDICAL"           -> "💊"
+    "EDUCATION"         -> "📚"
+    "GIFTS"             -> "🎁"
+    "LIQUOR"            -> "🍺"
+    "PETS"              -> "🐾"
+    "CLOTHING"          -> "👕"
+    "PARKING"           -> "🅿️"
+    else                -> "💰"
+}

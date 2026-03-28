@@ -31,8 +31,9 @@ suspend fun <T> safeApiCall(
 ): ApiResult<T> {
     return try {
         val response = call()
-        if (response.success && response.data != null) {
-            ApiResult.Success(response.data)
+        if (response.success) {
+            @Suppress("UNCHECKED_CAST")
+            ApiResult.Success(response.data as T)
         } else {
             ApiResult.HttpError(
                 code = 0,

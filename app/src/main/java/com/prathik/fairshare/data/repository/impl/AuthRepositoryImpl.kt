@@ -32,9 +32,10 @@ class AuthRepositoryImpl @Inject constructor(
         if (result is ApiResult.Success) {
             result.data.user?.let { userResponse ->
                 tokenStore.saveTokens(
-                    accessToken  = result.data.accessToken,
-                    refreshToken = result.data.refreshToken,
-                    userId       = userResponse.id,
+                    accessToken       = result.data.accessToken,
+                    refreshToken      = result.data.refreshToken,
+                    userId            = userResponse.id,
+                    preferredCurrency = userResponse.preferredCurrency ?: "USD",
                 )
                 cacheUser(userResponse.toDomain())
             }

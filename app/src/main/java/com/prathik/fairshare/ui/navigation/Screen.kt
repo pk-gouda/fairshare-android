@@ -67,7 +67,7 @@ sealed class Screen(val route: String) {
     object AddExpense : Screen("add_expense?groupId={groupId}") {
         fun route(groupId: String? = null) =
             if (groupId != null) "add_expense?groupId=$groupId"
-            else "add_expense"
+            else "add_expense?groupId="  // ← always include the param
     }
 
     object EditExpense : Screen("expense/{expenseId}/edit") {
@@ -123,6 +123,8 @@ sealed class Screen(val route: String) {
     object ChangePassword : Screen("change_password")
     object MyAnalytics : Screen("my_analytics")
     object ImportSplitwise : Screen("import_splitwise")
+
+    object CurrencySelect : Screen("currency_select")
 
     // ── Search ────────────────────────────────────────────────────────────────
     object Search : Screen("search")

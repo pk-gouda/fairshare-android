@@ -101,11 +101,20 @@ class ExpenseRepositoryImpl @Inject constructor(
         }.mapSuccess { it.toDomain() }
 
     override suspend fun deleteExpense(expenseId: String): ApiResult<Unit> {
-        val result = safeApiCall { expenseService.deleteExpense(expenseId) }.mapSuccess { }
-        if (result is ApiResult.Success) {
-            expenseDao.deleteById(expenseId)
+        val result = safeApiCall { expenseService.deleteExpense(expenseId) }
+        return when (result) {
+            is ApiResult.Success -> {
+                expenseDao.deleteById(expenseId)
+                ApiResult.Success(Unit)
+            }
+            is ApiResult.NetworkError    -> result
+            is ApiResult.HttpError       -> result
+            is ApiResult.ValidationError -> result
+            is ApiResult.Unauthorized    -> result
+            is ApiResult.NotFound        -> result
+            is ApiResult.Forbidden       -> result
+            is ApiResult.Conflict        -> result
         }
-        return result
     }
 
     override suspend fun restoreExpense(expenseId: String): ApiResult<Expense> =
