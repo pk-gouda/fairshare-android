@@ -1,0 +1,153 @@
+package com.prathik.fairshare.ui.groups
+
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.Group
+import com.prathik.fairshare.domain.model.GroupMember
+import com.prathik.fairshare.domain.usecase.group.DeleteGroupUseCase
+import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
+import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
+import com.prathik.fairshare.domain.usecase.group.RemoveMemberUseCase
+import com.prathik.fairshare.domain.usecase.group.UpdateGroupUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class GroupSettingsViewModel @Inject constructor(
+    private val getGroupUseCase    : GetGroupUseCase,
+    private val getMembersUseCase  : GetGroupMembersUseCase,
+    private val updateGroupUseCase : UpdateGroupUseCase,
+    private val removeMemberUseCase: RemoveMemberUseCase,
+    private val deleteGroupUseCase : DeleteGroupUseCase,
+    private val tokenStore         : EncryptedTokenStore,
+    savedStateHandle               : SavedStateHandle,
+) : ViewModel() {
+
+    val groupId    : String = checkNotNull(savedStateHandle["groupId"])
+    val currentUserId: String? = tokenStore.getUserId()
+
+    // ── UI state ──────────────────────────────────────────────────────────────
+    private val _group = MutableStateFlow<Group?>(null)
+    val group: StateFlow<Group?> = _group.asStateFlow()
+
+    private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
+    val members: StateFlow<List<GroupMember>> = _members.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _actionState = MutableStateFlow<GroupSettingsActionState>(GroupSettingsActionState.Idle)
+    val actionState: StateFlow<GroupSettingsActionState> = _actionState.asStateFlow()
+
+    // Editable fields
+    private val _editName = MutableStateFlow("")
+    val editName: StateFlow<String> = _editName.asStateFlow()
+
+    private val _simplifyDebts = MutableStateFlow(false)
+    val simplifyDebts: StateFlow<Boolean> = _simplifyDebts.asStateFlow()
+
+    private val _muteNotifications = MutableStateFlow(false)
+    val muteNotifications: StateFlow<Boolean> = _muteNotifications.asStateFlow()
+
+    init { loadData() }
+
+    fun loadData() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            // Load group + members in parallel
+            val groupResult   = getGroupUseCase(groupId)
+            val membersResult = getMembersUseCase(groupId)
+
+            if (groupResult is ApiResult.Success) {
+                _group.value = groupResult.data
+                _editName.value = groupResult.data.name
+                _simplifyDebts.value = groupResult.data.simplifyDebts
+            }
+            if (membersResult is ApiResult.Success) {
+                _members.value = membersResult.data
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun onNameChanged(value: String) { _editName.value = value }
+    fun onSimplifyDebtsToggled()     { _simplifyDebts.value = !_simplifyDebts.value }
+    fun onMuteNotificationsToggled() { _muteNotifications.value = !_muteNotifications.value }
+
+    fun saveGroupName() {
+        val name = _editName.value.trim()
+        if (name == _group.value?.name) return
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (val result = updateGroupUseCase(
+                groupId       = groupId,
+                name          = name,
+                description   = null,
+                simplifyDebts = null,
+            )) {
+                is ApiResult.Success -> {
+                    _group.value = result.data
+                    _actionState.value = GroupSettingsActionState.Success("Group name updated")
+                }
+                else -> _actionState.value = GroupSettingsActionState.Error("Failed to update name")
+            }
+        }
+    }
+
+    fun saveSimplifyDebts(value: Boolean) {
+        viewModelScope.launch {
+            updateGroupUseCase(
+                groupId       = groupId,
+                name          = null,
+                description   = null,
+                simplifyDebts = value,
+            )
+        }
+    }
+
+    fun removeMember(memberId: String) {
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (removeMemberUseCase(groupId, memberId)) {
+                is ApiResult.Success -> {
+                    _members.value = _members.value.filter { it.userId != memberId }
+                    _actionState.value = GroupSettingsActionState.Success("Member removed")
+                }
+                is ApiResult.Conflict -> _actionState.value =
+                    GroupSettingsActionState.Error("Member has unsettled balances")
+                else -> _actionState.value =
+                    GroupSettingsActionState.Error("Failed to remove member")
+            }
+        }
+    }
+
+    fun deleteGroup() {
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (deleteGroupUseCase(groupId)) {
+                is ApiResult.Success  -> _actionState.value = GroupSettingsActionState.GroupDeleted
+                is ApiResult.Conflict -> _actionState.value =
+                    GroupSettingsActionState.Error("Settle all balances before deleting")
+                else -> _actionState.value =
+                    GroupSettingsActionState.Error("Failed to delete group")
+            }
+        }
+    }
+
+    fun resetActionState() { _actionState.value = GroupSettingsActionState.Idle }
+}
+
+sealed class GroupSettingsActionState {
+    object Idle         : GroupSettingsActionState()
+    object Loading      : GroupSettingsActionState()
+    object GroupDeleted : GroupSettingsActionState()
+    data class Success(val message: String) : GroupSettingsActionState()
+    data class Error(val message: String)   : GroupSettingsActionState()
+}

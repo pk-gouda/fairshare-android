@@ -2,39 +2,53 @@ package com.prathik.fairshare.ui.groups
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,43 +56,63 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
+import com.prathik.fairshare.domain.model.Group
+import com.prathik.fairshare.domain.model.GroupType
+import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsIconButton
 import com.prathik.fairshare.ui.components.FsLoadingScreen
-import com.prathik.fairshare.ui.components.FsSectionLabel
-import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
+import com.prathik.fairshare.ui.theme.Surface3
 import com.prathik.fairshare.ui.theme.Surface4
-import com.prathik.fairshare.ui.theme.SyneFontFamily
+import com.prathik.fairshare.ui.theme.TextDisabled
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
-import com.prathik.fairshare.util.DateFormatter
+import com.prathik.fairshare.ui.theme.TextTertiary
+import com.prathik.fairshare.ui.theme.TileCoupleEnd
+import com.prathik.fairshare.ui.theme.TileCoupleStart
+import com.prathik.fairshare.ui.theme.TileEventEnd
+import com.prathik.fairshare.ui.theme.TileEventStart
+import com.prathik.fairshare.ui.theme.TileFriendsEnd
+import com.prathik.fairshare.ui.theme.TileFriendsStart
+import com.prathik.fairshare.ui.theme.TileHomeEnd
+import com.prathik.fairshare.ui.theme.TileHomeStart
+import com.prathik.fairshare.ui.theme.TileOfficeEnd
+import com.prathik.fairshare.ui.theme.TileOfficeStart
+import com.prathik.fairshare.ui.theme.TileOtherEnd
+import com.prathik.fairshare.ui.theme.TileOtherStart
+import com.prathik.fairshare.ui.theme.TileTripEnd
+import com.prathik.fairshare.ui.theme.TileTripStart
 import com.prathik.fairshare.util.MoneyUtils
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Group Detail Screen.
+ * Group Detail Screen — redesigned.
  *
- * Shows:
- * - Group name in top bar with settings overflow
- * - Balance card — how much you lent/owe in this group
- * - Expense list grouped by month section headers
- * - FAB to add expense in this group
+ * Layout:
+ * - Top bar: back + group name + search + settings (round icon)
+ * - Balance card: "You are owed $X overall" + per-person breakdown with avatars
+ * - Action pills row: Settle up (green) · Balances · Charts · Totals · Export
+ * - Expense list grouped by month with date column + emoji icon + description + amount
+ * - FAB: add expense
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupDetailScreen(
     onBack              : () -> Unit,
     onNavigateToSettings: (String) -> Unit,
+    onNavigateToSearch  : () -> Unit = {},
     onNavigateToExpense : (String) -> Unit,
     onNavigateToAddExpense: (String) -> Unit,
     onNavigateToSettle  : (String) -> Unit,
@@ -86,12 +120,31 @@ fun GroupDetailScreen(
 ) {
     val groupState    by viewModel.groupState.collectAsState()
     val expensesState by viewModel.expensesState.collectAsState()
+    val balances      by viewModel.balances.collectAsState()
     val yourBalance   by viewModel.yourBalance.collectAsState()
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val groupName = (groupState as? GroupDetailUiState.Success)?.group?.name ?: "Group"
+    val groupType = (groupState as? GroupDetailUiState.Success)?.group?.type ?: GroupType.OTHER
 
-    // Auto-refresh expenses every time screen resumes (back from AddExpense/ExpenseDetail)
+    // Cover height in px — used to detect when cover scrolls away
+    val coverHeightDp = 220
+    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    // Show top bar name only once the cover (220dp) has scrolled past
+    val showTopBarName by remember {
+        derivedStateOf {
+            val firstVisible = lazyListState.firstVisibleItemIndex
+            val offset       = lazyListState.firstVisibleItemScrollOffset
+            // Cover is item 0 — once it's scrolled past OR offset is large enough
+            firstVisible > 0 || offset > 400
+        }
+    }
+
+    // Top gradient color per group type — used for top bar background
+    val topBarColor = coverTopColor(groupType)
+
+    // Auto-refresh expenses every time screen resumes
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -100,26 +153,14 @@ fun GroupDetailScreen(
     }
 
     Scaffold(
-        containerColor = Surface0,
-        topBar = {
-            FsTopBar(
-                title   = groupName,
-                onBack  = onBack,
-                actions = {
-                    FsIconButton(
-                        icon               = Icons.Filled.MoreVert,
-                        contentDescription = "Settings",
-                        onClick            = { onNavigateToSettings(viewModel.groupId) },
-                    )
-                }
-            )
-        },
+        containerColor    = Surface0,
+        contentWindowInsets = WindowInsets(0),
         floatingActionButton = {
             FloatingActionButton(
                 onClick        = { onNavigateToAddExpense(viewModel.groupId) },
                 containerColor = Green400,
                 contentColor   = Surface0,
-                shape          = RoundedCornerShape(Radius.full),
+                shape          = RoundedCornerShape(Radius.lg),
             ) {
                 Icon(
                     imageVector        = Icons.Filled.Add,
@@ -129,180 +170,516 @@ fun GroupDetailScreen(
             }
         },
     ) { innerPadding ->
-        PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh    = { viewModel.loadData() },
-            modifier     = Modifier
+        Box(
+            modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            when (val state = groupState) {
-                is GroupDetailUiState.Loading -> FsLoadingScreen()
+            PullToRefreshBox(
+                isRefreshing = isLoading,
+                onRefresh    = { viewModel.loadData() },
+                modifier     = Modifier.fillMaxSize(),
+            ) {
+                when (val state = groupState) {
+                    is GroupDetailUiState.Loading -> FsLoadingScreen()
 
-                is GroupDetailUiState.Error -> FsErrorScreen(
-                    message   = state.message,
-                    isNetwork = state.isNetwork,
-                    onRetry   = { viewModel.loadData() },
-                )
+                    is GroupDetailUiState.Error -> FsErrorScreen(
+                        message   = state.message,
+                        isNetwork = state.isNetwork,
+                        onRetry   = { viewModel.loadData() },
+                    )
 
-                is GroupDetailUiState.Success -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    is GroupDetailUiState.Success -> {
+                        LazyColumn(
+                            state    = lazyListState,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
 
-                        // ── Balance card ──────────────────────────────────────
-                        item {
-                            BalanceCard(
-                                yourBalance = yourBalance,
-                                currency    = "USD",
-                                onSettle    = { onNavigateToSettle(viewModel.groupId) },
-                                modifier    = Modifier.padding(Spacing.lg),
-                            )
-                        }
-
-                        // ── Expenses ──────────────────────────────────────────
-                        when (val expenses = expensesState) {
-                            is ExpensesUiState.Loading -> {
-                                item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
+                            // ── Cover photo ───────────────────────────────────────
+                            item {
+                                GroupCoverPhoto(
+                                    group = state.group,
+                                )
                             }
-                            is ExpensesUiState.Error -> {
-                                item {
-                                    FsErrorScreen(
-                                        message = expenses.message,
-                                        isNetwork = expenses.isNetwork,
-                                        onRetry = { viewModel.refreshExpenses() },
-                                    )
+
+                            // ── Balance card ──────────────────────────────────────
+                            item {
+                                BalanceCard(
+                                    yourBalance = yourBalance,
+                                    balances    = balances,
+                                    currency    = "USD",
+                                    onSettle    = { onNavigateToSettle(viewModel.groupId) },
+                                    modifier    = Modifier.padding(
+                                        horizontal = Spacing.lg,
+                                        vertical   = Spacing.md,
+                                    ),
+                                )
+                            }
+
+                            // ── Action pills row ──────────────────────────────────
+                            item {
+                                ActionPillsRow(
+                                    onSettleUp = { onNavigateToSettle(viewModel.groupId) },
+                                    modifier   = Modifier.padding(
+                                        start  = Spacing.lg,
+                                        end    = Spacing.lg,
+                                        bottom = Spacing.md,
+                                    ),
+                                )
+                            }
+
+                            // ── Expenses ──────────────────────────────────────────
+                            when (val expenses = expensesState) {
+                                is ExpensesUiState.Loading -> {
+                                    item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
                                 }
-                            }
-                            is ExpensesUiState.Success -> {
-                                if (expenses.expenses.isEmpty()) {
+                                is ExpensesUiState.Error -> {
                                     item {
-                                        FsEmptyState(
-                                            title    = "No expenses yet",
-                                            subtitle = "Add the first expense to get started",
-                                            modifier = Modifier.height(300.dp),
+                                        FsErrorScreen(
+                                            message   = expenses.message,
+                                            isNetwork = expenses.isNetwork,
+                                            onRetry   = { viewModel.refreshExpenses() },
                                         )
                                     }
-                                } else {
-                                    // Group expenses by month
-                                    val grouped = expenses.expenses
-                                        .groupBy { it.expenseDate.toMonthHeader() }
-
-                                    grouped.forEach { (monthHeader, monthExpenses) ->
+                                }
+                                is ExpensesUiState.Success -> {
+                                    if (expenses.expenses.isEmpty()) {
                                         item {
-                                            FsSectionLabel(
-                                                text     = monthHeader,
-                                                modifier = Modifier.padding(
-                                                    horizontal = Spacing.lg,
-                                                    vertical   = Spacing.sm,
-                                                )
+                                            FsEmptyState(
+                                                title    = "No expenses yet",
+                                                subtitle = "Add the first expense to get started",
+                                                modifier = Modifier.height(300.dp),
                                             )
                                         }
-                                        items(
-                                            items = monthExpenses,
-                                            key   = { it.id },
-                                        ) { expense ->
-                                            ExpenseRow(
-                                                expense = expense,
-                                                onClick = { onNavigateToExpense(expense.id) },
-                                            )
-                                            HorizontalDivider(
-                                                color     = Surface4,
-                                                thickness = 0.5.dp,
-                                                modifier  = Modifier.padding(horizontal = Spacing.lg),
-                                            )
-                                        }
-                                    }
+                                    } else {
+                                        // Group by month
+                                        val grouped = expenses.expenses
+                                            .sortedByDescending { it.expenseDate }
+                                            .groupBy { it.expenseDate.toMonthHeader() }
 
-                                    item { Spacer(modifier = Modifier.height(80.dp)) }
+                                        grouped.forEach { (monthHeader, monthExpenses) ->
+                                            item {
+                                                Text(
+                                                    text     = monthHeader.uppercase(),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color    = TextTertiary,
+                                                    letterSpacing = 1.sp,
+                                                    modifier = Modifier.padding(
+                                                        horizontal = Spacing.lg,
+                                                        vertical   = Spacing.sm,
+                                                    ),
+                                                )
+                                            }
+                                            items(
+                                                items = monthExpenses,
+                                                key   = { it.id },
+                                            ) { expense ->
+                                                ExpenseRow(
+                                                    expense = expense,
+                                                    onClick = { onNavigateToExpense(expense.id) },
+                                                )
+                                            }
+                                        }
+
+                                        item { Spacer(modifier = Modifier.height(80.dp)) }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+
+            // ── Fixed overlay top bar — always visible, stays on scroll ──────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (showTopBarName) topBarColor else Color.Transparent)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .offset(y = (-20).dp)
+                    .padding(horizontal = Spacing.lg, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                // Back
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
+                        .clickable { onBack() },
+                ) {
+                    Icon(
+                        imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint               = Color.White,
+                        modifier           = Modifier.size(20.dp),
+                    )
+                }
+
+                // Group name — only visible once cover name scrolls away
+                if (showTopBarName) {
+                    Text(
+                        text       = groupName,
+                        fontSize   = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color      = Color.White,
+                        maxLines   = 1,
+                        overflow   = TextOverflow.Ellipsis,
+                        modifier   = Modifier
+                            .weight(1f)
+                            .padding(horizontal = Spacing.md),
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+
+                // Search + Settings
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
+                            .clickable { onNavigateToSearch() },
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Search,
+                            contentDescription = "Search",
+                            tint               = Color.White,
+                            modifier           = Modifier.size(20.dp),
+                        )
+                    }
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
+                            .clickable { onNavigateToSettings(viewModel.groupId) },
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Settings,
+                            contentDescription = "Settings",
+                            tint               = Color.White,
+                            modifier           = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+        } // end outer Box
+    }
+}
+
+// ── Group Cover Photo ─────────────────────────────────────────────────────────
+
+@Composable
+private fun GroupCoverPhoto(
+    group: Group,
+) {
+    val colors = coverGradientColors(group.type)
+    val emoji  = coverEmoji(group.type)
+    val style  = coverEmojiStyle(group.type)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(220.dp)
+            .background(Brush.linearGradient(colors)),
+    ) {
+        // Large emoji — unique position per group type
+        Text(
+            text     = emoji,
+            fontSize = style.fontSize.sp,
+            modifier = Modifier
+                .align(style.alignment)
+                .offset(x = style.offset.first.dp, y = style.offset.second.dp)
+                .graphicsLayer { },
+        )
+
+        // Scrim at bottom for text legibility
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(100.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color(0xDD000000))
+                    )
+                ),
+        )
+
+        // Bottom: group name + member avatars + type pill
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(horizontal = Spacing.lg, vertical = Spacing.lg),
+        ) {
+            Text(
+                text       = group.name,
+                fontSize   = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color      = Color.White,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                Box(modifier = Modifier.width((group.memberCount.coerceAtMost(4) * 18 + 10).dp)) {
+                    repeat(group.memberCount.coerceAtMost(4)) { i ->
+                        Box(
+                            modifier = Modifier
+                                .offset(x = (i * 18).dp)
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x55FFFFFF))
+                        )
+                    }
+                }
+                Text(
+                    text     = "${group.memberCount} members",
+                    fontSize = 12.sp,
+                    color    = Color(0xCCFFFFFF),
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Radius.full))
+                        .background(Color(0x44FFFFFF))
+                        .padding(horizontal = Spacing.sm, vertical = 3.dp),
+                ) {
+                    Text(
+                        text       = group.type.name,
+                        fontSize   = 11.sp,
+                        color      = Color.White,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
         }
     }
 }
+
+// ── Cover helpers ─────────────────────────────────────────────────────────────
+
+/** Returns the top/darkest color of the cover gradient — used for the fixed top bar background */
+private fun coverTopColor(type: GroupType): Color = when (type) {
+    GroupType.TRIP      -> Color(0xFF0D2137)
+    GroupType.HOME      -> Color(0xFF1A0D2E)
+    GroupType.OFFICE    -> Color(0xFF1A1000)
+    GroupType.FRIENDS   -> Color(0xFF0D1F0D)
+    GroupType.COUPLE    -> Color(0xFF1F0D1A)
+    GroupType.EVENT     -> Color(0xFF1A1000)
+    GroupType.APARTMENT -> Color(0xFF0D1A1F)
+    GroupType.OTHER     -> Color(0xFF111112)
+}
+
+private fun coverGradientColors(type: GroupType): List<Color> = when (type) {
+    GroupType.TRIP      -> listOf(Color(0xFF0D2137), Color(0xFF1A3A5C), Color(0xFF0D4A6B))
+    GroupType.HOME      -> listOf(Color(0xFF1A0D2E), Color(0xFF2E1A4A), Color(0xFF3D1A5C))
+    GroupType.OFFICE    -> listOf(Color(0xFF1A1000), Color(0xFF2E1E00), Color(0xFF3D2800))
+    GroupType.FRIENDS   -> listOf(Color(0xFF0D1F0D), Color(0xFF1A3020), Color(0xFF1A3D1A))
+    GroupType.COUPLE    -> listOf(Color(0xFF1F0D1A), Color(0xFF2E1022), Color(0xFF3D1A2E))
+    GroupType.EVENT     -> listOf(Color(0xFF1A1000), Color(0xFF2A1800), Color(0xFF3A2200))
+    GroupType.APARTMENT -> listOf(Color(0xFF0D1A1F), Color(0xFF0D2A30), Color(0xFF0A2D35))
+    GroupType.OTHER     -> listOf(Color(0xFF111112), Color(0xFF1A1A1C), Color(0xFF222222))
+}
+
+private fun coverEmoji(type: GroupType): String = when (type) {
+    GroupType.TRIP      -> "✈️"
+    GroupType.HOME      -> "🏠"
+    GroupType.OFFICE    -> "💼"
+    GroupType.FRIENDS   -> "👫"
+    GroupType.COUPLE    -> "💑"
+    GroupType.EVENT     -> "🎉"
+    GroupType.APARTMENT -> "🏢"
+    GroupType.OTHER     -> "💰"
+}
+
+/**
+ * Returns (alignment, rotation, fontSize, offsetXY) per group type.
+ * Emoji is large and positioned in the upper-center area of the cover.
+ */
+private fun coverEmojiStyle(type: GroupType): CoverEmojiStyle = when (type) {
+    // Airplane: center-top area, tilted flying in from right
+    GroupType.TRIP      -> CoverEmojiStyle(Alignment.TopCenter,    -15f, 80, Pair(20, 50))
+    // House: center, slightly above mid
+    GroupType.HOME      -> CoverEmojiStyle(Alignment.Center,         0f, 82, Pair(0, -20))
+    // Briefcase: center, slightly right
+    GroupType.OFFICE    -> CoverEmojiStyle(Alignment.Center,         0f, 78, Pair(20, -10))
+    // Friends: center-top
+    GroupType.FRIENDS   -> CoverEmojiStyle(Alignment.TopCenter,      8f, 76, Pair(-10, 52))
+    // Couple: center
+    GroupType.COUPLE    -> CoverEmojiStyle(Alignment.Center,         0f, 80, Pair(0, -16))
+    // Event: top-center, rotated, oversized
+    GroupType.EVENT     -> CoverEmojiStyle(Alignment.TopCenter,     15f, 86, Pair(16, 44))
+    // Apartment: center
+    GroupType.APARTMENT -> CoverEmojiStyle(Alignment.Center,         0f, 76, Pair(0, -20))
+    // Other: center
+    GroupType.OTHER     -> CoverEmojiStyle(Alignment.Center,         0f, 74, Pair(0, -16))
+}
+
+private data class CoverEmojiStyle(
+    val alignment: Alignment,
+    val rotation : Float,
+    val fontSize : Int,
+    val offset   : Pair<Int, Int>, // x, y in dp
+)
 
 // ── Balance Card ──────────────────────────────────────────────────────────────
 
 @Composable
 private fun BalanceCard(
     yourBalance: Double,
+    balances   : List<Balance>,
     currency   : String,
     onSettle   : () -> Unit,
     modifier   : Modifier = Modifier,
 ) {
-    val balanceColor = when {
+    val overallColor = when {
         yourBalance > 0 -> Green400
         yourBalance < 0 -> Negative
         else            -> TextSecondary
     }
 
-    val balanceLabel = when {
-        yourBalance > 0 -> "You are owed"
-        yourBalance < 0 -> "You owe"
+    val overallText = when {
+        yourBalance > 0 -> "You are owed ${MoneyUtils.format(yourBalance, currency)} overall"
+        yourBalance < 0 -> "You owe ${MoneyUtils.format(-yourBalance, currency)} overall"
         else            -> "All settled up"
     }
 
-    val balanceText = when {
-        yourBalance > 0 -> "+${MoneyUtils.format(yourBalance, "USD")}"
-        yourBalance < 0 -> "-${MoneyUtils.format(Math.abs(yourBalance), "USD")}"
-        else            -> MoneyUtils.format(0.0, "USD")
-    }
-
-    Box(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.xl))
             .background(Surface2)
-            .padding(Spacing.lg),
+            .padding(Spacing.md),
     ) {
-        Column {
+        // Overall balance summary line
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier          = Modifier.fillMaxWidth(),
+        ) {
             Text(
-                text     = balanceLabel.uppercase(),
-                fontSize = 11.sp,
-                color    = TextSecondary,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 1.sp,
+                text       = overallText,
+                fontSize   = 13.sp,
+                color      = TextSecondary,
+                modifier   = Modifier.weight(1f),
             )
+        }
 
-            Spacer(modifier = Modifier.height(4.dp))
+        // Per-person breakdown — only if there are individual balances
+        if (balances.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
-            Text(
-                text       = balanceText,
-                fontWeight = FontWeight.Bold,
-                fontSize   = 36.sp,
-                color      = balanceColor,
-            )
+            balances.forEach { balance ->
+                val isOwed = balance.amount > 0
+                val personName = balance.otherUserName
+                val amountColor = if (isOwed) Green400 else Negative
+                val label = if (isOwed)
+                    "$personName owes you"
+                else
+                    "You owe $personName"
 
-            if (yourBalance != 0.0) {
-                Spacer(modifier = Modifier.height(Spacing.md))
-
-                LinearProgressIndicator(
-                    progress        = { if (yourBalance > 0) 0.6f else 0.4f },
-                    modifier        = Modifier.fillMaxWidth(),
-                    color           = balanceColor,
-                    trackColor      = Surface4,
-                )
-
-                Spacer(modifier = Modifier.height(Spacing.md))
-
-                // Settle up button
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(Radius.full))
-                        .background(Green400)
-                        .clickable(onClick = onSettle)
-                        .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    modifier              = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
                 ) {
+                    FsAvatar(
+                        name   = personName,
+                        userId = balance.otherUserId,
+                        size   = ComponentSize.avatarSm,
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.sm))
                     Text(
-                        text       = "Settle up →",
-                        color      = Surface0,
+                        text     = label,
+                        fontSize = 12.sp,
+                        color    = TextSecondary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text       = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
+                        fontSize   = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize   = 14.sp,
+                        color      = amountColor,
                     )
                 }
             }
+        } else if (yourBalance == 0.0) {
+            // All settled up — no per-person rows needed
+        }
+    }
+}
+
+// ── Action Pills Row ──────────────────────────────────────────────────────────
+
+@Composable
+private fun ActionPillsRow(
+    onSettleUp: () -> Unit,
+    modifier  : Modifier = Modifier,
+) {
+    Row(
+        modifier              = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        // Settle up — green primary pill
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .clip(RoundedCornerShape(Radius.full))
+                .background(Green400)
+                .clickable { onSettleUp() }
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        ) {
+            Text(
+                text       = "Settle up",
+                fontSize   = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = Surface0,
+            )
+        }
+
+        // Info pills — placeholder for now
+        listOf("Balances", "Charts", "Totals").forEach { label ->
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .clip(RoundedCornerShape(Radius.full))
+                    .background(Surface2)
+                    .clickable { /* TODO Day 17 — Analytics */ }
+                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            ) {
+                Text(
+                    text     = label,
+                    fontSize = 12.sp,
+                    color    = TextSecondary,
+                )
+            }
+        }
+
+        // Export — muted placeholder
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .clip(RoundedCornerShape(Radius.full))
+                .background(Surface2)
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        ) {
+            Text(
+                text     = "Export",
+                fontSize = 12.sp,
+                color    = TextDisabled,
+            )
         }
     }
 }
@@ -314,32 +691,81 @@ private fun ExpenseRow(
     expense: Expense,
     onClick: () -> Unit,
 ) {
+    val youLent = expense.yourBalance > 0
+    val youOwe  = expense.yourBalance < 0
+
+    val balanceLabel = when {
+        youLent -> "you lent"
+        youOwe  -> "you owe"
+        else    -> "settled"
+    }
     val balanceColor = when {
-        expense.yourBalance > 0 -> Green400
-        expense.yourBalance < 0 -> Negative
-        else                    -> TextSecondary
+        youLent -> Green400
+        youOwe  -> Negative
+        else    -> TextTertiary
+    }
+    val balanceAmount = when {
+        youLent -> MoneyUtils.format(expense.yourBalance, expense.currency)
+        youOwe  -> MoneyUtils.format(-expense.yourBalance, expense.currency)
+        else    -> ""
     }
 
-    val balanceText = when {
-        expense.yourBalance > 0 -> "+${MoneyUtils.format(expense.yourBalance, expense.currency)}"
-        expense.yourBalance < 0 -> "-${MoneyUtils.format(Math.abs(expense.yourBalance), expense.currency)}"
-        else                    -> "settled"
+    // "Who paid" subtitle
+    val paidByText = expense.payers.firstOrNull()?.let { payer ->
+        "${payer.fullName} paid ${MoneyUtils.format(payer.amountPaid, expense.currency)}"
+    } ?: "${expense.addedByName} paid ${MoneyUtils.format(expense.totalAmount, expense.currency)}"
+
+    // Date components
+    val (monthAbbr, dayNum) = remember(expense.expenseDate) {
+        try {
+            val dt = LocalDateTime.parse(expense.expenseDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            val month = dt.format(DateTimeFormatter.ofPattern("MMM"))
+            val day   = dt.dayOfMonth.toString()
+            month to day
+        } catch (e: Exception) {
+            "" to ""
+        }
     }
+
+    // Emoji background tint based on category
+    val emojiBg = categoryBgColor(expense.category)
 
     Row(
-        modifier = Modifier
+        modifier          = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+            .padding(horizontal = Spacing.lg, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Category emoji
+        // Date column
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier            = Modifier.width(30.dp),
+        ) {
+            Text(
+                text      = monthAbbr,
+                fontSize  = 10.sp,
+                color     = TextTertiary,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text       = dayNum,
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = TextSecondary,
+                textAlign  = TextAlign.Center,
+            )
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        // Category emoji box
         Box(
             contentAlignment = Alignment.Center,
             modifier         = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(Radius.md))
-                .background(Surface2),
+                .background(emojiBg),
         ) {
             Text(
                 text     = categoryEmoji(expense.category),
@@ -349,7 +775,7 @@ private fun ExpenseRow(
 
         Spacer(modifier = Modifier.width(Spacing.md))
 
-        // Description + date
+        // Description + who paid
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text       = expense.description,
@@ -359,33 +785,38 @@ private fun ExpenseRow(
                 maxLines   = 1,
                 overflow   = TextOverflow.Ellipsis,
             )
-            Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text     = "${expense.addedByName} · ${expense.expenseDate.toRelativeDate()}",
+                text     = paidByText,
                 fontSize = 12.sp,
-                color    = TextSecondary,
+                color    = TextTertiary,
             )
         }
 
-        Spacer(modifier = Modifier.width(Spacing.md))
+        Spacer(modifier = Modifier.width(Spacing.sm))
 
-        // Amount + your share
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text       = MoneyUtils.format(expense.totalAmount, expense.currency),
-                fontSize   = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color      = TextPrimary,
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text     = balanceText,
-                fontSize = 12.sp,
-                color    = balanceColor,
-                fontWeight = FontWeight.Medium,
-            )
+        // Balance column
+        if (expense.yourBalance != 0.0) {
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text     = balanceLabel,
+                    fontSize = 10.sp,
+                    color    = TextTertiary,
+                )
+                Text(
+                    text       = balanceAmount,
+                    fontSize   = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = balanceColor,
+                )
+            }
         }
     }
+
+    HorizontalDivider(
+        color     = Surface3,
+        thickness = 0.5.dp,
+        modifier  = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
+    )
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -399,34 +830,46 @@ private fun String.toMonthHeader(): String {
     }
 }
 
-private fun String.toRelativeDate(): String {
-    return try {
-        val dateTime = LocalDateTime.parse(this, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-        DateFormatter.toRelativeTime(dateTime.toString())
-    } catch (e: Exception) {
-        this
-    }
+private fun categoryEmoji(category: ExpenseCategory?): String = when (category) {
+    ExpenseCategory.DINING_OUT        -> "🍽️"
+    ExpenseCategory.GROCERIES         -> "🛒"
+    ExpenseCategory.CAR               -> "🚗"
+    ExpenseCategory.TAXI              -> "🚕"
+    ExpenseCategory.PLANE             -> "✈️"
+    ExpenseCategory.HOTEL             -> "🏨"
+    ExpenseCategory.RENT              -> "🏠"
+    ExpenseCategory.ELECTRICITY       -> "⚡"
+    ExpenseCategory.WATER             -> "💧"
+    ExpenseCategory.GAS_FUEL          -> "⛽"
+    ExpenseCategory.TV_PHONE_INTERNET -> "📱"
+    ExpenseCategory.MOVIES            -> "🎬"
+    ExpenseCategory.GAMES             -> "🎮"
+    ExpenseCategory.MUSIC             -> "🎵"
+    ExpenseCategory.SPORTS            -> "⚽"
+    ExpenseCategory.MEDICAL           -> "💊"
+    ExpenseCategory.EDUCATION         -> "📚"
+    ExpenseCategory.GIFTS             -> "🎁"
+    ExpenseCategory.LIQUOR            -> "🍺"
+    ExpenseCategory.PETS              -> "🐾"
+    ExpenseCategory.CLOTHING          -> "👕"
+    ExpenseCategory.BUS_TRAIN         -> "🚌"
+    ExpenseCategory.PARKING           -> "🅿️"
+    else                              -> "💰"
 }
 
-private fun categoryEmoji(category: ExpenseCategory?): String = when (category) {
-    ExpenseCategory.DINING_OUT   -> "🍽️"
-    ExpenseCategory.GROCERIES    -> "🛒"
-    ExpenseCategory.CAR          -> "🚗"
-    ExpenseCategory.TAXI         -> "🚕"
-    ExpenseCategory.PLANE        -> "✈️"
-    ExpenseCategory.HOTEL        -> "🏨"
-    ExpenseCategory.RENT         -> "🏠"
-    ExpenseCategory.ELECTRICITY  -> "⚡"
-    ExpenseCategory.MOVIES       -> "🎬"
-    ExpenseCategory.GAMES        -> "🎮"
-    ExpenseCategory.MUSIC        -> "🎵"
-    ExpenseCategory.SPORTS       -> "⚽"
-    ExpenseCategory.MEDICAL      -> "💊"
-    ExpenseCategory.EDUCATION    -> "📚"
-    ExpenseCategory.GIFTS        -> "🎁"
-    ExpenseCategory.LIQUOR       -> "🍺"
-    ExpenseCategory.PETS         -> "🐾"
-    ExpenseCategory.CLOTHING     -> "👕"
-    ExpenseCategory.BUS_TRAIN    -> "🚌"
-    else                         -> "💰"
+private fun categoryBgColor(category: ExpenseCategory?): androidx.compose.ui.graphics.Color {
+    return when (category) {
+        ExpenseCategory.DINING_OUT, ExpenseCategory.GROCERIES,
+        ExpenseCategory.LIQUOR                              -> androidx.compose.ui.graphics.Color(0xFF1A2A1A)
+        ExpenseCategory.RENT, ExpenseCategory.MORTGAGE      -> androidx.compose.ui.graphics.Color(0xFF1A2A3A)
+        ExpenseCategory.TAXI, ExpenseCategory.CAR,
+        ExpenseCategory.BUS_TRAIN, ExpenseCategory.PLANE    -> androidx.compose.ui.graphics.Color(0xFF2A1A0A)
+        ExpenseCategory.ELECTRICITY, ExpenseCategory.WATER,
+        ExpenseCategory.GAS_FUEL,
+        ExpenseCategory.TV_PHONE_INTERNET                   -> androidx.compose.ui.graphics.Color(0xFF1A1A3A)
+        ExpenseCategory.MOVIES, ExpenseCategory.GAMES,
+        ExpenseCategory.MUSIC, ExpenseCategory.SPORTS       -> androidx.compose.ui.graphics.Color(0xFF2A1A2A)
+        ExpenseCategory.MEDICAL                             -> androidx.compose.ui.graphics.Color(0xFF2A1A1A)
+        else                                                -> androidx.compose.ui.graphics.Color(0xFF1E1E20)
+    }
 }

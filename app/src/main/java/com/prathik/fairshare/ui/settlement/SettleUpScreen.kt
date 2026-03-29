@@ -26,6 +26,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.fragment.app.FragmentActivity
+import com.prathik.fairshare.ui.auth.BiometricHelper
+import com.prathik.fairshare.ui.auth.BiometricResult
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,8 +77,37 @@ fun SettleUpScreen(
     val amount        by viewModel.amount.collectAsState()
     val paymentMethod by viewModel.paymentMethod.collectAsState()
     val snackbarHost  = remember { SnackbarHostState() }
+    val scope         = rememberCoroutineScope()
+    val context       = LocalContext.current
+    val activity      = context as? FragmentActivity
 
     val isLoading = uiState is SettleUpUiState.Loading
+
+    // Biometric gate — required for settlements above $50
+    val biometricHelper = remember { BiometricHelper(context) }
+
+    fun confirmAndSettle(settleAction: () -> Unit) {
+        val amt = amount.toDoubleOrNull() ?: 0.0
+        val needsBiometric = amt >= 50.0 || amount.isBlank() // settle all always requires
+        if (needsBiometric && activity != null && biometricHelper.canAuthenticate()) {
+            scope.launch {
+                val amountLabel = if (amount.isBlank()) "the full balance" else "$${"%.2f".format(amt)}"
+                when (biometricHelper.authenticate(
+                    activity = activity,
+                    title    = "Confirm settlement",
+                    subtitle = "Settling $amountLabel",
+                )) {
+                    is BiometricResult.Success   -> settleAction()
+                    is BiometricResult.Cancelled -> { /* do nothing */ }
+                    is BiometricResult.Error     -> scope.launch {
+                        snackbarHost.showSnackbar("Biometric auth failed. Try again.")
+                    }
+                }
+            }
+        } else {
+            settleAction()
+        }
+    }
 
     LaunchedEffect(uiState) {
         when (val state = uiState) {
@@ -210,8 +245,10 @@ fun SettleUpScreen(
             FsPrimaryButton(
                 text      = if (amount.isBlank()) "Settle everything" else "Settle ${amount}",
                 onClick   = {
-                    if (amount.isBlank()) viewModel.settleAll()
-                    else viewModel.settlePartial()
+                    confirmAndSettle {
+                        if (amount.isBlank()) viewModel.settleAll()
+                        else viewModel.settlePartial()
+                    }
                 },
                 modifier  = Modifier
                     .fillMaxWidth()

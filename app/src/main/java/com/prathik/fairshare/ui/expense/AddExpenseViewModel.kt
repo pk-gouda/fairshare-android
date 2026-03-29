@@ -41,12 +41,12 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AddExpenseViewModel @Inject constructor(
-    private val createExpenseUseCase  : CreateExpenseUseCase,
-    private val getGroupsUseCase      : GetGroupsUseCase,
+    private val createExpenseUseCase: CreateExpenseUseCase,
+    private val getGroupsUseCase: GetGroupsUseCase,
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
-    private val scanReceiptUseCase    : ScanReceiptUseCase,
-    private val tokenStore            : EncryptedTokenStore,
-    savedStateHandle                  : SavedStateHandle,
+    private val scanReceiptUseCase: ScanReceiptUseCase,
+    private val tokenStore: EncryptedTokenStore,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     // Optional groupId from nav argument — non-blank only
@@ -60,7 +60,9 @@ class AddExpenseViewModel @Inject constructor(
     private val _activeTab = MutableStateFlow(ExpenseTab.EXPENSE)
     val activeTab: StateFlow<ExpenseTab> = _activeTab.asStateFlow()
 
-    fun onTabChanged(tab: ExpenseTab) { _activeTab.value = tab }
+    fun onTabChanged(tab: ExpenseTab) {
+        _activeTab.value = tab
+    }
 
     // ── Form state (shared between tabs) ──────────────────────────────────────
     private val _description = MutableStateFlow("")
@@ -108,8 +110,13 @@ class AddExpenseViewModel @Inject constructor(
     private val _transferToId = MutableStateFlow<String?>(null)
     val transferToId: StateFlow<String?> = _transferToId.asStateFlow()
 
-    fun onTransferFromChanged(userId: String) { _transferFromId.value = userId }
-    fun onTransferToChanged(userId: String)   { _transferToId.value = userId }
+    fun onTransferFromChanged(userId: String) {
+        _transferFromId.value = userId
+    }
+
+    fun onTransferToChanged(userId: String) {
+        _transferToId.value = userId
+    }
 
     // ── Groups + Members ──────────────────────────────────────────────────────
     private val _groups = MutableStateFlow<List<Group>>(emptyList())
@@ -143,9 +150,17 @@ class AddExpenseViewModel @Inject constructor(
         }
     }
 
-    fun onNotesChanged(value: String)    { _notes.value = value }
-    fun onDateChanged(value: String)     { _expenseDate.value = value }
-    fun onCurrencyChanged(value: String) { _currency.value = value }
+    fun onNotesChanged(value: String) {
+        _notes.value = value
+    }
+
+    fun onDateChanged(value: String) {
+        _expenseDate.value = value
+    }
+
+    fun onCurrencyChanged(value: String) {
+        _currency.value = value
+    }
 
     fun onAmountChanged(value: String) {
         _amount.value = value
@@ -188,33 +203,86 @@ class AddExpenseViewModel @Inject constructor(
     private fun detectCategory(description: String): ExpenseCategory? {
         val lower = description.lowercase()
         return when {
-            lower.containsAny("dinner", "lunch", "breakfast", "restaurant", "food",
-                "cafe", "coffee", "eat", "pizza", "burger", "sushi") -> ExpenseCategory.DINING_OUT
-            lower.containsAny("grocery", "groceries", "walmart", "target",
-                "supermarket", "vegetables", "fruit", "milk") -> ExpenseCategory.GROCERIES
-            lower.containsAny("uber", "lyft", "taxi", "cab", "ola", "rapido") -> ExpenseCategory.TAXI
-            lower.containsAny("bus", "train", "metro", "subway", "commute") -> ExpenseCategory.BUS_TRAIN
+            lower.containsAny(
+                "dinner", "lunch", "breakfast", "restaurant", "food",
+                "cafe", "coffee", "eat", "pizza", "burger", "sushi"
+            ) -> ExpenseCategory.DINING_OUT
+
+            lower.containsAny(
+                "grocery", "groceries", "walmart", "target",
+                "supermarket", "vegetables", "fruit", "milk"
+            ) -> ExpenseCategory.GROCERIES
+
+            lower.containsAny(
+                "uber",
+                "lyft",
+                "taxi",
+                "cab",
+                "ola",
+                "rapido"
+            ) -> ExpenseCategory.TAXI
+
+            lower.containsAny(
+                "bus",
+                "train",
+                "metro",
+                "subway",
+                "commute"
+            ) -> ExpenseCategory.BUS_TRAIN
+
             lower.containsAny("rent", "apartment", "flat", "lease") -> ExpenseCategory.RENT
             lower.containsAny("electric", "electricity", "power") -> ExpenseCategory.ELECTRICITY
             lower.containsAny("water") -> ExpenseCategory.WATER
             lower.containsAny("gas", "fuel", "petrol", "shell", "pump") -> ExpenseCategory.GAS_FUEL
-            lower.containsAny("internet", "wifi", "phone", "broadband", "sim") -> ExpenseCategory.TV_PHONE_INTERNET
-            lower.containsAny("movie", "netflix", "hulu", "cinema", "theatre",
-                "amazon prime", "disney") -> ExpenseCategory.MOVIES
+            lower.containsAny(
+                "internet",
+                "wifi",
+                "phone",
+                "broadband",
+                "sim"
+            ) -> ExpenseCategory.TV_PHONE_INTERNET
+
+            lower.containsAny(
+                "movie", "netflix", "hulu", "cinema", "theatre",
+                "amazon prime", "disney"
+            ) -> ExpenseCategory.MOVIES
+
             lower.containsAny("parking", "park") -> ExpenseCategory.PARKING
-            lower.containsAny("hotel", "airbnb", "hostel", "motel", "resort") -> ExpenseCategory.HOTEL
-            lower.containsAny("flight", "plane", "airline", "airport",
-                "indigo", "air india") -> ExpenseCategory.PLANE
-            lower.containsAny("medical", "doctor", "hospital", "pharmacy",
-                "medicine", "clinic") -> ExpenseCategory.MEDICAL
-            lower.containsAny("gym", "sport", "football", "cricket",
-                "badminton", "fitness") -> ExpenseCategory.SPORTS
+            lower.containsAny(
+                "hotel",
+                "airbnb",
+                "hostel",
+                "motel",
+                "resort"
+            ) -> ExpenseCategory.HOTEL
+
+            lower.containsAny(
+                "flight", "plane", "airline", "airport",
+                "indigo", "air india"
+            ) -> ExpenseCategory.PLANE
+
+            lower.containsAny(
+                "medical", "doctor", "hospital", "pharmacy",
+                "medicine", "clinic"
+            ) -> ExpenseCategory.MEDICAL
+
+            lower.containsAny(
+                "gym", "sport", "football", "cricket",
+                "badminton", "fitness"
+            ) -> ExpenseCategory.SPORTS
+
             lower.containsAny("gift", "birthday", "present") -> ExpenseCategory.GIFTS
-            lower.containsAny("beer", "wine", "alcohol", "bar", "pub",
-                "whiskey", "vodka") -> ExpenseCategory.LIQUOR
+            lower.containsAny(
+                "beer", "wine", "alcohol", "bar", "pub",
+                "whiskey", "vodka"
+            ) -> ExpenseCategory.LIQUOR
+
             lower.containsAny("pet", "dog", "cat", "vet") -> ExpenseCategory.PETS
-            lower.containsAny("cloth", "shirt", "shoes", "fashion",
-                "zara", "h&m") -> ExpenseCategory.CLOTHING
+            lower.containsAny(
+                "cloth", "shirt", "shoes", "fashion",
+                "zara", "h&m"
+            ) -> ExpenseCategory.CLOTHING
+
             else -> null // no match — show "Auto-detect"
         }
     }
@@ -248,6 +316,7 @@ class AddExpenseViewModel @Inject constructor(
 
                     recalculateSplits()
                 }
+
                 else -> Unit
             }
         }
@@ -260,21 +329,29 @@ class AddExpenseViewModel @Inject constructor(
      * Only auto-calculates for EQUAL split — other types are set manually.
      */
     private fun recalculateSplits() {
-        val total   = _amount.value.toDoubleOrNull() ?: return
+        val total = _amount.value.toDoubleOrNull() ?: return
         val members = _members.value
         if (members.isEmpty()) return
 
         // Update payer amount if only current user is payer
-        if (_payerData.value.size == 1 && _payerData.value.containsKey(currentUserId)) {
-            _payerData.value = mapOf(currentUserId!! to total)
+        val uid = currentUserId ?: return
+        if (_payerData.value.size == 1 && _payerData.value.containsKey(uid)) {
+            _payerData.value = mapOf(uid to total)
         }
 
         when (_splitType.value) {
             SplitType.EQUAL -> {
-                val share   = total / members.size
-                val rounded = (share * 100).toLong() / 100.0
-                _splitData.value = members.associate { it.userId to rounded }
+                // Rounding fix: work in cents to avoid floating point loss
+                val totalCents = Math.round(total * 100)
+                val shareCents = totalCents / members.size
+                val remainder = totalCents - (shareCents * members.size)
+                _splitData.value = members.mapIndexed { index, member ->
+                    val amount = if (index == 0) (shareCents + remainder) / 100.0
+                    else shareCents / 100.0
+                    member.userId to amount
+                }.toMap()
             }
+
             SplitType.UNEQUAL,
             SplitType.PERCENTAGE,
             SplitType.SHARES -> {
@@ -298,8 +375,8 @@ class AddExpenseViewModel @Inject constructor(
             val base64 = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 
             when (val result = scanReceiptUseCase(
-                imageBase64       = base64,
-                mimeType          = "image/jpeg",
+                imageBase64 = base64,
+                mimeType = "image/jpeg",
                 preferredCurrency = _currency.value,
             )) {
                 is ApiResult.Success -> {
@@ -312,9 +389,11 @@ class AddExpenseViewModel @Inject constructor(
                     _receiptState.value = ReceiptScanState.Success(receipt)
                     recalculateSplits()
                 }
+
                 is ApiResult.NetworkError -> {
                     _receiptState.value = ReceiptScanState.Error("No internet connection.")
                 }
+
                 else -> {
                     _receiptState.value = ReceiptScanState.Error(
                         "Failed to scan receipt. Try again or enter manually."
@@ -335,15 +414,25 @@ class AddExpenseViewModel @Inject constructor(
     }
 
     private fun submitExpense() {
-        val groupId     = _selectedGroupId.value
+        val groupId = _selectedGroupId.value
         val description = _description.value.trim()
-        val amount      = _amount.value.toDoubleOrNull()
+        val amount = _amount.value.toDoubleOrNull()
 
-        if (groupId == null) { _uiState.value = AddExpenseUiState.Error("Please select a group."); return }
-        if (description.isBlank()) { _uiState.value = AddExpenseUiState.Error("Please enter a description."); return }
-        if (amount == null || amount <= 0) { _uiState.value = AddExpenseUiState.Error("Please enter a valid amount."); return }
-        if (_payerData.value.isEmpty()) { _uiState.value = AddExpenseUiState.Error("Please select who paid."); return }
-        if (_splitData.value.isEmpty()) { _uiState.value = AddExpenseUiState.Error("Please set how to split."); return }
+        if (groupId == null) {
+            _uiState.value = AddExpenseUiState.Error("Please select a group."); return
+        }
+        if (description.isBlank()) {
+            _uiState.value = AddExpenseUiState.Error("Please enter a description."); return
+        }
+        if (amount == null || amount <= 0) {
+            _uiState.value = AddExpenseUiState.Error("Please enter a valid amount."); return
+        }
+        if (_payerData.value.isEmpty()) {
+            _uiState.value = AddExpenseUiState.Error("Please select who paid."); return
+        }
+        if (_splitData.value.isEmpty()) {
+            _uiState.value = AddExpenseUiState.Error("Please set how to split."); return
+        }
 
         // Use detected or manually set category, fall back to GENERAL
         val finalCategory = _category.value ?: ExpenseCategory.GENERAL
@@ -351,60 +440,79 @@ class AddExpenseViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = AddExpenseUiState.Loading
             when (val result = createExpenseUseCase(
-                groupId     = groupId,
+                groupId = groupId,
                 description = description,
                 totalAmount = amount,
-                currency    = _currency.value,
-                splitType   = _splitType.value,
-                category    = finalCategory,
-                notes       = _notes.value.ifBlank { null },
+                currency = _currency.value,
+                splitType = _splitType.value,
+                category = finalCategory,
+                notes = _notes.value.ifBlank { null },
                 expenseDate = _expenseDate.value,
-                payerData   = _payerData.value,
-                splitData   = _splitData.value,
-                receiptId   = scannedReceiptId,
+                payerData = _payerData.value,
+                splitData = _splitData.value,
+                receiptId = scannedReceiptId,
             )) {
-                is ApiResult.Success  -> _uiState.value = AddExpenseUiState.Success
-                is ApiResult.NetworkError -> _uiState.value = AddExpenseUiState.Error("No internet connection.")
-                else -> _uiState.value = AddExpenseUiState.Error("Failed to create expense. Please try again.")
+                is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
+                is ApiResult.NetworkError -> _uiState.value =
+                    AddExpenseUiState.Error("No internet connection.")
+
+                else -> _uiState.value =
+                    AddExpenseUiState.Error("Failed to create expense. Please try again.")
             }
         }
     }
 
     private fun submitTransfer() {
-        val groupId  = _selectedGroupId.value
-        val fromId   = _transferFromId.value
-        val toId     = _transferToId.value
-        val amount   = _amount.value.toDoubleOrNull()
+        val groupId = _selectedGroupId.value
+        val fromId = _transferFromId.value
+        val toId = _transferToId.value
+        val amount = _amount.value.toDoubleOrNull()
 
-        if (groupId == null) { _uiState.value = AddExpenseUiState.Error("Please select a group."); return }
-        if (fromId == null)  { _uiState.value = AddExpenseUiState.Error("Please select who is paying."); return }
-        if (toId == null)    { _uiState.value = AddExpenseUiState.Error("Please select who receives."); return }
-        if (fromId == toId)  { _uiState.value = AddExpenseUiState.Error("From and To cannot be the same person."); return }
-        if (amount == null || amount <= 0) { _uiState.value = AddExpenseUiState.Error("Please enter a valid amount."); return }
+        if (groupId == null) {
+            _uiState.value = AddExpenseUiState.Error("Please select a group."); return
+        }
+        if (fromId == null) {
+            _uiState.value = AddExpenseUiState.Error("Please select who is paying."); return
+        }
+        if (toId == null) {
+            _uiState.value = AddExpenseUiState.Error("Please select who receives."); return
+        }
+        if (fromId == toId) {
+            _uiState.value =
+                AddExpenseUiState.Error("From and To cannot be the same person."); return
+        }
+        if (amount == null || amount <= 0) {
+            _uiState.value = AddExpenseUiState.Error("Please enter a valid amount."); return
+        }
 
         viewModelScope.launch {
             _uiState.value = AddExpenseUiState.Loading
             when (val result = createExpenseUseCase(
-                groupId     = groupId,
+                groupId = groupId,
                 description = "${members.value.find { it.userId == fromId }?.fullName ?: "Someone"} → ${members.value.find { it.userId == toId }?.fullName ?: "Someone"}",
                 totalAmount = amount,
-                currency    = _currency.value,
-                splitType   = SplitType.UNEQUAL,
-                category    = ExpenseCategory.GENERAL,
-                notes       = _notes.value.ifBlank { null },
+                currency = _currency.value,
+                splitType = SplitType.UNEQUAL,
+                category = ExpenseCategory.GENERAL,
+                notes = _notes.value.ifBlank { null },
                 expenseDate = _expenseDate.value,
-                payerData   = mapOf(fromId to amount),
-                splitData   = mapOf(toId to amount),
-                receiptId   = null,
+                payerData = mapOf(fromId to amount),
+                splitData = mapOf(toId to amount),
+                receiptId = null,
             )) {
-                is ApiResult.Success  -> _uiState.value = AddExpenseUiState.Success
-                is ApiResult.NetworkError -> _uiState.value = AddExpenseUiState.Error("No internet connection.")
-                else -> _uiState.value = AddExpenseUiState.Error("Failed to save transfer. Please try again.")
+                is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
+                is ApiResult.NetworkError -> _uiState.value =
+                    AddExpenseUiState.Error("No internet connection.")
+
+                else -> _uiState.value =
+                    AddExpenseUiState.Error("Failed to save transfer. Please try again.")
             }
         }
     }
 
-    fun resetUiState() { _uiState.value = AddExpenseUiState.Idle }
+    fun resetUiState() {
+        _uiState.value = AddExpenseUiState.Idle
+    }
 }
 
 // ── Enums + UI States ─────────────────────────────────────────────────────────
@@ -412,15 +520,15 @@ class AddExpenseViewModel @Inject constructor(
 enum class ExpenseTab { EXPENSE, TRANSFER }
 
 sealed class AddExpenseUiState {
-    object Idle    : AddExpenseUiState()
+    object Idle : AddExpenseUiState()
     object Loading : AddExpenseUiState()
     object Success : AddExpenseUiState()
     data class Error(val message: String) : AddExpenseUiState()
 }
 
 sealed class ReceiptScanState {
-    object Idle     : ReceiptScanState()
+    object Idle : ReceiptScanState()
     object Scanning : ReceiptScanState()
     data class Success(val receipt: Receipt) : ReceiptScanState()
-    data class Error(val message: String)    : ReceiptScanState()
+    data class Error(val message: String) : ReceiptScanState()
 }

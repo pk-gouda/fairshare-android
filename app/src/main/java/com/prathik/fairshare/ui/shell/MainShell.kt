@@ -39,6 +39,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.prathik.fairshare.ui.expense.AddExpenseScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
+import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
@@ -244,7 +245,17 @@ fun MainShell(
             composable(
                 route     = Screen.GroupSettings.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Group Settings") }
+            ) {
+                GroupSettingsScreen(
+                    onBack               = { shellNavController.popBackStack() },
+                    onNavigateToAddMember = { groupId ->
+                        shellNavController.navigate(Screen.AddMember.route(groupId))
+                    },
+                    onGroupDeleted       = {
+                        shellNavController.popBackStack(Screen.Groups.route, false)
+                    },
+                )
+            }
 
             composable(
                 route     = Screen.GroupMembers.route,
