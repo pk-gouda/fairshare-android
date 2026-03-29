@@ -24,13 +24,21 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class GroupsViewModel @Inject constructor(
-    private val getGroupsUseCase     : GetGroupsUseCase,
-    private val getAllBalancesUseCase : GetAllBalancesUseCase,
+    private val getGroupsUseCase: GetGroupsUseCase,
+    private val getAllBalancesUseCase: GetAllBalancesUseCase,
 ) : ViewModel() {
 
     // ── Groups state ──────────────────────────────────────────────────────────
     private val _groupsState = MutableStateFlow<GroupsUiState>(GroupsUiState.Loading)
     val groupsState: StateFlow<GroupsUiState> = _groupsState.asStateFlow()
+
+    // ── Search query ──────────────────────────────────────────────────────────
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun onSearchChanged(query: String) {
+        _searchQuery.value = query
+    }
 
     // ── Balance summary state ─────────────────────────────────────────────────
     private val _balanceSummary = MutableStateFlow<BalanceSummary?>(null)
@@ -48,18 +56,19 @@ class GroupsViewModel @Inject constructor(
         viewModelScope.launch {
             _groupsState.value = GroupsUiState.Loading
 
-            val groupsDeferred   = async { getGroupsUseCase() }
+            val groupsDeferred = async { getGroupsUseCase() }
             val balancesDeferred = async { getAllBalancesUseCase() }
 
             // Handle groups result
             when (val result = groupsDeferred.await()) {
                 is ApiResult.Success -> _groupsState.value = GroupsUiState.Success(result.data)
                 is ApiResult.NetworkError -> _groupsState.value = GroupsUiState.Error(
-                    message   = result.message,
+                    message = result.message,
                     isNetwork = true,
                 )
+
                 else -> _groupsState.value = GroupsUiState.Error(
-                    message   = "Failed to load groups. Please try again.",
+                    message = "Failed to load groups. Please try again.",
                     isNetwork = false,
                 )
             }
@@ -81,8 +90,8 @@ class GroupsViewModel @Inject constructor(
      * netBalance — owedToMe - youOwe
      */
     private fun calculateSummary(balances: List<Balance>): BalanceSummary {
-        var owedToMe   = 0.0
-        var youOwe     = 0.0
+        var owedToMe = 0.0
+        var youOwe = 0.0
 
         balances.forEach { balance ->
             if (balance.amount > 0) owedToMe += balance.amount
@@ -90,10 +99,10 @@ class GroupsViewModel @Inject constructor(
         }
 
         return BalanceSummary(
-            owedToMe   = owedToMe,
-            youOwe     = youOwe,
+            owedToMe = owedToMe,
+            youOwe = youOwe,
             netBalance = owedToMe - youOwe,
-            currency   = balances.firstOrNull()?.currency ?: "USD",
+            currency = balances.firstOrNull()?.currency ?: "USD",
         )
     }
 }
@@ -107,8 +116,8 @@ sealed class GroupsUiState {
 }
 
 data class BalanceSummary(
-    val owedToMe  : Double,
-    val youOwe    : Double,
+    val owedToMe: Double,
+    val youOwe: Double,
     val netBalance: Double,
-    val currency  : String,
+    val currency: String,
 )

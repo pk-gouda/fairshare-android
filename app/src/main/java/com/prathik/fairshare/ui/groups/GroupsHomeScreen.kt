@@ -27,8 +27,15 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -89,55 +96,92 @@ import com.prathik.fairshare.util.MoneyUtils
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsHomeScreen(
-    onNavigateToGroup       : (String) -> Unit,
-    onNavigateToSearch      : () -> Unit,
-    onNavigateToCreateGroup : () -> Unit,
-    onNavigateToAddExpense  : () -> Unit,
-    viewModel               : GroupsViewModel = hiltViewModel(),
+    onNavigateToGroup: (String) -> Unit,
+    onNavigateToSearch: () -> Unit,
+    onNavigateToCreateGroup: () -> Unit,
+    onNavigateToAddExpense: () -> Unit,
+    viewModel: GroupsViewModel = hiltViewModel(),
 ) {
-    val groupsState    by viewModel.groupsState.collectAsState()
+    val groupsState by viewModel.groupsState.collectAsState()
     val balanceSummary by viewModel.balanceSummary.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading = groupsState is GroupsUiState.Loading
 
     Scaffold(
         containerColor = Surface0,
         topBar = {
-            FsTopBar(
-                title   = "", // No title on Groups Home — just icons
-                actions = {
+            Surface(color = Surface0, shadowElevation = 0.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    // Functional search bar — takes full remaining width
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(Radius.lg))
+                            .background(Surface2)
+                            .padding(horizontal = Spacing.md, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.sm))
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { viewModel.onSearchChanged(it) },
+                            singleLine = true,
+                            textStyle = TextStyle(fontSize = 14.sp, color = TextPrimary),
+                            cursorBrush = SolidColor(Green400),
+                            decorationBox = { inner ->
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        "Search groups...",
+                                        fontSize = 14.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                                inner()
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // Add group icon button
                     FsIconButton(
-                        icon               = Icons.Outlined.Search,
-                        contentDescription = "Search",
-                        onClick            = onNavigateToSearch,
-                    )
-                    FsIconButton(
-                        icon               = Icons.Outlined.GroupAdd,
+                        icon = Icons.Outlined.GroupAdd,
                         contentDescription = "Create group",
-                        onClick            = onNavigateToCreateGroup,
+                        onClick = onNavigateToCreateGroup,
                     )
                 }
-            )
+            }
         },
         floatingActionButton = {
             // FAB → Add Expense (quick action)
             FloatingActionButton(
-                onClick        = onNavigateToAddExpense,
+                onClick = onNavigateToAddExpense,
                 containerColor = Green400,
-                contentColor   = Surface0,
-                shape          = RoundedCornerShape(Radius.full),
+                contentColor = Surface0,
+                shape = RoundedCornerShape(Radius.full),
             ) {
                 Icon(
-                    imageVector        = Icons.Filled.Add,
+                    imageVector = Icons.Filled.Add,
                     contentDescription = "Add expense",
-                    modifier           = Modifier.size(24.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
         },
     ) { innerPadding ->
         PullToRefreshBox(
             isRefreshing = isLoading,
-            onRefresh    = { viewModel.loadData() },
-            modifier     = Modifier
+            onRefresh = { viewModel.loadData() },
+            modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
@@ -145,18 +189,21 @@ fun GroupsHomeScreen(
                 is GroupsUiState.Loading -> FsLoadingScreen()
 
                 is GroupsUiState.Error -> FsErrorScreen(
-                    message   = state.message,
+                    message = state.message,
                     isNetwork = state.isNetwork,
-                    onRetry   = { viewModel.loadData() },
+                    onRetry = { viewModel.loadData() },
                 )
 
                 is GroupsUiState.Success -> {
-                    if (state.groups.isEmpty()) {
+                    val displayGroups = if (searchQuery.isBlank()) state.groups
+                    else state.groups.filter { it.name.contains(searchQuery, ignoreCase = true) }
+
+                    if (displayGroups.isEmpty() && searchQuery.isBlank()) {
                         FsEmptyState(
-                            title    = "No groups yet",
+                            title = "No groups yet",
                             subtitle = "Create a group to start splitting expenses with friends",
-                            ctaText  = "Create a group",
-                            onCta    = onNavigateToCreateGroup,
+                            ctaText = "Create a group",
+                            onCta = onNavigateToCreateGroup,
                         )
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
@@ -164,27 +211,27 @@ fun GroupsHomeScreen(
                             // ── Balance hero ──────────────────────────────────
                             balanceSummary?.let { summary ->
                                 BalanceHeroSection(
-                                    summary  = summary,
+                                    summary = summary,
                                     modifier = Modifier.padding(
                                         horizontal = Spacing.lg,
-                                        vertical   = Spacing.lg,
+                                        vertical = Spacing.lg,
                                     ),
                                 )
                             }
 
                             // ── Group tiles grid ──────────────────────────────
                             LazyVerticalGrid(
-                                columns               = GridCells.Fixed(2),
-                                contentPadding        = PaddingValues(Spacing.lg),
+                                columns = GridCells.Fixed(2),
+                                contentPadding = PaddingValues(Spacing.lg),
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                                verticalArrangement   = Arrangement.spacedBy(Spacing.md),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.md),
                             ) {
                                 items(
-                                    items = state.groups,
-                                    key   = { it.id },
+                                    items = displayGroups,
+                                    key = { it.id },
                                 ) { group ->
                                     GroupTile(
-                                        group   = group,
+                                        group = group,
                                         onClick = { onNavigateToGroup(group.id) },
                                     )
                                 }
@@ -192,8 +239,8 @@ fun GroupsHomeScreen(
                                 // "Create a group" button — spans both columns
                                 item(span = { GridItemSpan(2) }) {
                                     FsSecondaryButton(
-                                        text     = "+ Create a group",
-                                        onClick  = onNavigateToCreateGroup,
+                                        text = "+ Create a group",
+                                        onClick = onNavigateToCreateGroup,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(vertical = Spacing.sm),
@@ -212,37 +259,43 @@ fun GroupsHomeScreen(
 
 @Composable
 private fun BalanceHeroSection(
-    summary : BalanceSummary,
+    summary: BalanceSummary,
     modifier: Modifier = Modifier,
 ) {
     val netColor = when {
         summary.netBalance > 0 -> Green400
         summary.netBalance < 0 -> Negative
-        else                   -> TextSecondary
+        else -> TextSecondary
     }
 
     val netText = when {
         summary.netBalance > 0 -> "+${MoneyUtils.format(summary.netBalance, summary.currency)}"
-        summary.netBalance < 0 -> "-${MoneyUtils.format(Math.abs(summary.netBalance), summary.currency)}"
-        else                   -> MoneyUtils.format(0.0, summary.currency)
+        summary.netBalance < 0 -> "-${
+            MoneyUtils.format(
+                Math.abs(summary.netBalance),
+                summary.currency
+            )
+        }"
+
+        else -> MoneyUtils.format(0.0, summary.currency)
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text          = "NET BALANCE",
-            fontSize      = 11.sp,
-            color         = TextSecondary,
-            fontWeight    = FontWeight.Medium,
+            text = "NET BALANCE",
+            fontSize = 11.sp,
+            color = TextSecondary,
+            fontWeight = FontWeight.Medium,
             letterSpacing = 1.sp,
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text       = netText,
+            text = netText,
             fontWeight = FontWeight.Bold,
-            fontSize   = 42.sp,
-            color      = netColor,
+            fontSize = 42.sp,
+            color = netColor,
         )
 
         Spacer(modifier = Modifier.height(Spacing.md))
@@ -250,14 +303,14 @@ private fun BalanceHeroSection(
         // Stats pills
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             StatPill(
-                label  = "Owed to you",
+                label = "Owed to you",
                 amount = MoneyUtils.format(summary.owedToMe, summary.currency),
-                color  = Green400,
+                color = Green400,
             )
             StatPill(
-                label  = "You owe",
+                label = "You owe",
                 amount = MoneyUtils.format(summary.youOwe, summary.currency),
-                color  = Negative,
+                color = Negative,
             )
         }
     }
@@ -265,13 +318,13 @@ private fun BalanceHeroSection(
 
 @Composable
 private fun StatPill(
-    label : String,
+    label: String,
     amount: String,
-    color : Color,
+    color: Color,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier          = Modifier
+        modifier = Modifier
             .clip(RoundedCornerShape(Radius.full))
             .background(Surface2)
             .padding(horizontal = Spacing.md, vertical = Spacing.sm),
@@ -286,7 +339,7 @@ private fun StatPill(
 
 @Composable
 private fun GroupTile(
-    group  : Group,
+    group: Group,
     onClick: () -> Unit,
 ) {
     val gradient = groupTypeGradient(group.type)
@@ -301,29 +354,29 @@ private fun GroupTile(
             .padding(Spacing.md),
     ) {
         Column(
-            modifier            = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text     = groupTypeEmoji(group.type),
+                text = groupTypeEmoji(group.type),
                 fontSize = 24.sp,
             )
 
             Column {
                 Text(
-                    text       = group.name,
+                    text = group.name,
                     fontFamily = SyneFontFamily,
                     fontWeight = FontWeight.Bold,
-                    fontSize   = 14.sp,
-                    color      = TextPrimary,
-                    maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis,
+                    fontSize = 14.sp,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text     = "${group.memberCount} members",
+                    text = "${group.memberCount} members",
                     fontSize = 11.sp,
-                    color    = TextSecondary,
+                    color = TextSecondary,
                 )
             }
         }
@@ -333,23 +386,23 @@ private fun GroupTile(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 private fun groupTypeGradient(type: GroupType): List<Color> = when (type) {
-    GroupType.HOME      -> listOf(TileHomeStart, TileHomeEnd)
-    GroupType.TRIP      -> listOf(TileTripStart, TileTripEnd)
-    GroupType.COUPLE    -> listOf(TileCoupleStart, TileCoupleEnd)
-    GroupType.OFFICE    -> listOf(TileOfficeStart, TileOfficeEnd)
-    GroupType.FRIENDS   -> listOf(TileFriendsStart, TileFriendsEnd)
-    GroupType.EVENT     -> listOf(TileEventStart, TileEventEnd)
+    GroupType.HOME -> listOf(TileHomeStart, TileHomeEnd)
+    GroupType.TRIP -> listOf(TileTripStart, TileTripEnd)
+    GroupType.COUPLE -> listOf(TileCoupleStart, TileCoupleEnd)
+    GroupType.OFFICE -> listOf(TileOfficeStart, TileOfficeEnd)
+    GroupType.FRIENDS -> listOf(TileFriendsStart, TileFriendsEnd)
+    GroupType.EVENT -> listOf(TileEventStart, TileEventEnd)
     GroupType.APARTMENT -> listOf(TileFriendsStart, TileFriendsEnd)
-    GroupType.OTHER     -> listOf(TileOtherStart, TileOtherEnd)
+    GroupType.OTHER -> listOf(TileOtherStart, TileOtherEnd)
 }
 
 private fun groupTypeEmoji(type: GroupType): String = when (type) {
-    GroupType.HOME      -> "🏠"
-    GroupType.TRIP      -> "✈️"
-    GroupType.COUPLE    -> "💑"
-    GroupType.OFFICE    -> "💼"
-    GroupType.FRIENDS   -> "👫"
-    GroupType.EVENT     -> "🎉"
+    GroupType.HOME -> "🏠"
+    GroupType.TRIP -> "✈️"
+    GroupType.COUPLE -> "💑"
+    GroupType.OFFICE -> "💼"
+    GroupType.FRIENDS -> "👫"
+    GroupType.EVENT -> "🎉"
     GroupType.APARTMENT -> "🏢"
-    GroupType.OTHER     -> "💰"
+    GroupType.OTHER -> "💰"
 }

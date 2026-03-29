@@ -41,6 +41,7 @@ import com.prathik.fairshare.ui.expense.AddExpenseScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
+import com.prathik.fairshare.ui.friends.FriendsScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
 import com.prathik.fairshare.ui.theme.Green400
@@ -58,10 +59,10 @@ import com.prathik.fairshare.ui.settlement.SettleUpScreen
  * Data class representing a bottom navigation tab.
  */
 data class BottomNavItem(
-    val route         : String,
-    val selectedIcon  : ImageVector,
+    val route: String,
+    val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
-    val label         : String,
+    val label: String,
 )
 
 /**
@@ -79,34 +80,34 @@ data class BottomNavItem(
 @Composable
 fun MainShell(
     rootNavController: NavController,
-    viewModel        : MainShellViewModel = hiltViewModel(),
+    viewModel: MainShellViewModel = hiltViewModel(),
 ) {
     val unreadCount by viewModel.unreadCount.collectAsState()
 
     val tabs = listOf(
         BottomNavItem(
-            route          = Screen.Groups.route,
-            selectedIcon   = Icons.Filled.Groups,
+            route = Screen.Groups.route,
+            selectedIcon = Icons.Filled.Groups,
             unselectedIcon = Icons.Outlined.Groups,
-            label          = "Groups",
+            label = "Groups",
         ),
         BottomNavItem(
-            route          = Screen.Friends.route,
-            selectedIcon   = Icons.Filled.People,
+            route = Screen.Friends.route,
+            selectedIcon = Icons.Filled.People,
             unselectedIcon = Icons.Outlined.People,
-            label          = "Friends",
+            label = "Friends",
         ),
         BottomNavItem(
-            route          = Screen.Activity.route,
-            selectedIcon   = Icons.Filled.Notifications,
+            route = Screen.Activity.route,
+            selectedIcon = Icons.Filled.Notifications,
             unselectedIcon = Icons.Outlined.Notifications,
-            label          = "Activity",
+            label = "Activity",
         ),
         BottomNavItem(
-            route          = Screen.Account.route,
-            selectedIcon   = Icons.Filled.AccountCircle,
+            route = Screen.Account.route,
+            selectedIcon = Icons.Filled.AccountCircle,
             unselectedIcon = Icons.Outlined.AccountCircle,
-            label          = "Account",
+            label = "Account",
         ),
     )
 
@@ -124,10 +125,10 @@ fun MainShell(
                     val isSelected = selectedTabIndex == index
                     NavigationBarItem(
                         selected = isSelected,
-                        onClick  = {
+                        onClick = {
                             if (selectedTabIndex == index) {
                                 shellNavController.popBackStack(
-                                    route     = tab.route,
+                                    route = tab.route,
                                     inclusive = false,
                                 )
                             } else {
@@ -137,7 +138,7 @@ fun MainShell(
                                         saveState = true
                                     }
                                     launchSingleTop = true
-                                    restoreState    = true
+                                    restoreState = true
                                 }
                             }
                         },
@@ -147,38 +148,38 @@ fun MainShell(
                                     badge = {
                                         Badge {
                                             Text(
-                                                text       = if (unreadCount > 99) "99+" else unreadCount.toString(),
-                                                fontSize   = 10.sp,
+                                                text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                                fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                             )
                                         }
                                     }
                                 ) {
                                     Icon(
-                                        imageVector        = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                                         contentDescription = tab.label,
                                     )
                                 }
                             } else {
                                 Icon(
-                                    imageVector        = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                    imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                                     contentDescription = tab.label,
                                 )
                             }
                         },
                         label = {
                             Text(
-                                text       = tab.label,
-                                fontSize   = 11.sp,
+                                text = tab.label,
+                                fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor   = Green400,
-                            selectedTextColor   = Green400,
+                            selectedIconColor = Green400,
+                            selectedTextColor = Green400,
                             unselectedIconColor = TextSecondary,
                             unselectedTextColor = TextSecondary,
-                            indicatorColor      = Surface4,
+                            indicatorColor = Surface4,
                         ),
                     )
                 }
@@ -186,30 +187,40 @@ fun MainShell(
         }
     ) { innerPadding ->
         NavHost(
-            navController    = shellNavController,
+            navController = shellNavController,
             startDestination = Screen.Groups.route,
-            modifier         = Modifier.padding(innerPadding),
+            modifier = Modifier.padding(innerPadding),
         ) {
 
             // ── Tab roots ─────────────────────────────────────────────────────
             composable(Screen.Groups.route) {
                 GroupsHomeScreen(
-                    onNavigateToGroup       = { groupId ->
+                    onNavigateToGroup = { groupId ->
                         shellNavController.navigate(Screen.GroupDetail.route(groupId))
                     },
-                    onNavigateToSearch      = {
+                    onNavigateToSearch = {
                         shellNavController.navigate(Screen.Search.route)
                     },
                     onNavigateToCreateGroup = {
                         shellNavController.navigate(Screen.CreateGroup.route)
                     },
-                    onNavigateToAddExpense  = {                              // ← ADD THIS
+                    onNavigateToAddExpense = {                              // ← ADD THIS
                         shellNavController.navigate(Screen.AddExpense.route())
                     },
                 )
             }
             composable(Screen.Friends.route) {
-                PlaceholderScreen("Friends")
+                FriendsScreen(
+                    onNavigateToAddFriend = { shellNavController.navigate(Screen.AddFriend.route) },
+                    onNavigateToRequests = { shellNavController.navigate(Screen.FriendRequests.route) },
+                    onNavigateToFriend = { friendId ->
+                        shellNavController.navigate(
+                            Screen.FriendDetail.route(
+                                friendId
+                            )
+                        )
+                    },
+                )
             }
             composable(Screen.Activity.route) {
                 PlaceholderScreen("Activity")
@@ -223,62 +234,62 @@ fun MainShell(
 
             // ── Group screens ─────────────────────────────────────────────────
             composable(
-                route     = Screen.GroupDetail.route,
+                route = Screen.GroupDetail.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
                 GroupDetailScreen(
-                    onBack                 = { shellNavController.popBackStack() },
-                    onNavigateToSettings   = { groupId ->
+                    onBack = { shellNavController.popBackStack() },
+                    onNavigateToSettings = { groupId ->
                         shellNavController.navigate(Screen.GroupSettings.route(groupId))
                     },
-                    onNavigateToExpense    = { expenseId ->
+                    onNavigateToExpense = { expenseId ->
                         shellNavController.navigate(Screen.ExpenseDetail.route(expenseId))
                     },
                     onNavigateToAddExpense = { groupId ->
                         shellNavController.navigate(Screen.AddExpense.route(groupId))
                     },
-                    onNavigateToSettle     = { otherUserId ->
+                    onNavigateToSettle = { otherUserId ->
                         shellNavController.navigate(Screen.SettleUp.route(otherUserId))
                     },
                 )
             }
             composable(
-                route     = Screen.GroupSettings.route,
+                route = Screen.GroupSettings.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
                 GroupSettingsScreen(
-                    onBack               = { shellNavController.popBackStack() },
+                    onBack = { shellNavController.popBackStack() },
                     onNavigateToAddMember = { groupId ->
                         shellNavController.navigate(Screen.AddMember.route(groupId))
                     },
-                    onGroupDeleted       = {
+                    onGroupDeleted = {
                         shellNavController.popBackStack(Screen.Groups.route, false)
                     },
                 )
             }
 
             composable(
-                route     = Screen.GroupMembers.route,
+                route = Screen.GroupMembers.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Group Members") }
 
             composable(
-                route     = Screen.AddMember.route,
+                route = Screen.AddMember.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Add Member") }
 
             composable(
-                route     = Screen.WhoOwesWho.route,
+                route = Screen.WhoOwesWho.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Who Owes Who") }
 
             composable(
-                route     = Screen.TotalsSheet.route,
+                route = Screen.TotalsSheet.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Totals Sheet") }
 
             composable(
-                route     = Screen.GroupAnalytics.route,
+                route = Screen.GroupAnalytics.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Group Analytics") }
 
@@ -287,45 +298,45 @@ fun MainShell(
             }
 
             composable(
-                route     = Screen.JoinGroup.route,
+                route = Screen.JoinGroup.route,
                 arguments = listOf(
                     navArgument("inviteCode") {
-                        type         = NavType.StringType
-                        nullable     = true
+                        type = NavType.StringType
+                        nullable = true
                         defaultValue = null
                     }
                 )
             ) { PlaceholderScreen("Join Group") }
 
             composable(
-                route     = Screen.RecurringExpenses.route,
+                route = Screen.RecurringExpenses.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Recurring Expenses") }
 
             composable(
-                route     = Screen.Reminders.route,
+                route = Screen.Reminders.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Reminders") }
 
             composable(
-                route     = Screen.CreateReminder.route,
+                route = Screen.CreateReminder.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Create Reminder") }
 
             // ── Expense screens ───────────────────────────────────────────────
             composable(
-                route     = Screen.AddExpense.route,
+                route = Screen.AddExpense.route,
                 arguments = listOf(
                     navArgument("groupId") {
-                        type         = NavType.StringType
-                        nullable     = true
+                        type = NavType.StringType
+                        nullable = true
                         defaultValue = null
                     }
                 )
             ) {
                 AddExpenseScreen(
-                    onBack               = { shellNavController.popBackStack() },
-                    onSuccess            = { shellNavController.popBackStack() },
+                    onBack = { shellNavController.popBackStack() },
+                    onSuccess = { shellNavController.popBackStack() },
                     onNavigateToCurrency = {
                         shellNavController.navigate(Screen.CurrencySelect.route)
                     },
@@ -340,95 +351,99 @@ fun MainShell(
                 val currency by viewModel.currency.collectAsState()
                 CurrencySelectScreen(
                     currentCurrency = currency,
-                    onSelect        = { selected -> viewModel.onCurrencyChanged(selected) },
-                    onBack          = { shellNavController.popBackStack() },
+                    onSelect = { selected -> viewModel.onCurrencyChanged(selected) },
+                    onBack = { shellNavController.popBackStack() },
                 )
             }
 
             composable(
-                route     = Screen.EditExpense.route,
+                route = Screen.EditExpense.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) { PlaceholderScreen("Edit Expense") }
 
             composable(
-                route     = Screen.ExpenseDetail.route,
+                route = Screen.ExpenseDetail.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) {
                 ExpenseDetailScreen(
-                    onBack             = { shellNavController.popBackStack() },
-                    onNavigateToEdit   = { expenseId ->
+                    onBack = { shellNavController.popBackStack() },
+                    onNavigateToEdit = { expenseId ->
                         shellNavController.navigate(Screen.EditExpense.route(expenseId))
                     },
                     onNavigateToSettle = { otherUserId ->
                         shellNavController.navigate(Screen.SettleUp.route(otherUserId))
                     },
-                    onDeleted          = { shellNavController.popBackStack() },
+                    onDeleted = { shellNavController.popBackStack() },
                 )
             }
 
             composable(
-                route     = Screen.ReceiptScan.route,
+                route = Screen.ReceiptScan.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) { PlaceholderScreen("Receipt Scan") }
 
             composable(
-                route     = Screen.ItemAssignment.route,
+                route = Screen.ItemAssignment.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) { PlaceholderScreen("Item Assignment") }
 
             // ── Settlement screens ────────────────────────────────────────────
             composable(
-                route     = Screen.SettleUp.route,
+                route = Screen.SettleUp.route,
                 arguments = listOf(
                     navArgument("otherUserId") { type = NavType.StringType },
                     navArgument("groupId") {
-                        type         = NavType.StringType
-                        nullable     = true
+                        type = NavType.StringType
+                        nullable = true
                         defaultValue = null
                     }
                 )
             ) {
                 SettleUpScreen(
-                    onBack    = { shellNavController.popBackStack() },
+                    onBack = { shellNavController.popBackStack() },
                     onSuccess = { shellNavController.popBackStack() },
                 )
             }
 
             composable(
-                route     = Screen.PartialSettle.route,
+                route = Screen.PartialSettle.route,
                 arguments = listOf(
                     navArgument("otherUserId") { type = NavType.StringType },
                     navArgument("groupId") {
-                        type         = NavType.StringType
-                        nullable     = true
+                        type = NavType.StringType
+                        nullable = true
                         defaultValue = null
                     }
                 )
             ) { PlaceholderScreen("Partial Settle") }
 
             composable(
-                route     = Screen.SettlementHistory.route,
+                route = Screen.SettlementHistory.route,
                 arguments = listOf(navArgument("otherUserId") { type = NavType.StringType })
             ) { PlaceholderScreen("Settlement History") }
 
             // ── Friend screens ────────────────────────────────────────────────
             composable(
-                route     = Screen.FriendDetail.route,
+                route = Screen.FriendDetail.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
             ) { PlaceholderScreen("Friend Detail") }
 
             composable(
-                route     = Screen.FriendSettings.route,
+                route = Screen.FriendSettings.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
             ) { PlaceholderScreen("Friend Settings") }
 
             composable(
-                route     = Screen.FriendAnalytics.route,
+                route = Screen.FriendAnalytics.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
             ) { PlaceholderScreen("Friend Analytics") }
 
             composable(Screen.AddFriend.route) {
                 PlaceholderScreen("Add Friend")
+            }
+
+            composable(Screen.FriendRequests.route) {
+                PlaceholderScreen("Friend Requests")
             }
 
             // ── Account screens ───────────────────────────────────────────────

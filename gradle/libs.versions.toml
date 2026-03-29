@@ -23,6 +23,7 @@ espressoCore = "3.7.0"
 securityCrypto = "1.1.0-alpha06"
 room = "2.6.1"
 security = "1.1.0-alpha06"
+material3 = "1.4.0"
 
 [libraries]
 # Core
@@ -79,6 +80,7 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

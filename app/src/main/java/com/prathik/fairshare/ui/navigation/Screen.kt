@@ -117,6 +117,7 @@ sealed class Screen(val route: String) {
     }
 
     object AddFriend : Screen("add_friend")
+    object FriendRequests : Screen("friend_requests")
 
     // ── Account ───────────────────────────────────────────────────────────────
     object EditProfile : Screen("edit_profile")
