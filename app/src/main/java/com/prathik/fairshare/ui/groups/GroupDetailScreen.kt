@@ -110,18 +110,18 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupDetailScreen(
-    onBack              : () -> Unit,
+    onBack: () -> Unit,
     onNavigateToSettings: (String) -> Unit,
-    onNavigateToSearch  : () -> Unit = {},
-    onNavigateToExpense : (String) -> Unit,
+    onNavigateToSearch: (String) -> Unit = {},
+    onNavigateToExpense: (String) -> Unit,
     onNavigateToAddExpense: (String) -> Unit,
-    onNavigateToSettle  : (String) -> Unit,
-    viewModel           : GroupDetailViewModel = hiltViewModel(),
+    onNavigateToSettle: (String) -> Unit,
+    viewModel: GroupDetailViewModel = hiltViewModel(),
 ) {
-    val groupState    by viewModel.groupState.collectAsState()
+    val groupState by viewModel.groupState.collectAsState()
     val expensesState by viewModel.expensesState.collectAsState()
-    val balances      by viewModel.balances.collectAsState()
-    val yourBalance   by viewModel.yourBalance.collectAsState()
+    val balances by viewModel.balances.collectAsState()
+    val yourBalance by viewModel.yourBalance.collectAsState()
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val groupName = (groupState as? GroupDetailUiState.Success)?.group?.name ?: "Group"
@@ -135,7 +135,7 @@ fun GroupDetailScreen(
     val showTopBarName by remember {
         derivedStateOf {
             val firstVisible = lazyListState.firstVisibleItemIndex
-            val offset       = lazyListState.firstVisibleItemScrollOffset
+            val offset = lazyListState.firstVisibleItemScrollOffset
             // Cover is item 0 — once it's scrolled past OR offset is large enough
             firstVisible > 0 || offset > 400
         }
@@ -153,19 +153,19 @@ fun GroupDetailScreen(
     }
 
     Scaffold(
-        containerColor    = Surface0,
+        containerColor = Surface0,
         contentWindowInsets = WindowInsets(0),
         floatingActionButton = {
             FloatingActionButton(
-                onClick        = { onNavigateToAddExpense(viewModel.groupId) },
+                onClick = { onNavigateToAddExpense(viewModel.groupId) },
                 containerColor = Green400,
-                contentColor   = Surface0,
-                shape          = RoundedCornerShape(Radius.lg),
+                contentColor = Surface0,
+                shape = RoundedCornerShape(Radius.lg),
             ) {
                 Icon(
-                    imageVector        = Icons.Filled.Add,
+                    imageVector = Icons.Filled.Add,
                     contentDescription = "Add expense",
-                    modifier           = Modifier.size(24.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
         },
@@ -177,21 +177,21 @@ fun GroupDetailScreen(
         ) {
             PullToRefreshBox(
                 isRefreshing = isLoading,
-                onRefresh    = { viewModel.loadData() },
-                modifier     = Modifier.fillMaxSize(),
+                onRefresh = { viewModel.loadData() },
+                modifier = Modifier.fillMaxSize(),
             ) {
                 when (val state = groupState) {
                     is GroupDetailUiState.Loading -> FsLoadingScreen()
 
                     is GroupDetailUiState.Error -> FsErrorScreen(
-                        message   = state.message,
+                        message = state.message,
                         isNetwork = state.isNetwork,
-                        onRetry   = { viewModel.loadData() },
+                        onRetry = { viewModel.loadData() },
                     )
 
                     is GroupDetailUiState.Success -> {
                         LazyColumn(
-                            state    = lazyListState,
+                            state = lazyListState,
                             modifier = Modifier.fillMaxSize(),
                         ) {
 
@@ -206,12 +206,12 @@ fun GroupDetailScreen(
                             item {
                                 BalanceCard(
                                     yourBalance = yourBalance,
-                                    balances    = balances,
-                                    currency    = "USD",
-                                    onSettle    = { onNavigateToSettle(viewModel.groupId) },
-                                    modifier    = Modifier.padding(
+                                    balances = balances,
+                                    currency = "USD",
+                                    onSettle = { onNavigateToSettle(viewModel.groupId) },
+                                    modifier = Modifier.padding(
                                         horizontal = Spacing.lg,
-                                        vertical   = Spacing.md,
+                                        vertical = Spacing.md,
                                     ),
                                 )
                             }
@@ -220,9 +220,9 @@ fun GroupDetailScreen(
                             item {
                                 ActionPillsRow(
                                     onSettleUp = { onNavigateToSettle(viewModel.groupId) },
-                                    modifier   = Modifier.padding(
-                                        start  = Spacing.lg,
-                                        end    = Spacing.lg,
+                                    modifier = Modifier.padding(
+                                        start = Spacing.lg,
+                                        end = Spacing.lg,
                                         bottom = Spacing.md,
                                     ),
                                 )
@@ -233,20 +233,22 @@ fun GroupDetailScreen(
                                 is ExpensesUiState.Loading -> {
                                     item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
                                 }
+
                                 is ExpensesUiState.Error -> {
                                     item {
                                         FsErrorScreen(
-                                            message   = expenses.message,
+                                            message = expenses.message,
                                             isNetwork = expenses.isNetwork,
-                                            onRetry   = { viewModel.refreshExpenses() },
+                                            onRetry = { viewModel.refreshExpenses() },
                                         )
                                     }
                                 }
+
                                 is ExpensesUiState.Success -> {
                                     if (expenses.expenses.isEmpty()) {
                                         item {
                                             FsEmptyState(
-                                                title    = "No expenses yet",
+                                                title = "No expenses yet",
                                                 subtitle = "Add the first expense to get started",
                                                 modifier = Modifier.height(300.dp),
                                             )
@@ -260,20 +262,20 @@ fun GroupDetailScreen(
                                         grouped.forEach { (monthHeader, monthExpenses) ->
                                             item {
                                                 Text(
-                                                    text     = monthHeader.uppercase(),
+                                                    text = monthHeader.uppercase(),
                                                     fontSize = 10.sp,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color    = TextTertiary,
+                                                    color = TextTertiary,
                                                     letterSpacing = 1.sp,
                                                     modifier = Modifier.padding(
                                                         horizontal = Spacing.lg,
-                                                        vertical   = Spacing.sm,
+                                                        vertical = Spacing.sm,
                                                     ),
                                                 )
                                             }
                                             items(
                                                 items = monthExpenses,
-                                                key   = { it.id },
+                                                key = { it.id },
                                             ) { expense ->
                                                 ExpenseRow(
                                                     expense = expense,
@@ -300,35 +302,35 @@ fun GroupDetailScreen(
                     .offset(y = (-20).dp)
                     .padding(horizontal = Spacing.lg, vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Back
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier         = Modifier
+                    modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
                         .clickable { onBack() },
                 ) {
                     Icon(
-                        imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint               = Color.White,
-                        modifier           = Modifier.size(20.dp),
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
 
                 // Group name — only visible once cover name scrolls away
                 if (showTopBarName) {
                     Text(
-                        text       = groupName,
-                        fontSize   = 17.sp,
+                        text = groupName,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color      = Color.White,
-                        maxLines   = 1,
-                        overflow   = TextOverflow.Ellipsis,
-                        modifier   = Modifier
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = Spacing.md),
                     )
@@ -340,32 +342,32 @@ fun GroupDetailScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier         = Modifier
+                        modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
-                            .clickable { onNavigateToSearch() },
+                            .clickable { onNavigateToSearch(viewModel.groupId) },
                     ) {
                         Icon(
-                            imageVector        = Icons.Outlined.Search,
+                            imageVector = Icons.Outlined.Search,
                             contentDescription = "Search",
-                            tint               = Color.White,
-                            modifier           = Modifier.size(20.dp),
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier         = Modifier
+                        modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
                             .clickable { onNavigateToSettings(viewModel.groupId) },
                     ) {
                         Icon(
-                            imageVector        = Icons.Outlined.Settings,
+                            imageVector = Icons.Outlined.Settings,
                             contentDescription = "Settings",
-                            tint               = Color.White,
-                            modifier           = Modifier.size(20.dp),
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
@@ -381,8 +383,8 @@ private fun GroupCoverPhoto(
     group: Group,
 ) {
     val colors = coverGradientColors(group.type)
-    val emoji  = coverEmoji(group.type)
-    val style  = coverEmojiStyle(group.type)
+    val emoji = coverEmoji(group.type)
+    val style = coverEmojiStyle(group.type)
 
     Box(
         modifier = Modifier
@@ -392,7 +394,7 @@ private fun GroupCoverPhoto(
     ) {
         // Large emoji — unique position per group type
         Text(
-            text     = emoji,
+            text = emoji,
             fontSize = style.fontSize.sp,
             modifier = Modifier
                 .align(style.alignment)
@@ -420,14 +422,14 @@ private fun GroupCoverPhoto(
                 .padding(horizontal = Spacing.lg, vertical = Spacing.lg),
         ) {
             Text(
-                text       = group.name,
-                fontSize   = 26.sp,
+                text = group.name,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color      = Color.White,
+                color = Color.White,
             )
             Spacer(modifier = Modifier.height(6.dp))
             Row(
-                verticalAlignment     = Alignment.CenterVertically,
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
                 Box(modifier = Modifier.width((group.memberCount.coerceAtMost(4) * 18 + 10).dp)) {
@@ -442,9 +444,9 @@ private fun GroupCoverPhoto(
                     }
                 }
                 Text(
-                    text     = "${group.memberCount} members",
+                    text = "${group.memberCount} members",
                     fontSize = 12.sp,
-                    color    = Color(0xCCFFFFFF),
+                    color = Color(0xCCFFFFFF),
                 )
                 Box(
                     modifier = Modifier
@@ -453,9 +455,9 @@ private fun GroupCoverPhoto(
                         .padding(horizontal = Spacing.sm, vertical = 3.dp),
                 ) {
                     Text(
-                        text       = group.type.name,
-                        fontSize   = 11.sp,
-                        color      = Color.White,
+                        text = group.type.name,
+                        fontSize = 11.sp,
+                        color = Color.White,
                         fontWeight = FontWeight.Medium,
                     )
                 }
@@ -468,36 +470,36 @@ private fun GroupCoverPhoto(
 
 /** Returns the top/darkest color of the cover gradient — used for the fixed top bar background */
 private fun coverTopColor(type: GroupType): Color = when (type) {
-    GroupType.TRIP      -> Color(0xFF0D2137)
-    GroupType.HOME      -> Color(0xFF1A0D2E)
-    GroupType.OFFICE    -> Color(0xFF1A1000)
-    GroupType.FRIENDS   -> Color(0xFF0D1F0D)
-    GroupType.COUPLE    -> Color(0xFF1F0D1A)
-    GroupType.EVENT     -> Color(0xFF1A1000)
+    GroupType.TRIP -> Color(0xFF0D2137)
+    GroupType.HOME -> Color(0xFF1A0D2E)
+    GroupType.OFFICE -> Color(0xFF1A1000)
+    GroupType.FRIENDS -> Color(0xFF0D1F0D)
+    GroupType.COUPLE -> Color(0xFF1F0D1A)
+    GroupType.EVENT -> Color(0xFF1A1000)
     GroupType.APARTMENT -> Color(0xFF0D1A1F)
-    GroupType.OTHER     -> Color(0xFF111112)
+    GroupType.OTHER -> Color(0xFF111112)
 }
 
 private fun coverGradientColors(type: GroupType): List<Color> = when (type) {
-    GroupType.TRIP      -> listOf(Color(0xFF0D2137), Color(0xFF1A3A5C), Color(0xFF0D4A6B))
-    GroupType.HOME      -> listOf(Color(0xFF1A0D2E), Color(0xFF2E1A4A), Color(0xFF3D1A5C))
-    GroupType.OFFICE    -> listOf(Color(0xFF1A1000), Color(0xFF2E1E00), Color(0xFF3D2800))
-    GroupType.FRIENDS   -> listOf(Color(0xFF0D1F0D), Color(0xFF1A3020), Color(0xFF1A3D1A))
-    GroupType.COUPLE    -> listOf(Color(0xFF1F0D1A), Color(0xFF2E1022), Color(0xFF3D1A2E))
-    GroupType.EVENT     -> listOf(Color(0xFF1A1000), Color(0xFF2A1800), Color(0xFF3A2200))
+    GroupType.TRIP -> listOf(Color(0xFF0D2137), Color(0xFF1A3A5C), Color(0xFF0D4A6B))
+    GroupType.HOME -> listOf(Color(0xFF1A0D2E), Color(0xFF2E1A4A), Color(0xFF3D1A5C))
+    GroupType.OFFICE -> listOf(Color(0xFF1A1000), Color(0xFF2E1E00), Color(0xFF3D2800))
+    GroupType.FRIENDS -> listOf(Color(0xFF0D1F0D), Color(0xFF1A3020), Color(0xFF1A3D1A))
+    GroupType.COUPLE -> listOf(Color(0xFF1F0D1A), Color(0xFF2E1022), Color(0xFF3D1A2E))
+    GroupType.EVENT -> listOf(Color(0xFF1A1000), Color(0xFF2A1800), Color(0xFF3A2200))
     GroupType.APARTMENT -> listOf(Color(0xFF0D1A1F), Color(0xFF0D2A30), Color(0xFF0A2D35))
-    GroupType.OTHER     -> listOf(Color(0xFF111112), Color(0xFF1A1A1C), Color(0xFF222222))
+    GroupType.OTHER -> listOf(Color(0xFF111112), Color(0xFF1A1A1C), Color(0xFF222222))
 }
 
 private fun coverEmoji(type: GroupType): String = when (type) {
-    GroupType.TRIP      -> "✈️"
-    GroupType.HOME      -> "🏠"
-    GroupType.OFFICE    -> "💼"
-    GroupType.FRIENDS   -> "👫"
-    GroupType.COUPLE    -> "💑"
-    GroupType.EVENT     -> "🎉"
+    GroupType.TRIP -> "✈️"
+    GroupType.HOME -> "🏠"
+    GroupType.OFFICE -> "💼"
+    GroupType.FRIENDS -> "👫"
+    GroupType.COUPLE -> "💑"
+    GroupType.EVENT -> "🎉"
     GroupType.APARTMENT -> "🏢"
-    GroupType.OTHER     -> "💰"
+    GroupType.OTHER -> "💰"
 }
 
 /**
@@ -506,28 +508,28 @@ private fun coverEmoji(type: GroupType): String = when (type) {
  */
 private fun coverEmojiStyle(type: GroupType): CoverEmojiStyle = when (type) {
     // Airplane: center-top area, tilted flying in from right
-    GroupType.TRIP      -> CoverEmojiStyle(Alignment.TopCenter,    -15f, 80, Pair(20, 50))
+    GroupType.TRIP -> CoverEmojiStyle(Alignment.TopCenter, -15f, 80, Pair(20, 50))
     // House: center, slightly above mid
-    GroupType.HOME      -> CoverEmojiStyle(Alignment.Center,         0f, 82, Pair(0, -20))
+    GroupType.HOME -> CoverEmojiStyle(Alignment.Center, 0f, 82, Pair(0, -20))
     // Briefcase: center, slightly right
-    GroupType.OFFICE    -> CoverEmojiStyle(Alignment.Center,         0f, 78, Pair(20, -10))
+    GroupType.OFFICE -> CoverEmojiStyle(Alignment.Center, 0f, 78, Pair(20, -10))
     // Friends: center-top
-    GroupType.FRIENDS   -> CoverEmojiStyle(Alignment.TopCenter,      8f, 76, Pair(-10, 52))
+    GroupType.FRIENDS -> CoverEmojiStyle(Alignment.TopCenter, 8f, 76, Pair(-10, 52))
     // Couple: center
-    GroupType.COUPLE    -> CoverEmojiStyle(Alignment.Center,         0f, 80, Pair(0, -16))
+    GroupType.COUPLE -> CoverEmojiStyle(Alignment.Center, 0f, 80, Pair(0, -16))
     // Event: top-center, rotated, oversized
-    GroupType.EVENT     -> CoverEmojiStyle(Alignment.TopCenter,     15f, 86, Pair(16, 44))
+    GroupType.EVENT -> CoverEmojiStyle(Alignment.TopCenter, 15f, 86, Pair(16, 44))
     // Apartment: center
-    GroupType.APARTMENT -> CoverEmojiStyle(Alignment.Center,         0f, 76, Pair(0, -20))
+    GroupType.APARTMENT -> CoverEmojiStyle(Alignment.Center, 0f, 76, Pair(0, -20))
     // Other: center
-    GroupType.OTHER     -> CoverEmojiStyle(Alignment.Center,         0f, 74, Pair(0, -16))
+    GroupType.OTHER -> CoverEmojiStyle(Alignment.Center, 0f, 74, Pair(0, -16))
 }
 
 private data class CoverEmojiStyle(
     val alignment: Alignment,
-    val rotation : Float,
-    val fontSize : Int,
-    val offset   : Pair<Int, Int>, // x, y in dp
+    val rotation: Float,
+    val fontSize: Int,
+    val offset: Pair<Int, Int>, // x, y in dp
 )
 
 // ── Balance Card ──────────────────────────────────────────────────────────────
@@ -535,21 +537,21 @@ private data class CoverEmojiStyle(
 @Composable
 private fun BalanceCard(
     yourBalance: Double,
-    balances   : List<Balance>,
-    currency   : String,
-    onSettle   : () -> Unit,
-    modifier   : Modifier = Modifier,
+    balances: List<Balance>,
+    currency: String,
+    onSettle: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val overallColor = when {
         yourBalance > 0 -> Green400
         yourBalance < 0 -> Negative
-        else            -> TextSecondary
+        else -> TextSecondary
     }
 
     val overallText = when {
         yourBalance > 0 -> "You are owed ${MoneyUtils.format(yourBalance, currency)} overall"
         yourBalance < 0 -> "You owe ${MoneyUtils.format(-yourBalance, currency)} overall"
-        else            -> "All settled up"
+        else -> "All settled up"
     }
 
     Column(
@@ -562,13 +564,13 @@ private fun BalanceCard(
         // Overall balance summary line
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier          = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                text       = overallText,
-                fontSize   = 13.sp,
-                color      = TextSecondary,
-                modifier   = Modifier.weight(1f),
+                text = overallText,
+                fontSize = 13.sp,
+                color = TextSecondary,
+                modifier = Modifier.weight(1f),
             )
         }
 
@@ -588,28 +590,28 @@ private fun BalanceCard(
                     "You owe $personName"
 
                 Row(
-                    verticalAlignment     = Alignment.CenterVertically,
-                    modifier              = Modifier
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
                 ) {
                     FsAvatar(
-                        name   = personName,
+                        name = personName,
                         userId = balance.otherUserId,
-                        size   = ComponentSize.avatarSm,
+                        size = ComponentSize.avatarSm,
                     )
                     Spacer(modifier = Modifier.width(Spacing.sm))
                     Text(
-                        text     = label,
+                        text = label,
                         fontSize = 12.sp,
-                        color    = TextSecondary,
+                        color = TextSecondary,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text       = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
-                        fontSize   = 12.sp,
+                        text = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color      = amountColor,
+                        color = amountColor,
                     )
                 }
             }
@@ -624,10 +626,10 @@ private fun BalanceCard(
 @Composable
 private fun ActionPillsRow(
     onSettleUp: () -> Unit,
-    modifier  : Modifier = Modifier,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier              = modifier
+        modifier = modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -635,17 +637,17 @@ private fun ActionPillsRow(
         // Settle up — green primary pill
         Box(
             contentAlignment = Alignment.Center,
-            modifier         = Modifier
+            modifier = Modifier
                 .clip(RoundedCornerShape(Radius.full))
                 .background(Green400)
                 .clickable { onSettleUp() }
                 .padding(horizontal = Spacing.md, vertical = Spacing.sm),
         ) {
             Text(
-                text       = "Settle up",
-                fontSize   = 12.sp,
+                text = "Settle up",
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color      = Surface0,
+                color = Surface0,
             )
         }
 
@@ -653,16 +655,16 @@ private fun ActionPillsRow(
         listOf("Balances", "Charts", "Totals").forEach { label ->
             Box(
                 contentAlignment = Alignment.Center,
-                modifier         = Modifier
+                modifier = Modifier
                     .clip(RoundedCornerShape(Radius.full))
                     .background(Surface2)
                     .clickable { /* TODO Day 17 — Analytics */ }
                     .padding(horizontal = Spacing.md, vertical = Spacing.sm),
             ) {
                 Text(
-                    text     = label,
+                    text = label,
                     fontSize = 12.sp,
-                    color    = TextSecondary,
+                    color = TextSecondary,
                 )
             }
         }
@@ -670,15 +672,15 @@ private fun ActionPillsRow(
         // Export — muted placeholder
         Box(
             contentAlignment = Alignment.Center,
-            modifier         = Modifier
+            modifier = Modifier
                 .clip(RoundedCornerShape(Radius.full))
                 .background(Surface2)
                 .padding(horizontal = Spacing.md, vertical = Spacing.sm),
         ) {
             Text(
-                text     = "Export",
+                text = "Export",
                 fontSize = 12.sp,
-                color    = TextDisabled,
+                color = TextDisabled,
             )
         }
     }
@@ -692,22 +694,22 @@ private fun ExpenseRow(
     onClick: () -> Unit,
 ) {
     val youLent = expense.yourBalance > 0
-    val youOwe  = expense.yourBalance < 0
+    val youOwe = expense.yourBalance < 0
 
     val balanceLabel = when {
         youLent -> "you lent"
-        youOwe  -> "you owe"
-        else    -> "settled"
+        youOwe -> "you owe"
+        else -> "settled"
     }
     val balanceColor = when {
         youLent -> Green400
-        youOwe  -> Negative
-        else    -> TextTertiary
+        youOwe -> Negative
+        else -> TextTertiary
     }
     val balanceAmount = when {
         youLent -> MoneyUtils.format(expense.yourBalance, expense.currency)
-        youOwe  -> MoneyUtils.format(-expense.yourBalance, expense.currency)
-        else    -> ""
+        youOwe -> MoneyUtils.format(-expense.yourBalance, expense.currency)
+        else -> ""
     }
 
     // "Who paid" subtitle
@@ -720,7 +722,7 @@ private fun ExpenseRow(
         try {
             val dt = LocalDateTime.parse(expense.expenseDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
             val month = dt.format(DateTimeFormatter.ofPattern("MMM"))
-            val day   = dt.dayOfMonth.toString()
+            val day = dt.dayOfMonth.toString()
             month to day
         } catch (e: Exception) {
             "" to ""
@@ -731,7 +733,7 @@ private fun ExpenseRow(
     val emojiBg = categoryBgColor(expense.category)
 
     Row(
-        modifier          = Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = Spacing.lg, vertical = 11.dp),
@@ -740,20 +742,20 @@ private fun ExpenseRow(
         // Date column
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier            = Modifier.width(30.dp),
+            modifier = Modifier.width(30.dp),
         ) {
             Text(
-                text      = monthAbbr,
-                fontSize  = 10.sp,
-                color     = TextTertiary,
+                text = monthAbbr,
+                fontSize = 10.sp,
+                color = TextTertiary,
                 textAlign = TextAlign.Center,
             )
             Text(
-                text       = dayNum,
-                fontSize   = 14.sp,
+                text = dayNum,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
-                color      = TextSecondary,
-                textAlign  = TextAlign.Center,
+                color = TextSecondary,
+                textAlign = TextAlign.Center,
             )
         }
 
@@ -762,13 +764,13 @@ private fun ExpenseRow(
         // Category emoji box
         Box(
             contentAlignment = Alignment.Center,
-            modifier         = Modifier
+            modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(Radius.md))
                 .background(emojiBg),
         ) {
             Text(
-                text     = categoryEmoji(expense.category),
+                text = categoryEmoji(expense.category),
                 fontSize = 18.sp,
             )
         }
@@ -778,17 +780,17 @@ private fun ExpenseRow(
         // Description + who paid
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text       = expense.description,
-                fontSize   = 15.sp,
+                text = expense.description,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
-                color      = TextPrimary,
-                maxLines   = 1,
-                overflow   = TextOverflow.Ellipsis,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text     = paidByText,
+                text = paidByText,
                 fontSize = 12.sp,
-                color    = TextTertiary,
+                color = TextTertiary,
             )
         }
 
@@ -798,24 +800,24 @@ private fun ExpenseRow(
         if (expense.yourBalance != 0.0) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text     = balanceLabel,
+                    text = balanceLabel,
                     fontSize = 10.sp,
-                    color    = TextTertiary,
+                    color = TextTertiary,
                 )
                 Text(
-                    text       = balanceAmount,
-                    fontSize   = 14.sp,
+                    text = balanceAmount,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color      = balanceColor,
+                    color = balanceColor,
                 )
             }
         }
     }
 
     HorizontalDivider(
-        color     = Surface3,
+        color = Surface3,
         thickness = 0.5.dp,
-        modifier  = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
+        modifier = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
     )
 }
 
@@ -831,45 +833,56 @@ private fun String.toMonthHeader(): String {
 }
 
 private fun categoryEmoji(category: ExpenseCategory?): String = when (category) {
-    ExpenseCategory.DINING_OUT        -> "🍽️"
-    ExpenseCategory.GROCERIES         -> "🛒"
-    ExpenseCategory.CAR               -> "🚗"
-    ExpenseCategory.TAXI              -> "🚕"
-    ExpenseCategory.PLANE             -> "✈️"
-    ExpenseCategory.HOTEL             -> "🏨"
-    ExpenseCategory.RENT              -> "🏠"
-    ExpenseCategory.ELECTRICITY       -> "⚡"
-    ExpenseCategory.WATER             -> "💧"
-    ExpenseCategory.GAS_FUEL          -> "⛽"
+    ExpenseCategory.DINING_OUT -> "🍽️"
+    ExpenseCategory.GROCERIES -> "🛒"
+    ExpenseCategory.CAR -> "🚗"
+    ExpenseCategory.TAXI -> "🚕"
+    ExpenseCategory.PLANE -> "✈️"
+    ExpenseCategory.HOTEL -> "🏨"
+    ExpenseCategory.RENT -> "🏠"
+    ExpenseCategory.ELECTRICITY -> "⚡"
+    ExpenseCategory.WATER -> "💧"
+    ExpenseCategory.GAS_FUEL -> "⛽"
     ExpenseCategory.TV_PHONE_INTERNET -> "📱"
-    ExpenseCategory.MOVIES            -> "🎬"
-    ExpenseCategory.GAMES             -> "🎮"
-    ExpenseCategory.MUSIC             -> "🎵"
-    ExpenseCategory.SPORTS            -> "⚽"
-    ExpenseCategory.MEDICAL           -> "💊"
-    ExpenseCategory.EDUCATION         -> "📚"
-    ExpenseCategory.GIFTS             -> "🎁"
-    ExpenseCategory.LIQUOR            -> "🍺"
-    ExpenseCategory.PETS              -> "🐾"
-    ExpenseCategory.CLOTHING          -> "👕"
-    ExpenseCategory.BUS_TRAIN         -> "🚌"
-    ExpenseCategory.PARKING           -> "🅿️"
-    else                              -> "💰"
+    ExpenseCategory.MOVIES -> "🎬"
+    ExpenseCategory.GAMES -> "🎮"
+    ExpenseCategory.MUSIC -> "🎵"
+    ExpenseCategory.SPORTS -> "⚽"
+    ExpenseCategory.MEDICAL -> "💊"
+    ExpenseCategory.EDUCATION -> "📚"
+    ExpenseCategory.GIFTS -> "🎁"
+    ExpenseCategory.LIQUOR -> "🍺"
+    ExpenseCategory.PETS -> "🐾"
+    ExpenseCategory.CLOTHING -> "👕"
+    ExpenseCategory.BUS_TRAIN -> "🚌"
+    ExpenseCategory.PARKING -> "🅿️"
+    else -> "💰"
 }
 
 private fun categoryBgColor(category: ExpenseCategory?): androidx.compose.ui.graphics.Color {
     return when (category) {
         ExpenseCategory.DINING_OUT, ExpenseCategory.GROCERIES,
-        ExpenseCategory.LIQUOR                              -> androidx.compose.ui.graphics.Color(0xFF1A2A1A)
-        ExpenseCategory.RENT, ExpenseCategory.MORTGAGE      -> androidx.compose.ui.graphics.Color(0xFF1A2A3A)
+        ExpenseCategory.LIQUOR -> androidx.compose.ui.graphics.Color(0xFF1A2A1A)
+
+        ExpenseCategory.RENT, ExpenseCategory.MORTGAGE -> androidx.compose.ui.graphics.Color(
+            0xFF1A2A3A
+        )
+
         ExpenseCategory.TAXI, ExpenseCategory.CAR,
-        ExpenseCategory.BUS_TRAIN, ExpenseCategory.PLANE    -> androidx.compose.ui.graphics.Color(0xFF2A1A0A)
+        ExpenseCategory.BUS_TRAIN, ExpenseCategory.PLANE -> androidx.compose.ui.graphics.Color(
+            0xFF2A1A0A
+        )
+
         ExpenseCategory.ELECTRICITY, ExpenseCategory.WATER,
         ExpenseCategory.GAS_FUEL,
-        ExpenseCategory.TV_PHONE_INTERNET                   -> androidx.compose.ui.graphics.Color(0xFF1A1A3A)
+        ExpenseCategory.TV_PHONE_INTERNET -> androidx.compose.ui.graphics.Color(0xFF1A1A3A)
+
         ExpenseCategory.MOVIES, ExpenseCategory.GAMES,
-        ExpenseCategory.MUSIC, ExpenseCategory.SPORTS       -> androidx.compose.ui.graphics.Color(0xFF2A1A2A)
-        ExpenseCategory.MEDICAL                             -> androidx.compose.ui.graphics.Color(0xFF2A1A1A)
-        else                                                -> androidx.compose.ui.graphics.Color(0xFF1E1E20)
+        ExpenseCategory.MUSIC, ExpenseCategory.SPORTS -> androidx.compose.ui.graphics.Color(
+            0xFF2A1A2A
+        )
+
+        ExpenseCategory.MEDICAL -> androidx.compose.ui.graphics.Color(0xFF2A1A1A)
+        else -> androidx.compose.ui.graphics.Color(0xFF1E1E20)
     }
 }

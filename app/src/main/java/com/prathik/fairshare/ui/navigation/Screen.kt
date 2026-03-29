@@ -19,6 +19,7 @@ sealed class Screen(val route: String) {
     object VerifyEmail : Screen("verify_email?email={email}") {
         fun route(email: String) = "verify_email?email=$email"
     }
+
     object ForgotPassword : Screen("forgot_password")
 
     // ── Main tabs ─────────────────────────────────────────────────────────────
@@ -128,7 +129,10 @@ sealed class Screen(val route: String) {
     object CurrencySelect : Screen("currency_select")
 
     // ── Search ────────────────────────────────────────────────────────────────
-    object Search : Screen("search")
+    object Search : Screen("search?groupId={groupId}") {
+        fun route(groupId: String? = null) =
+            if (groupId != null) "search?groupId=$groupId" else "search"
+    }
 
     // ── Recurring + Reminders ─────────────────────────────────────────────────
     object RecurringExpenses : Screen("group/{groupId}/recurring") {

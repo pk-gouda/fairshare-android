@@ -10,6 +10,7 @@ import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -18,6 +19,17 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,6 +54,7 @@ import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.friends.FriendsScreen
+import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
 import com.prathik.fairshare.ui.theme.Green400
@@ -53,16 +66,17 @@ import com.prathik.fairshare.ui.expense.CurrencySelectScreen
 import com.prathik.fairshare.ui.expense.AddExpenseViewModel
 import com.prathik.fairshare.ui.expense.ExpenseDetailScreen
 import com.prathik.fairshare.ui.settlement.SettleUpScreen
+import androidx.compose.ui.unit.dp
 
 
 /**
  * Data class representing a bottom navigation tab.
  */
 data class BottomNavItem(
-    val route: String,
-    val selectedIcon: ImageVector,
+    val route         : String,
+    val selectedIcon  : ImageVector,
     val unselectedIcon: ImageVector,
-    val label: String,
+    val label         : String,
 )
 
 /**
@@ -80,34 +94,34 @@ data class BottomNavItem(
 @Composable
 fun MainShell(
     rootNavController: NavController,
-    viewModel: MainShellViewModel = hiltViewModel(),
+    viewModel        : MainShellViewModel = hiltViewModel(),
 ) {
     val unreadCount by viewModel.unreadCount.collectAsState()
 
     val tabs = listOf(
         BottomNavItem(
-            route = Screen.Groups.route,
-            selectedIcon = Icons.Filled.Groups,
+            route          = Screen.Groups.route,
+            selectedIcon   = Icons.Filled.Groups,
             unselectedIcon = Icons.Outlined.Groups,
-            label = "Groups",
+            label          = "Groups",
         ),
         BottomNavItem(
-            route = Screen.Friends.route,
-            selectedIcon = Icons.Filled.People,
+            route          = Screen.Friends.route,
+            selectedIcon   = Icons.Filled.People,
             unselectedIcon = Icons.Outlined.People,
-            label = "Friends",
+            label          = "Friends",
         ),
         BottomNavItem(
-            route = Screen.Activity.route,
-            selectedIcon = Icons.Filled.Notifications,
+            route          = Screen.Activity.route,
+            selectedIcon   = Icons.Filled.Notifications,
             unselectedIcon = Icons.Outlined.Notifications,
-            label = "Activity",
+            label          = "Activity",
         ),
         BottomNavItem(
-            route = Screen.Account.route,
-            selectedIcon = Icons.Filled.AccountCircle,
+            route          = Screen.Account.route,
+            selectedIcon   = Icons.Filled.AccountCircle,
             unselectedIcon = Icons.Outlined.AccountCircle,
-            label = "Account",
+            label          = "Account",
         ),
     )
 
@@ -117,94 +131,164 @@ fun MainShell(
     Scaffold(
         containerColor = Surface0,
         bottomBar = {
-            NavigationBar(
-                containerColor = Surface1,
-                tonalElevation = androidx.compose.ui.unit.Dp.Unspecified,
-            ) {
-                tabs.forEachIndexed { index, tab ->
-                    val isSelected = selectedTabIndex == index
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = {
-                            if (selectedTabIndex == index) {
-                                shellNavController.popBackStack(
-                                    route = tab.route,
-                                    inclusive = false,
-                                )
-                            } else {
-                                selectedTabIndex = index
-                                shellNavController.navigate(tab.route) {
-                                    popUpTo(shellNavController.graph.findStartDestination().id) {
-                                        saveState = true
+            Box {
+                NavigationBar(
+                    containerColor = Surface1,
+                    tonalElevation = androidx.compose.ui.unit.Dp.Unspecified,
+                ) {
+                    // First 2 tabs: Groups, Friends
+                    tabs.take(2).forEachIndexed { index, tab ->
+                        val isSelected = selectedTabIndex == index
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick  = {
+                                if (selectedTabIndex == index) {
+                                    shellNavController.popBackStack(tab.route, false)
+                                } else {
+                                    selectedTabIndex = index
+                                    shellNavController.navigate(tab.route) {
+                                        popUpTo(shellNavController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState    = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
-                            }
-                        },
-                        icon = {
-                            if (tab.route == Screen.Activity.route && unreadCount > 0) {
-                                BadgedBox(
-                                    badge = {
+                            },
+                            icon  = {
+                                Icon(
+                                    imageVector        = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                    contentDescription = tab.label,
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text       = tab.label,
+                                    fontSize   = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor   = Green400,
+                                selectedTextColor   = Green400,
+                                unselectedIconColor = TextSecondary,
+                                unselectedTextColor = TextSecondary,
+                                indicatorColor      = Surface4,
+                            ),
+                        )
+                    }
+
+                    // Center placeholder for the elevated search button
+                    NavigationBarItem(
+                        selected = false,
+                        onClick  = {},
+                        icon     = { Box(modifier = Modifier.size(46.dp)) },
+                        label    = {},
+                        enabled  = false,
+                        colors   = NavigationBarItemDefaults.colors(
+                            indicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        ),
+                    )
+
+                    // Last 2 tabs: Activity, Account
+                    tabs.takeLast(2).forEachIndexed { i, tab ->
+                        val index      = i + 2
+                        val isSelected = selectedTabIndex == index
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick  = {
+                                if (selectedTabIndex == index) {
+                                    shellNavController.popBackStack(tab.route, false)
+                                } else {
+                                    selectedTabIndex = index
+                                    shellNavController.navigate(tab.route) {
+                                        popUpTo(shellNavController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState    = true
+                                    }
+                                }
+                            },
+                            icon = {
+                                if (tab.route == Screen.Activity.route && unreadCount > 0) {
+                                    BadgedBox(badge = {
                                         Badge {
                                             Text(
-                                                text = if (unreadCount > 99) "99+" else unreadCount.toString(),
-                                                fontSize = 10.sp,
+                                                text       = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                                fontSize   = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                             )
                                         }
+                                    }) {
+                                        Icon(
+                                            imageVector        = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                            contentDescription = tab.label,
+                                        )
                                     }
-                                ) {
+                                } else {
                                     Icon(
-                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                        imageVector        = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                                         contentDescription = tab.label,
                                     )
                                 }
-                            } else {
-                                Icon(
-                                    imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                    contentDescription = tab.label,
+                            },
+                            label = {
+                                Text(
+                                    text       = tab.label,
+                                    fontSize   = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                 )
-                            }
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor   = Green400,
+                                selectedTextColor   = Green400,
+                                unselectedIconColor = TextSecondary,
+                                unselectedTextColor = TextSecondary,
+                                indicatorColor      = Surface4,
+                            ),
+                        )
+                    }
+                }
+
+                // Elevated center search button — sits above the nav bar
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = (-16).dp)
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(Green400)
+                        .clickable {
+                            shellNavController.navigate(Screen.Search.route())
                         },
-                        label = {
-                            Text(
-                                text = tab.label,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Green400,
-                            selectedTextColor = Green400,
-                            unselectedIconColor = TextSecondary,
-                            unselectedTextColor = TextSecondary,
-                            indicatorColor = Surface4,
-                        ),
+                ) {
+                    Icon(
+                        imageVector        = Icons.Outlined.Search,
+                        contentDescription = "Search",
+                        tint               = Surface0,
+                        modifier           = Modifier.size(24.dp),
                     )
                 }
             }
         }
     ) { innerPadding ->
         NavHost(
-            navController = shellNavController,
+            navController    = shellNavController,
             startDestination = Screen.Groups.route,
-            modifier = Modifier.padding(innerPadding),
+            modifier         = Modifier.padding(innerPadding),
         ) {
 
             // ── Tab roots ─────────────────────────────────────────────────────
             composable(Screen.Groups.route) {
                 GroupsHomeScreen(
-                    onNavigateToGroup = { groupId ->
+                    onNavigateToGroup       = { groupId ->
                         shellNavController.navigate(Screen.GroupDetail.route(groupId))
                     },
-                    onNavigateToSearch = {
+                    onNavigateToSearch      = {
                         shellNavController.navigate(Screen.Search.route)
                     },
                     onNavigateToCreateGroup = {
                         shellNavController.navigate(Screen.CreateGroup.route)
                     },
-                    onNavigateToAddExpense = {                              // ← ADD THIS
+                    onNavigateToAddExpense  = {                              // ← ADD THIS
                         shellNavController.navigate(Screen.AddExpense.route())
                     },
                 )
@@ -212,14 +296,8 @@ fun MainShell(
             composable(Screen.Friends.route) {
                 FriendsScreen(
                     onNavigateToAddFriend = { shellNavController.navigate(Screen.AddFriend.route) },
-                    onNavigateToRequests = { shellNavController.navigate(Screen.FriendRequests.route) },
-                    onNavigateToFriend = { friendId ->
-                        shellNavController.navigate(
-                            Screen.FriendDetail.route(
-                                friendId
-                            )
-                        )
-                    },
+                    onNavigateToRequests  = { shellNavController.navigate(Screen.FriendRequests.route) },
+                    onNavigateToFriend    = { friendId -> shellNavController.navigate(Screen.FriendDetail.route(friendId)) },
                 )
             }
             composable(Screen.Activity.route) {
@@ -234,62 +312,65 @@ fun MainShell(
 
             // ── Group screens ─────────────────────────────────────────────────
             composable(
-                route = Screen.GroupDetail.route,
+                route     = Screen.GroupDetail.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
                 GroupDetailScreen(
-                    onBack = { shellNavController.popBackStack() },
-                    onNavigateToSettings = { groupId ->
+                    onBack                 = { shellNavController.popBackStack() },
+                    onNavigateToSettings   = { groupId ->
                         shellNavController.navigate(Screen.GroupSettings.route(groupId))
                     },
-                    onNavigateToExpense = { expenseId ->
+                    onNavigateToSearch     = { groupId ->
+                        shellNavController.navigate(Screen.Search.route(groupId))
+                    },
+                    onNavigateToExpense    = { expenseId ->
                         shellNavController.navigate(Screen.ExpenseDetail.route(expenseId))
                     },
                     onNavigateToAddExpense = { groupId ->
                         shellNavController.navigate(Screen.AddExpense.route(groupId))
                     },
-                    onNavigateToSettle = { otherUserId ->
+                    onNavigateToSettle     = { otherUserId ->
                         shellNavController.navigate(Screen.SettleUp.route(otherUserId))
                     },
                 )
             }
             composable(
-                route = Screen.GroupSettings.route,
+                route     = Screen.GroupSettings.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
                 GroupSettingsScreen(
-                    onBack = { shellNavController.popBackStack() },
+                    onBack               = { shellNavController.popBackStack() },
                     onNavigateToAddMember = { groupId ->
                         shellNavController.navigate(Screen.AddMember.route(groupId))
                     },
-                    onGroupDeleted = {
+                    onGroupDeleted       = {
                         shellNavController.popBackStack(Screen.Groups.route, false)
                     },
                 )
             }
 
             composable(
-                route = Screen.GroupMembers.route,
+                route     = Screen.GroupMembers.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Group Members") }
 
             composable(
-                route = Screen.AddMember.route,
+                route     = Screen.AddMember.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Add Member") }
 
             composable(
-                route = Screen.WhoOwesWho.route,
+                route     = Screen.WhoOwesWho.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Who Owes Who") }
 
             composable(
-                route = Screen.TotalsSheet.route,
+                route     = Screen.TotalsSheet.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Totals Sheet") }
 
             composable(
-                route = Screen.GroupAnalytics.route,
+                route     = Screen.GroupAnalytics.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Group Analytics") }
 
@@ -298,45 +379,45 @@ fun MainShell(
             }
 
             composable(
-                route = Screen.JoinGroup.route,
+                route     = Screen.JoinGroup.route,
                 arguments = listOf(
                     navArgument("inviteCode") {
-                        type = NavType.StringType
-                        nullable = true
+                        type         = NavType.StringType
+                        nullable     = true
                         defaultValue = null
                     }
                 )
             ) { PlaceholderScreen("Join Group") }
 
             composable(
-                route = Screen.RecurringExpenses.route,
+                route     = Screen.RecurringExpenses.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Recurring Expenses") }
 
             composable(
-                route = Screen.Reminders.route,
+                route     = Screen.Reminders.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Reminders") }
 
             composable(
-                route = Screen.CreateReminder.route,
+                route     = Screen.CreateReminder.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Create Reminder") }
 
             // ── Expense screens ───────────────────────────────────────────────
             composable(
-                route = Screen.AddExpense.route,
+                route     = Screen.AddExpense.route,
                 arguments = listOf(
                     navArgument("groupId") {
-                        type = NavType.StringType
-                        nullable = true
+                        type         = NavType.StringType
+                        nullable     = true
                         defaultValue = null
                     }
                 )
             ) {
                 AddExpenseScreen(
-                    onBack = { shellNavController.popBackStack() },
-                    onSuccess = { shellNavController.popBackStack() },
+                    onBack               = { shellNavController.popBackStack() },
+                    onSuccess            = { shellNavController.popBackStack() },
                     onNavigateToCurrency = {
                         shellNavController.navigate(Screen.CurrencySelect.route)
                     },
@@ -351,90 +432,90 @@ fun MainShell(
                 val currency by viewModel.currency.collectAsState()
                 CurrencySelectScreen(
                     currentCurrency = currency,
-                    onSelect = { selected -> viewModel.onCurrencyChanged(selected) },
-                    onBack = { shellNavController.popBackStack() },
+                    onSelect        = { selected -> viewModel.onCurrencyChanged(selected) },
+                    onBack          = { shellNavController.popBackStack() },
                 )
             }
 
             composable(
-                route = Screen.EditExpense.route,
+                route     = Screen.EditExpense.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) { PlaceholderScreen("Edit Expense") }
 
             composable(
-                route = Screen.ExpenseDetail.route,
+                route     = Screen.ExpenseDetail.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) {
                 ExpenseDetailScreen(
-                    onBack = { shellNavController.popBackStack() },
-                    onNavigateToEdit = { expenseId ->
+                    onBack             = { shellNavController.popBackStack() },
+                    onNavigateToEdit   = { expenseId ->
                         shellNavController.navigate(Screen.EditExpense.route(expenseId))
                     },
                     onNavigateToSettle = { otherUserId ->
                         shellNavController.navigate(Screen.SettleUp.route(otherUserId))
                     },
-                    onDeleted = { shellNavController.popBackStack() },
+                    onDeleted          = { shellNavController.popBackStack() },
                 )
             }
 
             composable(
-                route = Screen.ReceiptScan.route,
+                route     = Screen.ReceiptScan.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) { PlaceholderScreen("Receipt Scan") }
 
             composable(
-                route = Screen.ItemAssignment.route,
+                route     = Screen.ItemAssignment.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) { PlaceholderScreen("Item Assignment") }
 
             // ── Settlement screens ────────────────────────────────────────────
             composable(
-                route = Screen.SettleUp.route,
+                route     = Screen.SettleUp.route,
                 arguments = listOf(
                     navArgument("otherUserId") { type = NavType.StringType },
                     navArgument("groupId") {
-                        type = NavType.StringType
-                        nullable = true
+                        type         = NavType.StringType
+                        nullable     = true
                         defaultValue = null
                     }
                 )
             ) {
                 SettleUpScreen(
-                    onBack = { shellNavController.popBackStack() },
+                    onBack    = { shellNavController.popBackStack() },
                     onSuccess = { shellNavController.popBackStack() },
                 )
             }
 
             composable(
-                route = Screen.PartialSettle.route,
+                route     = Screen.PartialSettle.route,
                 arguments = listOf(
                     navArgument("otherUserId") { type = NavType.StringType },
                     navArgument("groupId") {
-                        type = NavType.StringType
-                        nullable = true
+                        type         = NavType.StringType
+                        nullable     = true
                         defaultValue = null
                     }
                 )
             ) { PlaceholderScreen("Partial Settle") }
 
             composable(
-                route = Screen.SettlementHistory.route,
+                route     = Screen.SettlementHistory.route,
                 arguments = listOf(navArgument("otherUserId") { type = NavType.StringType })
             ) { PlaceholderScreen("Settlement History") }
 
             // ── Friend screens ────────────────────────────────────────────────
             composable(
-                route = Screen.FriendDetail.route,
+                route     = Screen.FriendDetail.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
             ) { PlaceholderScreen("Friend Detail") }
 
             composable(
-                route = Screen.FriendSettings.route,
+                route     = Screen.FriendSettings.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
             ) { PlaceholderScreen("Friend Settings") }
 
             composable(
-                route = Screen.FriendAnalytics.route,
+                route     = Screen.FriendAnalytics.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
             ) { PlaceholderScreen("Friend Analytics") }
 
@@ -461,8 +542,22 @@ fun MainShell(
             }
 
             // ── Search ────────────────────────────────────────────────────────
-            composable(Screen.Search.route) {
-                PlaceholderScreen("Search")
+            composable(
+                route     = Screen.Search.route,
+                arguments = listOf(
+                    navArgument("groupId") {
+                        type     = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                ),
+            ) {
+                GlobalSearchScreen(
+                    onBack              = { shellNavController.popBackStack() },
+                    onNavigateToExpense = { expenseId ->
+                        shellNavController.navigate(Screen.ExpenseDetail.route(expenseId))
+                    },
+                )
             }
         }
     }
