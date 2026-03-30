@@ -17,10 +17,10 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ExpenseDetailViewModel @Inject constructor(
-    private val getExpenseUseCase   : GetExpenseUseCase,
+    private val getExpenseUseCase: GetExpenseUseCase,
     private val deleteExpenseUseCase: DeleteExpenseUseCase,
-    private val tokenStore          : EncryptedTokenStore,
-    savedStateHandle                : SavedStateHandle,
+    private val tokenStore: EncryptedTokenStore,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     val expenseId: String = savedStateHandle.get<String>("expenseId") ?: ""
@@ -32,15 +32,23 @@ class ExpenseDetailViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<ExpenseActionState>(ExpenseActionState.Idle)
     val actionState: StateFlow<ExpenseActionState> = _actionState.asStateFlow()
 
-    init { loadExpense() }
+    init {
+        loadExpense()
+    }
 
     fun loadExpense() {
         viewModelScope.launch {
             _expenseState.value = ExpenseDetailUiState.Loading
             when (val result = getExpenseUseCase(expenseId)) {
-                is ApiResult.Success      -> _expenseState.value = ExpenseDetailUiState.Success(result.data)
-                is ApiResult.NetworkError -> _expenseState.value = ExpenseDetailUiState.Error("No internet connection.", true)
-                else                      -> _expenseState.value = ExpenseDetailUiState.Error("Failed to load expense.", false)
+                is ApiResult.Success -> _expenseState.value =
+                    ExpenseDetailUiState.Success(result.data)
+
+                is ApiResult.NotFound -> _expenseState.value = ExpenseDetailUiState.Deleted
+                is ApiResult.NetworkError -> _expenseState.value =
+                    ExpenseDetailUiState.Error("No internet connection.", true)
+
+                else -> _expenseState.value =
+                    ExpenseDetailUiState.Error("Failed to load expense.", false)
             }
         }
     }
@@ -49,24 +57,29 @@ class ExpenseDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _actionState.value = ExpenseActionState.Loading
             when (val result = deleteExpenseUseCase(expenseId)) {
-                is ApiResult.Success      -> _actionState.value = ExpenseActionState.Deleted
-                is ApiResult.NetworkError -> _actionState.value = ExpenseActionState.Error("No internet connection.")
-                else                      -> _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
+                is ApiResult.Success -> _actionState.value = ExpenseActionState.Deleted
+                is ApiResult.NetworkError -> _actionState.value =
+                    ExpenseActionState.Error("No internet connection.")
+
+                else -> _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
             }
         }
     }
 
-    fun resetActionState() { _actionState.value = ExpenseActionState.Idle }
+    fun resetActionState() {
+        _actionState.value = ExpenseActionState.Idle
+    }
 }
 
 sealed class ExpenseDetailUiState {
     object Loading : ExpenseDetailUiState()
+    object Deleted : ExpenseDetailUiState()
     data class Success(val expense: Expense) : ExpenseDetailUiState()
     data class Error(val message: String, val isNetwork: Boolean) : ExpenseDetailUiState()
 }
 
 sealed class ExpenseActionState {
-    object Idle    : ExpenseActionState()
+    object Idle : ExpenseActionState()
     object Loading : ExpenseActionState()
     object Deleted : ExpenseActionState()
     data class Error(val message: String) : ExpenseActionState()

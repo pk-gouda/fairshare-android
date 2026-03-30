@@ -84,14 +84,14 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseDetailScreen(
-    onBack          : () -> Unit,
+    onBack: () -> Unit,
     onNavigateToEdit: (String) -> Unit,
     onNavigateToSettle: (String) -> Unit,
-    onDeleted       : () -> Unit,
-    viewModel       : ExpenseDetailViewModel = hiltViewModel(),
+    onDeleted: () -> Unit,
+    viewModel: ExpenseDetailViewModel = hiltViewModel(),
 ) {
     val expenseState by viewModel.expenseState.collectAsState()
-    val actionState  by viewModel.actionState.collectAsState()
+    val actionState by viewModel.actionState.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -99,9 +99,23 @@ fun ExpenseDetailScreen(
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
-            is ExpenseActionState.Deleted -> { onDeleted(); viewModel.resetActionState() }
-            is ExpenseActionState.Error   -> { snackbarHost.showSnackbar(state.message); viewModel.resetActionState() }
+            is ExpenseActionState.Deleted -> {
+                onDeleted(); viewModel.resetActionState()
+            }
+
+            is ExpenseActionState.Error -> {
+                snackbarHost.showSnackbar(state.message); viewModel.resetActionState()
+            }
+
             else -> Unit
+        }
+    }
+
+    // If the expense no longer exists (deleted by someone else), go back
+    LaunchedEffect(expenseState) {
+        if (expenseState is ExpenseDetailUiState.Deleted) {
+            snackbarHost.showSnackbar("This expense has been deleted")
+            onBack()
         }
     }
 
@@ -109,21 +123,21 @@ fun ExpenseDetailScreen(
         containerColor = Surface0,
         topBar = {
             FsTopBar(
-                title  = "Expense detail",
+                title = "Expense detail",
                 onBack = onBack,
                 actions = {
                     val expense = (expenseState as? ExpenseDetailUiState.Success)?.expense
                     if (expense != null && expense.addedById == viewModel.currentUserId) {
                         FsIconButton(
-                            icon               = Icons.Filled.Edit,
+                            icon = Icons.Filled.Edit,
                             contentDescription = "Edit",
-                            onClick            = { onNavigateToEdit(viewModel.expenseId) },
+                            onClick = { onNavigateToEdit(viewModel.expenseId) },
                         )
                         FsIconButton(
-                            icon               = Icons.Filled.Delete,
+                            icon = Icons.Filled.Delete,
                             contentDescription = "Delete",
-                            onClick            = { showDeleteDialog = true },
-                            tint               = Negative,
+                            onClick = { showDeleteDialog = true },
+                            tint = Negative,
                         )
                     }
                 }
@@ -133,19 +147,23 @@ fun ExpenseDetailScreen(
     ) { innerPadding ->
         PullToRefreshBox(
             isRefreshing = isLoading,
-            onRefresh    = { viewModel.loadExpense() },
-            modifier     = Modifier.fillMaxSize().padding(innerPadding),
+            onRefresh = { viewModel.loadExpense() },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
         ) {
             when (val state = expenseState) {
                 is ExpenseDetailUiState.Loading -> FsLoadingScreen()
-                is ExpenseDetailUiState.Error   -> FsErrorScreen(
+                is ExpenseDetailUiState.Deleted -> FsLoadingScreen() // briefly shown before LaunchedEffect pops back
+                is ExpenseDetailUiState.Error -> FsErrorScreen(
                     message = state.message, isNetwork = state.isNetwork,
                     onRetry = { viewModel.loadExpense() })
+
                 is ExpenseDetailUiState.Success -> ExpenseDetailContent(
-                    expense       = state.expense,
+                    expense = state.expense,
                     currentUserId = viewModel.currentUserId,
-                    onSettle      = { onNavigateToSettle(it) },
-                    isDeleting    = actionState is ExpenseActionState.Loading,
+                    onSettle = { onNavigateToSettle(it) },
+                    isDeleting = actionState is ExpenseActionState.Loading,
                 )
             }
         }
@@ -155,21 +173,21 @@ fun ExpenseDetailScreen(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title            = { Text("Delete expense?") },
-            text             = { Text("This will permanently delete the expense and update all balances. This cannot be undone.") },
-            confirmButton    = {
+            title = { Text("Delete expense?") },
+            text = { Text("This will permanently delete the expense and update all balances. This cannot be undone.") },
+            confirmButton = {
                 FsPrimaryButton(
-                    text      = "Delete",
-                    onClick   = { showDeleteDialog = false; viewModel.deleteExpense() },
+                    text = "Delete",
+                    onClick = { showDeleteDialog = false; viewModel.deleteExpense() },
                     isLoading = actionState is ExpenseActionState.Loading,
                 )
             },
-            dismissButton    = {
+            dismissButton = {
                 FsTextButton(text = "Cancel", onClick = { showDeleteDialog = false })
             },
-            containerColor   = Surface2,
+            containerColor = Surface2,
             titleContentColor = TextPrimary,
-            textContentColor  = TextSecondary,
+            textContentColor = TextSecondary,
         )
     }
 }
@@ -178,10 +196,10 @@ fun ExpenseDetailScreen(
 
 @Composable
 private fun ExpenseDetailContent(
-    expense      : Expense,
+    expense: Expense,
     currentUserId: String?,
-    onSettle     : (String) -> Unit,
-    isDeleting   : Boolean,
+    onSettle: (String) -> Unit,
+    isDeleting: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -191,28 +209,28 @@ private fun ExpenseDetailContent(
         // ── Amount hero ───────────────────────────────────────────────────────
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier            = Modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = Spacing.xl),
         ) {
             // Category emoji
             Text(
-                text     = categoryEmoji(expense.category?.name),
+                text = categoryEmoji(expense.category?.name),
                 fontSize = 36.sp,
             )
             Spacer(modifier = Modifier.height(Spacing.sm))
             Text(
-                text       = MoneyUtils.format(expense.totalAmount, expense.currency),
+                text = MoneyUtils.format(expense.totalAmount, expense.currency),
                 fontFamily = SyneFontFamily,
                 fontWeight = FontWeight.ExtraBold,
-                fontSize   = 42.sp,
-                color      = TextPrimary,
+                fontSize = 42.sp,
+                color = TextPrimary,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text       = expense.description,
-                fontSize   = 16.sp,
-                color      = TextSecondary,
+                text = expense.description,
+                fontSize = 16.sp,
+                color = TextSecondary,
                 fontWeight = FontWeight.Medium,
             )
 
@@ -221,12 +239,24 @@ private fun ExpenseDetailContent(
             val balanceColor = when {
                 expense.yourBalance > 0 -> Green400
                 expense.yourBalance < 0 -> Negative
-                else                    -> TextSecondary
+                else -> TextSecondary
             }
             val balanceText = when {
-                expense.yourBalance > 0 -> "you get back ${MoneyUtils.format(expense.yourBalance, expense.currency)}"
-                expense.yourBalance < 0 -> "you owe ${MoneyUtils.format(-expense.yourBalance, expense.currency)}"
-                else                    -> "you're settled up"
+                expense.yourBalance > 0 -> "you get back ${
+                    MoneyUtils.format(
+                        expense.yourBalance,
+                        expense.currency
+                    )
+                }"
+
+                expense.yourBalance < 0 -> "you owe ${
+                    MoneyUtils.format(
+                        -expense.yourBalance,
+                        expense.currency
+                    )
+                }"
+
+                else -> "you're settled up"
             }
             Box(
                 modifier = Modifier
@@ -234,7 +264,12 @@ private fun ExpenseDetailContent(
                     .background(balanceColor.copy(alpha = 0.12f))
                     .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
             ) {
-                Text(text = balanceText, fontSize = 13.sp, color = balanceColor, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = balanceText,
+                    fontSize = 13.sp,
+                    color = balanceColor,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
 
@@ -250,33 +285,41 @@ private fun ExpenseDetailContent(
         ) {
             if (expense.groupName != null) {
                 MetaRow(icon = "👥", label = "Group", value = expense.groupName)
-                HorizontalDivider(color = Surface4, thickness = 0.5.dp,
-                    modifier = Modifier.padding(horizontal = Spacing.lg))
+                HorizontalDivider(
+                    color = Surface4, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg)
+                )
             }
             MetaRow(
-                icon  = "📅",
+                icon = "📅",
                 label = "Date",
                 value = formatDate(expense.expenseDate),
             )
             if (expense.category != null) {
-                HorizontalDivider(color = Surface4, thickness = 0.5.dp,
-                    modifier = Modifier.padding(horizontal = Spacing.lg))
+                HorizontalDivider(
+                    color = Surface4, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg)
+                )
                 MetaRow(
-                    icon  = categoryEmoji(expense.category.name),
+                    icon = categoryEmoji(expense.category.name),
                     label = "Category",
                     value = expense.category.name.lowercase().replace("_", " ")
                         .replaceFirstChar { it.uppercase() },
                 )
             }
             if (!expense.notes.isNullOrBlank()) {
-                HorizontalDivider(color = Surface4, thickness = 0.5.dp,
-                    modifier = Modifier.padding(horizontal = Spacing.lg))
+                HorizontalDivider(
+                    color = Surface4, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg)
+                )
                 MetaRow(icon = "📝", label = "Notes", value = expense.notes)
             }
-            HorizontalDivider(color = Surface4, thickness = 0.5.dp,
-                modifier = Modifier.padding(horizontal = Spacing.lg))
+            HorizontalDivider(
+                color = Surface4, thickness = 0.5.dp,
+                modifier = Modifier.padding(horizontal = Spacing.lg)
+            )
             MetaRow(
-                icon  = "👤",
+                icon = "👤",
                 label = "Added by",
                 value = if (expense.addedById == currentUserId) "You" else expense.addedByName,
             )
@@ -285,7 +328,7 @@ private fun ExpenseDetailContent(
         // ── Who paid ──────────────────────────────────────────────────────────
         Spacer(modifier = Modifier.height(Spacing.sm))
         FsSectionLabel(
-            text     = "Who paid",
+            text = "Who paid",
             modifier = Modifier.padding(horizontal = Spacing.lg),
         )
         Spacer(modifier = Modifier.height(Spacing.sm))
@@ -302,21 +345,28 @@ private fun ExpenseDetailContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                    verticalAlignment     = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     val name = if (payer.userId == currentUserId) "You" else payer.fullName
-                    Text(text = name, fontSize = 15.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
                     Text(
-                        text       = MoneyUtils.format(payer.amountPaid, expense.currency),
-                        fontSize   = 15.sp,
-                        color      = Green400,
+                        text = name,
+                        fontSize = 15.sp,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = MoneyUtils.format(payer.amountPaid, expense.currency),
+                        fontSize = 15.sp,
+                        color = Green400,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
                 if (index < expense.payers.lastIndex) {
-                    HorizontalDivider(color = Surface4, thickness = 0.5.dp,
-                        modifier = Modifier.padding(horizontal = Spacing.lg))
+                    HorizontalDivider(
+                        color = Surface4, thickness = 0.5.dp,
+                        modifier = Modifier.padding(horizontal = Spacing.lg)
+                    )
                 }
             }
         }
@@ -324,7 +374,7 @@ private fun ExpenseDetailContent(
         // ── Split breakdown ───────────────────────────────────────────────────
         Spacer(modifier = Modifier.height(Spacing.lg))
         FsSectionLabel(
-            text     = "Split breakdown",
+            text = "Split breakdown",
             modifier = Modifier.padding(horizontal = Spacing.lg),
         )
         Spacer(modifier = Modifier.height(Spacing.sm))
@@ -337,21 +387,26 @@ private fun ExpenseDetailContent(
                 .background(Surface2),
         ) {
             expense.splits.forEachIndexed { index, split ->
-                val name     = if (split.userId == currentUserId) "You" else split.fullName
+                val name = if (split.userId == currentUserId) "You" else split.fullName
                 val rowColor = when {
-                    split.isSettled      -> TextSecondary
+                    split.isSettled -> TextSecondary
                     split.userId == currentUserId && expense.yourBalance < 0 -> Negative
-                    else                 -> TextPrimary
+                    else -> TextPrimary
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                    verticalAlignment     = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = name, fontSize = 15.sp, color = rowColor, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = name,
+                            fontSize = 15.sp,
+                            color = rowColor,
+                            fontWeight = FontWeight.Medium
+                        )
                         if (split.isSettled) {
                             Spacer(modifier = Modifier.width(Spacing.sm))
                             Box(
@@ -360,37 +415,44 @@ private fun ExpenseDetailContent(
                                     .background(Green400.copy(alpha = 0.12f))
                                     .padding(horizontal = 6.dp, vertical = 2.dp),
                             ) {
-                                Text("settled", fontSize = 10.sp, color = Green400, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "settled",
+                                    fontSize = 10.sp,
+                                    color = Green400,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
                     }
                     // Show amount + percentage/shares if applicable
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text       = MoneyUtils.format(split.amountOwed, expense.currency),
-                            fontSize   = 15.sp,
-                            color      = if (split.isSettled) TextSecondary else rowColor,
+                            text = MoneyUtils.format(split.amountOwed, expense.currency),
+                            fontSize = 15.sp,
+                            color = if (split.isSettled) TextSecondary else rowColor,
                             fontWeight = FontWeight.SemiBold,
                         )
                         if (expense.splitType == SplitType.PERCENTAGE && split.percentage != null) {
                             Text(
-                                text     = "${split.percentage.toInt()}%",
+                                text = "${split.percentage.toInt()}%",
                                 fontSize = 11.sp,
-                                color    = TextSecondary,
+                                color = TextSecondary,
                             )
                         }
                         if (expense.splitType == SplitType.SHARES && split.shares != null) {
                             Text(
-                                text     = "${split.shares} shares",
+                                text = "${split.shares} shares",
                                 fontSize = 11.sp,
-                                color    = TextSecondary,
+                                color = TextSecondary,
                             )
                         }
                     }
                 }
                 if (index < expense.splits.lastIndex) {
-                    HorizontalDivider(color = Surface4, thickness = 0.5.dp,
-                        modifier = Modifier.padding(horizontal = Spacing.lg))
+                    HorizontalDivider(
+                        color = Surface4, thickness = 0.5.dp,
+                        modifier = Modifier.padding(horizontal = Spacing.lg)
+                    )
                 }
             }
         }
@@ -401,8 +463,13 @@ private fun ExpenseDetailContent(
             if (payer != null) {
                 Spacer(modifier = Modifier.height(Spacing.xl))
                 FsPrimaryButton(
-                    text     = "Settle up · ${MoneyUtils.format(-expense.yourBalance, expense.currency)}",
-                    onClick  = { onSettle(payer.userId) },
+                    text = "Settle up · ${
+                        MoneyUtils.format(
+                            -expense.yourBalance,
+                            expense.currency
+                        )
+                    }",
+                    onClick = { onSettle(payer.userId) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Spacing.lg),
@@ -422,7 +489,7 @@ private fun MetaRow(icon: String, label: String, value: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-        verticalAlignment     = Alignment.CenterVertically,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -431,9 +498,9 @@ private fun MetaRow(icon: String, label: String, value: String) {
             Text(text = label, fontSize = 15.sp, color = TextSecondary)
         }
         Text(
-            text       = value,
-            fontSize   = 15.sp,
-            color      = TextPrimary,
+            text = value,
+            fontSize = 15.sp,
+            color = TextPrimary,
             fontWeight = FontWeight.Medium,
         )
     }
@@ -443,38 +510,40 @@ private fun MetaRow(icon: String, label: String, value: String) {
 
 private fun formatDate(isoDate: String): String {
     return try {
-        val date  = LocalDateTime.parse(isoDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME).toLocalDate()
+        val date = LocalDateTime.parse(isoDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME).toLocalDate()
         val today = LocalDate.now()
         when {
-            date == today              -> "Today"
+            date == today -> "Today"
             date == today.minusDays(1) -> "Yesterday"
             else -> date.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
         }
-    } catch (e: Exception) { isoDate.take(10) }
+    } catch (e: Exception) {
+        isoDate.take(10)
+    }
 }
 
 private fun categoryEmoji(category: String?): String = when (category) {
-    "DINING_OUT"        -> "🍽️"
-    "GROCERIES"         -> "🛒"
-    "TAXI"              -> "🚕"
-    "BUS_TRAIN"         -> "🚌"
-    "PLANE"             -> "✈️"
-    "HOTEL"             -> "🏨"
-    "RENT"              -> "🏠"
-    "ELECTRICITY"       -> "⚡"
-    "WATER"             -> "💧"
-    "GAS_FUEL"          -> "⛽"
+    "DINING_OUT" -> "🍽️"
+    "GROCERIES" -> "🛒"
+    "TAXI" -> "🚕"
+    "BUS_TRAIN" -> "🚌"
+    "PLANE" -> "✈️"
+    "HOTEL" -> "🏨"
+    "RENT" -> "🏠"
+    "ELECTRICITY" -> "⚡"
+    "WATER" -> "💧"
+    "GAS_FUEL" -> "⛽"
     "TV_PHONE_INTERNET" -> "📱"
-    "MOVIES"            -> "🎬"
-    "GAMES"             -> "🎮"
-    "MUSIC"             -> "🎵"
-    "SPORTS"            -> "⚽"
-    "MEDICAL"           -> "💊"
-    "EDUCATION"         -> "📚"
-    "GIFTS"             -> "🎁"
-    "LIQUOR"            -> "🍺"
-    "PETS"              -> "🐾"
-    "CLOTHING"          -> "👕"
-    "PARKING"           -> "🅿️"
-    else                -> "💰"
+    "MOVIES" -> "🎬"
+    "GAMES" -> "🎮"
+    "MUSIC" -> "🎵"
+    "SPORTS" -> "⚽"
+    "MEDICAL" -> "💊"
+    "EDUCATION" -> "📚"
+    "GIFTS" -> "🎁"
+    "LIQUOR" -> "🍺"
+    "PETS" -> "🐾"
+    "CLOTHING" -> "👕"
+    "PARKING" -> "🅿️"
+    else -> "💰"
 }
