@@ -288,7 +288,7 @@ fun MainShell(
                         shellNavController.navigate(Screen.GroupDetail.route(groupId))
                     },
                     onNavigateToSearch = {
-                        shellNavController.navigate(Screen.Search.route)
+                        shellNavController.navigate(Screen.Search.route())
                     },
                     onNavigateToCreateGroup = {
                         shellNavController.navigate(Screen.CreateGroup.route)

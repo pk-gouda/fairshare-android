@@ -31,9 +31,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,13 +69,10 @@ fun ActivityScreen(
     val snackbarHost = remember { SnackbarHostState() }
     val grouped by remember { derivedStateOf { viewModel.groupedNotifications() } }
     val hasUnread by remember { derivedStateOf { viewModel.hasUnread } }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    // Reload every time the screen comes back into view
+    // Reload every time the screen is first composed (navigated to)
     LaunchedEffect(Unit) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.loadData()
-        }
+        viewModel.loadData()
     }
 
     LaunchedEffect(actionState) {
@@ -216,16 +210,28 @@ private fun NotificationRow(
                 if (isTappable) Modifier.clickable {
                     when (notification.type) {
                         NotificationType.EXPENSE_ADDED,
-                        NotificationType.EXPENSE_UPDATED -> onNavigateToExpense(notification.referenceId!!)
+                        NotificationType.EXPENSE_UPDATED -> notification.referenceId?.let {
+                            onNavigateToExpense(
+                                it
+                            )
+                        }
 
                         NotificationType.SETTLEMENT_RECEIVED,
-                        NotificationType.SETTLEMENT_CONFIRMED -> onNavigateToExpense(notification.referenceId!!)
+                        NotificationType.SETTLEMENT_CONFIRMED -> notification.referenceId?.let {
+                            onNavigateToExpense(
+                                it
+                            )
+                        }
 
                         NotificationType.FRIEND_REQUEST_RECEIVED,
                         NotificationType.FRIEND_REQUEST_ACCEPTED -> onNavigateToFriend()
 
                         NotificationType.GROUP_INVITE_RECEIVED,
-                        NotificationType.GROUP_MEMBER_JOINED -> onNavigateToExpense(notification.referenceId!!)
+                        NotificationType.GROUP_MEMBER_JOINED -> notification.referenceId?.let {
+                            onNavigateToExpense(
+                                it
+                            )
+                        }
 
                         NotificationType.SETTLE_UP_REMINDER -> onNavigateToFriend()
                         else -> Unit

@@ -274,7 +274,16 @@ fun NavGraph(
         }
 
         // ── Search ────────────────────────────────────────────────────────────
-        composable(Screen.Search.route) {
+        composable(
+            route = Screen.Search.route,
+            arguments = listOf(
+                navArgument("groupId") {
+                    type         = NavType.StringType
+                    nullable     = true
+                    defaultValue = null
+                }
+            )
+        ) {
             PlaceholderScreen("Search")
         }
 

@@ -21,11 +21,11 @@ import javax.inject.Inject
 
 @HiltViewModel
 class FriendsViewModel @Inject constructor(
-    private val getFriendsUseCase       : GetFriendsUseCase,
+    private val getFriendsUseCase: GetFriendsUseCase,
     private val getFriendRequestsUseCase: GetFriendRequestsUseCase,
-    private val getAllBalancesUseCase    : GetAllBalancesUseCase,
-    private val acceptRequestUseCase    : AcceptFriendRequestUseCase,
-    private val declineRequestUseCase   : DeclineFriendRequestUseCase,
+    private val getAllBalancesUseCase: GetAllBalancesUseCase,
+    private val acceptRequestUseCase: AcceptFriendRequestUseCase,
+    private val declineRequestUseCase: DeclineFriendRequestUseCase,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -56,44 +56,52 @@ class FriendsViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<FriendsActionState>(FriendsActionState.Idle)
     val actionState: StateFlow<FriendsActionState> = _actionState.asStateFlow()
 
-    init { loadData() }
+    init {
+        loadData()
+    }
 
     fun loadData() {
         viewModelScope.launch {
             _isLoading.value = true
 
-            val friendsDeferred   = async { getFriendsUseCase() }
-            val requestsDeferred  = async { getFriendRequestsUseCase() }
-            val balancesDeferred  = async { getAllBalancesUseCase() }
+            val friendsDeferred = async { getFriendsUseCase() }
+            val requestsDeferred = async { getFriendRequestsUseCase() }
+            val balancesDeferred = async { getAllBalancesUseCase() }
 
             // Friends
-            if (friendsDeferred.await() is ApiResult.Success) {
-                _friends.value = (friendsDeferred.await() as ApiResult.Success).data
+            when (val result = friendsDeferred.await()) {
+                is ApiResult.Success -> _friends.value = result.data
+                else -> Unit
             }
 
-            // Pending requests
-            if (requestsDeferred.await() is ApiResult.Success) {
-                _pendingRequests.value = (requestsDeferred.await() as ApiResult.Success).data
+            when (val result = requestsDeferred.await()) {
+                is ApiResult.Success -> _pendingRequests.value = result.data
+                else -> Unit
             }
 
-            // Balances — aggregate per friend
-            if (balancesDeferred.await() is ApiResult.Success) {
-                val balances = (balancesDeferred.await() as ApiResult.Success<List<Balance>>).data
-                // Sum all balances per otherUserId across all groups
-                val map = balances.groupBy { it.otherUserId }
-                    .mapValues { (_, list) -> list.sumOf { it.amount } }
-                _balanceMap.value = map
+            when (val result = balancesDeferred.await()) {
+                is ApiResult.Success -> {
+                    val balances = result.data
+                    // Sum all balances per otherUserId across all groups
+                    val map = balances.groupBy { it.otherUserId }
+                        .mapValues { (_, list) -> list.sumOf { it.amount } }
+                    _balanceMap.value = map
 
-                // Net totals
-                _owedToYou.value = balances.filter { it.amount > 0 }.sumOf { it.amount }
-                _youOwe.value    = balances.filter { it.amount < 0 }.sumOf { -it.amount }
+                    // Net totals
+                    _owedToYou.value = balances.filter { it.amount > 0 }.sumOf { it.amount }
+                    _youOwe.value = balances.filter { it.amount < 0 }.sumOf { -it.amount }
+                }
+
+                else -> Unit
             }
 
             _isLoading.value = false
         }
     }
 
-    fun onSearchChanged(query: String) { _searchQuery.value = query }
+    fun onSearchChanged(query: String) {
+        _searchQuery.value = query
+    }
 
     fun filteredFriends(): List<Friend> {
         val q = _searchQuery.value.trim().lowercase()
@@ -111,6 +119,7 @@ class FriendsViewModel @Inject constructor(
                     _actionState.value = FriendsActionState.Success("Friend request accepted")
                     loadData() // refresh friends list
                 }
+
                 else -> _actionState.value = FriendsActionState.Error("Failed to accept request")
             }
         }
@@ -123,16 +132,19 @@ class FriendsViewModel @Inject constructor(
                     _pendingRequests.value = _pendingRequests.value.filter { it.id != friendshipId }
                     _actionState.value = FriendsActionState.Success("Request declined")
                 }
+
                 else -> _actionState.value = FriendsActionState.Error("Failed to decline request")
             }
         }
     }
 
-    fun resetActionState() { _actionState.value = FriendsActionState.Idle }
+    fun resetActionState() {
+        _actionState.value = FriendsActionState.Idle
+    }
 }
 
 sealed class FriendsActionState {
     object Idle : FriendsActionState()
     data class Success(val message: String) : FriendsActionState()
-    data class Error(val message: String)   : FriendsActionState()
+    data class Error(val message: String) : FriendsActionState()
 }
