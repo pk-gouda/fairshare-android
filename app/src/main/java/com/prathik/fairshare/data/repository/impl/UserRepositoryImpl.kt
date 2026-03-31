@@ -42,10 +42,10 @@ class UserRepositoryImpl @Inject constructor(
         val result = safeApiCall {
             userService.updateProfile(
                 UpdateProfileRequest(
-                    fullName            = fullName,
-                    phoneNumber         = phoneNumber,
-                    preferredCurrency   = preferredCurrency,
-                    language            = language,
+                    fullName = fullName,
+                    phoneNumber = phoneNumber,
+                    preferredCurrency = preferredCurrency,
+                    language = language,
                     notificationEnabled = notificationEnabled,
                 )
             )
@@ -70,15 +70,27 @@ class UserRepositoryImpl @Inject constructor(
         return result
     }
 
+    override suspend fun getFriendCode(): ApiResult<String> =
+        safeApiCall { userService.getFriendCode() }
+            .mapSuccess { it["friendCode"] ?: "" }
+
+    override suspend fun regenerateFriendCode(): ApiResult<String> =
+        safeApiCall { userService.regenerateFriendCode() }
+            .mapSuccess { it["friendCode"] ?: "" }
+
+    override suspend fun searchByEmail(email: String): ApiResult<User> =
+        safeApiCall { userService.searchByEmail(email) }
+            .mapSuccess { it.toDomain() }
+
     private fun User.toEntity() = UserEntity(
-        id                  = id,
-        email               = email,
-        fullName            = fullName,
-        phoneNumber         = phoneNumber,
-        profilePictureUrl   = profilePictureUrl,
-        preferredCurrency   = preferredCurrency,
-        language            = language,
+        id = id,
+        email = email,
+        fullName = fullName,
+        phoneNumber = phoneNumber,
+        profilePictureUrl = profilePictureUrl,
+        preferredCurrency = preferredCurrency,
+        language = language,
         notificationEnabled = notificationEnabled,
-        isActive            = isActive,
+        isActive = isActive,
     )
 }

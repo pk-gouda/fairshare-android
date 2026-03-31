@@ -62,6 +62,7 @@ import java.time.format.DateTimeFormatter
 fun ActivityScreen(
     onNavigateToExpense: (String) -> Unit,
     onNavigateToFriend: () -> Unit,
+    onNavigateToGroup: (String) -> Unit,
     viewModel: ActivityViewModel = hiltViewModel(),
 ) {
     val isLoading by viewModel.isLoading.collectAsState()
@@ -169,6 +170,7 @@ fun ActivityScreen(
                             notification = notification,
                             onNavigateToExpense = onNavigateToExpense,
                             onNavigateToFriend = onNavigateToFriend,
+                            onNavigateToGroup = onNavigateToGroup,
                         )
                         HorizontalDivider(
                             color = Surface3,
@@ -191,6 +193,7 @@ private fun NotificationRow(
     notification: Notification,
     onNavigateToExpense: (String) -> Unit,
     onNavigateToFriend: () -> Unit,
+    onNavigateToGroup: (String) -> Unit,
 ) {
     val isUnread = !notification.isRead
 
@@ -228,7 +231,7 @@ private fun NotificationRow(
 
                         NotificationType.GROUP_INVITE_RECEIVED,
                         NotificationType.GROUP_MEMBER_JOINED -> notification.referenceId?.let {
-                            onNavigateToExpense(
+                            onNavigateToGroup(
                                 it
                             )
                         }

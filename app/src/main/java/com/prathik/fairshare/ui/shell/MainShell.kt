@@ -55,7 +55,11 @@ import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.friends.FriendsScreen
+import com.prathik.fairshare.ui.friends.AddFriendByEmailScreen
+import com.prathik.fairshare.ui.friends.QrCodeScreen
+import com.prathik.fairshare.ui.friends.ScanQrCodeScreen
 import com.prathik.fairshare.ui.activity.ActivityScreen
+import com.prathik.fairshare.ui.account.AccountScreen
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
@@ -300,15 +304,11 @@ fun MainShell(
             }
             composable(Screen.Friends.route) {
                 FriendsScreen(
-                    onNavigateToAddFriend = { shellNavController.navigate(Screen.AddFriend.route) },
-                    onNavigateToRequests = { shellNavController.navigate(Screen.FriendRequests.route) },
-                    onNavigateToFriend = { friendId ->
-                        shellNavController.navigate(
-                            Screen.FriendDetail.route(
-                                friendId
-                            )
-                        )
-                    },
+                    onNavigateToAddFriendByEmail = { shellNavController.navigate(Screen.AddFriendByEmail.route) },
+                    onNavigateToScanQr           = { shellNavController.navigate(Screen.ScanQrCode.route) },
+                    onNavigateToImport           = { shellNavController.navigate(Screen.ImportSplitwise.route) },
+                    onNavigateToRequests         = { shellNavController.navigate(Screen.FriendRequests.route) },
+                    onNavigateToFriend           = { friendId -> shellNavController.navigate(Screen.FriendDetail.route(friendId)) },
                 )
             }
             composable(Screen.Activity.route) {
@@ -319,10 +319,25 @@ fun MainShell(
                     onNavigateToFriend = {
                         shellNavController.navigate(Screen.Friends.route)
                     },
+                    onNavigateToGroup = { groupId ->
+                        shellNavController.navigate(Screen.GroupDetail.route(groupId))
+                    },
                 )
             }
             composable(Screen.Account.route) {
-                PlaceholderScreen("Account")
+                AccountScreen(
+                    onNavigateToEditProfile   = { shellNavController.navigate(Screen.EditProfile.route) },
+                    onNavigateToQrCode        = { shellNavController.navigate(Screen.QrCode.route) },
+                    onNavigateToCurrency      = { shellNavController.navigate(Screen.CurrencySelect.route) },
+                    onNavigateToChangePassword = { shellNavController.navigate(Screen.ChangePassword.route) },
+                    onNavigateToMyAnalytics   = { shellNavController.navigate(Screen.MyAnalytics.route) },
+                    onNavigateToImport        = { shellNavController.navigate(Screen.ImportSplitwise.route) },
+                    onLoggedOut               = {
+                        rootNavController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Groups.route) { inclusive = true }
+                        }
+                    },
+                )
             }
             composable(Screen.CurrencySelect.route) {
                 PlaceholderScreen("Currency Select")
@@ -539,6 +554,28 @@ fun MainShell(
 
             composable(Screen.AddFriend.route) {
                 PlaceholderScreen("Add Friend")
+            }
+
+            composable(Screen.AddFriendByEmail.route) {
+                AddFriendByEmailScreen(
+                    onBack = { shellNavController.popBackStack() },
+                )
+            }
+
+            composable(Screen.QrCode.route) {
+                QrCodeScreen(
+                    onBack = { shellNavController.popBackStack() },
+                )
+            }
+
+            composable(Screen.ScanQrCode.route) {
+                ScanQrCodeScreen(
+                    onBack        = { shellNavController.popBackStack() },
+                    onCodeScanned = { code ->
+                        // TODO: send friend request by code
+                        shellNavController.popBackStack()
+                    },
+                )
             }
 
             composable(Screen.FriendRequests.route) {

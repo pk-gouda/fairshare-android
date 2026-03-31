@@ -22,6 +22,15 @@ interface UserApiService {
     @GET("api/users/search")
     suspend fun searchUsers(@Query("q") query: String): ApiResponse<List<UserResponse>>
 
+    @GET("api/users/search")
+    suspend fun searchByEmail(@Query("email") email: String): ApiResponse<UserResponse>
+
+    @GET("api/users/me/friend-code")
+    suspend fun getFriendCode(): ApiResponse<Map<String, String>>
+
+    @POST("api/users/me/friend-code/regenerate")
+    suspend fun regenerateFriendCode(): ApiResponse<Map<String, String>>
+
     @PUT("api/users/me")
     suspend fun updateProfile(@Body request: UpdateProfileRequest): ApiResponse<UserResponse>
 

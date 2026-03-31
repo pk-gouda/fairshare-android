@@ -19,8 +19,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.SolidColor
@@ -68,10 +74,12 @@ import com.prathik.fairshare.util.MoneyUtils
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendsScreen(
-    onNavigateToAddFriend: () -> Unit,
-    onNavigateToRequests : () -> Unit,
-    onNavigateToFriend   : (String) -> Unit,
-    viewModel            : FriendsViewModel = hiltViewModel(),
+    onNavigateToAddFriendByEmail: () -> Unit,
+    onNavigateToScanQr          : () -> Unit,
+    onNavigateToImport          : () -> Unit,
+    onNavigateToRequests        : () -> Unit,
+    onNavigateToFriend          : (String) -> Unit,
+    viewModel                   : FriendsViewModel = hiltViewModel(),
 ) {
     val isLoading       by viewModel.isLoading.collectAsState()
     val pendingRequests by viewModel.pendingRequests.collectAsState()
@@ -81,6 +89,8 @@ fun FriendsScreen(
     val actionState     by viewModel.actionState.collectAsState()
     val searchQuery     by viewModel.searchQuery.collectAsState()
     val snackbarHost    = remember { SnackbarHostState() }
+    val sheetState      = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showSheet       by remember { mutableStateOf(false) }
 
     val netBalance = owedToYou - youOwe
     val netColor   = when {
@@ -150,7 +160,7 @@ fun FriendsScreen(
                     FsIconButton(
                         icon               = Icons.Outlined.PersonAdd,
                         contentDescription = "Add friend",
-                        onClick            = onNavigateToAddFriend,
+                        onClick            = { showSheet = true },
                     )
                 }
             }
@@ -270,7 +280,7 @@ fun FriendsScreen(
                         contentAlignment = Alignment.Center,
                         modifier         = Modifier
                             .fillMaxWidth()
-                            .clickable { onNavigateToAddFriend() }
+                            .clickable { showSheet = true }
                             .padding(vertical = Spacing.lg),
                     ) {
                         Text(
@@ -283,6 +293,56 @@ fun FriendsScreen(
                 }
 
                 item { Spacer(modifier = Modifier.height(80.dp)) }
+            }
+        }
+    }
+
+    // ── Add Friend Bottom Sheet ───────────────────────────────────────────────
+    if (showSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            sheetState       = sheetState,
+            containerColor   = Surface2,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = Spacing.xxxl),
+            ) {
+                Text(
+                    text       = "Add a friend",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(bottom = Spacing.lg),
+                )
+                SheetOption(
+                    icon     = Icons.Outlined.PersonAdd,
+                    iconBg   = Color(0xFF1A3A1A),
+                    iconTint = Green400,
+                    title    = "Add / invite a friend",
+                    subtitle = "By email or phone number",
+                    onClick  = { showSheet = false; onNavigateToAddFriendByEmail() },
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                SheetOption(
+                    icon     = Icons.Outlined.QrCodeScanner,
+                    iconBg   = Color(0xFF1A1A3A),
+                    iconTint = Color(0xFF7F77DD),
+                    title    = "Scan QR code",
+                    subtitle = "Scan or share your code",
+                    onClick  = { showSheet = false; onNavigateToScanQr() },
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                SheetOption(
+                    icon     = Icons.Outlined.Upload,
+                    iconBg   = Color(0xFF2A1A0A),
+                    iconTint = Color(0xFFF0A500),
+                    title    = "Import from Splitwise",
+                    subtitle = "Upload CSV to find friends",
+                    onClick  = { showSheet = false; onNavigateToImport() },
+                )
             }
         }
     }
@@ -355,5 +415,47 @@ private fun StatPill(
         Text(text = label,  fontSize = 12.sp, color = TextSecondary)
         Spacer(modifier = Modifier.width(Spacing.sm))
         Text(text = amount, fontSize = 12.sp, color = color, fontWeight = FontWeight.SemiBold)
+    }
+}
+// ── Sheet Option ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun SheetOption(
+    icon    : androidx.compose.ui.graphics.vector.ImageVector,
+    iconBg  : Color,
+    iconTint: Color,
+    title   : String,
+    subtitle: String,
+    onClick : () -> Unit,
+) {
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.xl))
+            .background(Surface0)
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.md, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(Radius.md))
+                .background(iconBg),
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector        = icon,
+                contentDescription = null,
+                tint               = iconTint,
+                modifier           = Modifier.size(20.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title,    fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Text(text = subtitle, fontSize = 12.sp, color = TextTertiary)
+        }
+        Text(text = "›", fontSize = 18.sp, color = TextTertiary)
     }
 }

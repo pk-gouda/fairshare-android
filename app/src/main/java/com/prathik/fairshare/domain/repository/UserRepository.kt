@@ -49,4 +49,21 @@ interface UserRepository {
      * This is irreversible — all data is removed.
      */
     suspend fun deleteAccount(): ApiResult<Unit>
+
+    /**
+     * Returns the current user's friend code.
+     */
+    suspend fun getFriendCode(): ApiResult<String>
+
+    /**
+     * Regenerates the current user's friend code.
+     * Old code becomes invalid immediately.
+     */
+    suspend fun regenerateFriendCode(): ApiResult<String>
+
+    /**
+     * Searches for a user by email address.
+     * Used by Add Friend screen to find users before sending a request.
+     */
+    suspend fun searchByEmail(email: String): ApiResult<User>
 }

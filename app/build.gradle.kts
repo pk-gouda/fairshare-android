@@ -98,6 +98,9 @@ dependencies {
     implementation(libs.retrofit.kotlinx.serialization)
     implementation(libs.kotlinx.serialization.json)
 
+
+    implementation("com.google.zxing:core:3.5.2")
+
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
 
