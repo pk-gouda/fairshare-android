@@ -101,6 +101,13 @@ class UserRepositoryImpl @Inject constructor(
         safeApiCall { userService.searchByEmail(email) }
             .mapSuccess { it.toDomain() }
 
+    override suspend fun requestEmailChange(newEmail: String): ApiResult<String> =
+        safeApiCall { userService.requestEmailChange(mapOf("newEmail" to newEmail)) }
+            .mapSuccess { it["token"] ?: "" }
+
+    override suspend fun verifyEmailChange(token: String): ApiResult<Unit> =
+        safeApiCall { userService.verifyEmailChange(token) }.mapSuccess { }
+
     private fun User.toEntity() = UserEntity(
         id = id,
         email = email,

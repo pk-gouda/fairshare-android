@@ -66,4 +66,15 @@ interface UserRepository {
      * Used by Add Friend screen to find users before sending a request.
      */
     suspend fun searchByEmail(email: String): ApiResult<User>
+
+    /**
+     * Requests an email change. Backend sends a verification token to the new email.
+     * Returns the token directly in dev (SES not wired yet).
+     */
+    suspend fun requestEmailChange(newEmail: String): ApiResult<String>
+
+    /**
+     * Confirms an email change using the verification token sent to the new email.
+     */
+    suspend fun verifyEmailChange(token: String): ApiResult<Unit>
 }

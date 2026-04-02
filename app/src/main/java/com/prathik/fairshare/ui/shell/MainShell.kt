@@ -63,6 +63,8 @@ import com.prathik.fairshare.ui.friends.ScanQrCodeScreen
 import com.prathik.fairshare.ui.activity.ActivityScreen
 import com.prathik.fairshare.ui.account.AccountScreen
 import com.prathik.fairshare.ui.account.AccountViewModel
+import com.prathik.fairshare.ui.account.EditProfileScreen
+import com.prathik.fairshare.ui.account.ChangePasswordScreen
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
@@ -619,10 +621,15 @@ fun MainShell(
 
             // ── Account screens ───────────────────────────────────────────────
             composable(Screen.EditProfile.route) {
-                PlaceholderScreen("Edit Profile")
+                EditProfileScreen(
+                    onBack = { shellNavController.popBackStack() },
+                    onNavigateToPassword = { shellNavController.navigate(Screen.ChangePassword.route) },
+                )
             }
             composable(Screen.ChangePassword.route) {
-                PlaceholderScreen("Change Password")
+                ChangePasswordScreen(
+                    onBack = { shellNavController.popBackStack() },
+                )
             }
             composable(Screen.MyAnalytics.route) {
                 PlaceholderScreen("My Analytics")

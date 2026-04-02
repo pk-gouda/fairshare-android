@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.AlertDialog
@@ -246,14 +245,6 @@ fun AccountScreen(
                 item {
                     SectionLabel("SETTINGS")
                     AccountCard {
-                        NavRow(
-                            icon       = Icons.Outlined.Person,
-                            iconBg     = Color(0xFF1A3A1A),
-                            iconTint   = Green400,
-                            label      = "Edit profile",
-                            onClick    = onNavigateToEditProfile,
-                        )
-                        RowDivider()
                         NavRow(
                             icon       = Icons.Outlined.QrCode,
                             iconBg     = Color(0xFF1A1A3A),
