@@ -2,6 +2,7 @@ package com.prathik.fairshare.data.network.api
 
 import com.prathik.fairshare.data.model.request.UpdateProfileRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
+import com.prathik.fairshare.data.model.response.FriendResponse
 import com.prathik.fairshare.data.model.response.UserResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -20,13 +21,10 @@ interface UserApiService {
     suspend fun getUserProfile(@Path("userId") userId: String): ApiResponse<UserResponse>
 
     @GET("api/users/search")
-    suspend fun searchUsers(@Query("q") query: String): ApiResponse<List<UserResponse>>
-
-    @GET("api/users/search")
     suspend fun searchByEmail(@Query("email") email: String): ApiResponse<UserResponse>
 
-    @GET("api/users/me/friend-code")
-    suspend fun getFriendCode(): ApiResponse<Map<String, String>>
+    @GET("api/users/friend-code/{code}")
+    suspend fun lookupByFriendCode(@Path("code") code: String): ApiResponse<FriendResponse>
 
     @POST("api/users/me/friend-code/regenerate")
     suspend fun regenerateFriendCode(): ApiResponse<Map<String, String>>

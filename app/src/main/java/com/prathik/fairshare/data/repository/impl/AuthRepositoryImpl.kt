@@ -21,8 +21,8 @@ import javax.inject.Singleton
 @Singleton
 class AuthRepositoryImpl @Inject constructor(
     private val authService: AuthApiService,
-    private val tokenStore : EncryptedTokenStore,
-    private val userDao    : UserDao,
+    private val tokenStore: EncryptedTokenStore,
+    private val userDao: UserDao,
 ) : AuthRepository {
 
     override suspend fun login(email: String, password: String): ApiResult<User> {
@@ -32,9 +32,9 @@ class AuthRepositoryImpl @Inject constructor(
         if (result is ApiResult.Success) {
             result.data.user?.let { userResponse ->
                 tokenStore.saveTokens(
-                    accessToken       = result.data.accessToken,
-                    refreshToken      = result.data.refreshToken,
-                    userId            = userResponse.id,
+                    accessToken = result.data.accessToken,
+                    refreshToken = result.data.refreshToken,
+                    userId = userResponse.id,
                     preferredCurrency = userResponse.preferredCurrency ?: "USD",
                 )
                 cacheUser(userResponse.toDomain())
@@ -46,29 +46,30 @@ class AuthRepositoryImpl @Inject constructor(
                 if (user != null) ApiResult.Success(user.toDomain())
                 else ApiResult.Conflict("Server returned success but no user data.")
             }
+
             else -> @Suppress("UNCHECKED_CAST") (result as ApiResult<User>)
         }
     }
 
     override suspend fun register(
-        email            : String,
-        fullName         : String,
-        password         : String,
-        phoneNumber      : String?,
+        email: String,
+        fullName: String,
+        password: String,
+        phoneNumber: String?,
         preferredCurrency: String?,
-        language         : String?,
+        language: String?,
     ): ApiResult<User> {
         // Backend register returns UserResponse only — no tokens.
         // User must verify email then login to get tokens.
         val result = safeApiCall {
             authService.register(
                 RegisterRequest(
-                    email             = email,
-                    fullName          = fullName,
-                    password          = password,
-                    phoneNumber       = phoneNumber,
+                    email = email,
+                    fullName = fullName,
+                    password = password,
+                    phoneNumber = phoneNumber,
                     preferredCurrency = preferredCurrency,
-                    language          = language,
+                    language = language,
                 )
             )
         }
@@ -90,17 +91,16 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun changePassword(
         currentPassword: String,
-        newPassword    : String,
+        newPassword: String,
     ): ApiResult<Unit> =
         safeApiCall {
             authService.changePassword(ChangePasswordRequest(currentPassword, newPassword))
         }.mapSuccess { }
 
     override suspend fun refreshToken(): ApiResult<Unit> {
-        // refreshToken is a @RequestParam on the backend — pass as @Query
         val refreshToken = tokenStore.getRefreshToken() ?: return ApiResult.Unauthorized()
         val result = safeApiCall {
-            authService.refreshToken(refreshToken)
+            authService.refreshToken(mapOf("refreshToken" to refreshToken))
         }
         if (result is ApiResult.Success) {
             tokenStore.updateAccessToken(result.data.accessToken)
@@ -109,10 +109,9 @@ class AuthRepositoryImpl @Inject constructor(
     }
 
     override suspend fun logout(): ApiResult<Unit> {
-        // logout requires refreshToken as @RequestParam on the backend
         val refreshToken = tokenStore.getRefreshToken() ?: ""
         return try {
-            safeApiCall { authService.logout(refreshToken) }
+            safeApiCall { authService.logout(mapOf("refreshToken" to refreshToken)) }
         } finally {
             // Always clear tokens locally even if server call fails
             tokenStore.clearTokens()
@@ -125,15 +124,15 @@ class AuthRepositoryImpl @Inject constructor(
     private suspend fun cacheUser(user: User) {
         userDao.insert(
             UserEntity(
-                id                  = user.id,
-                email               = user.email,
-                fullName            = user.fullName,
-                phoneNumber         = user.phoneNumber,
-                profilePictureUrl   = user.profilePictureUrl,
-                preferredCurrency   = user.preferredCurrency,
-                language            = user.language,
+                id = user.id,
+                email = user.email,
+                fullName = user.fullName,
+                phoneNumber = user.phoneNumber,
+                profilePictureUrl = user.profilePictureUrl,
+                preferredCurrency = user.preferredCurrency,
+                language = user.language,
                 notificationEnabled = user.notificationEnabled,
-                isActive            = user.isActive,
+                isActive = user.isActive,
             )
         )
     }

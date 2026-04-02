@@ -3,6 +3,7 @@ package com.prathik.fairshare.data.network.api
 import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.FriendResponse
 import com.prathik.fairshare.data.model.response.FriendshipResponse
+import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -10,8 +11,11 @@ import retrofit2.http.Path
 
 interface FriendApiService {
 
-    @POST("api/friends/request/{receiverId}")
-    suspend fun sendRequest(@Path("receiverId") receiverId: String): ApiResponse<FriendshipResponse>
+    @POST("api/friends/request")
+    suspend fun sendRequest(@Body body: Map<String, String>): ApiResponse<FriendshipResponse>
+
+    @POST("api/friends/add-by-code/{code}")
+    suspend fun addByFriendCode(@Path("code") code: String): ApiResponse<FriendshipResponse>
 
     @POST("api/friends/{friendshipId}/accept")
     suspend fun acceptRequest(@Path("friendshipId") friendshipId: String): ApiResponse<FriendshipResponse>

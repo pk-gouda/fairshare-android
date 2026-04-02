@@ -22,7 +22,7 @@ class FriendRepositoryImpl @Inject constructor(
             .mapSuccess { list -> list.map { it.toDomain() } }
 
     override suspend fun sendRequest(receiverId: String): ApiResult<Friendship> =
-        safeApiCall { friendService.sendRequest(receiverId) }
+        safeApiCall { friendService.sendRequest(mapOf("receiverId" to receiverId)) }
             .mapSuccess { it.toDomain() }
 
     override suspend fun acceptRequest(friendshipId: String): ApiResult<Friendship> =
@@ -55,8 +55,11 @@ class FriendRepositoryImpl @Inject constructor(
     override suspend fun getFriendStatus(otherUserId: String): ApiResult<FriendStatus> =
         safeApiCall { friendService.getFriendStatus(otherUserId) }
             .mapSuccess {
-                try { FriendStatus.valueOf(it) }
-                catch (e: IllegalArgumentException) { FriendStatus.PENDING }
+                try {
+                    FriendStatus.valueOf(it)
+                } catch (e: IllegalArgumentException) {
+                    FriendStatus.PENDING
+                }
             }
 
     override suspend fun getBlocked(): ApiResult<List<Friend>> =

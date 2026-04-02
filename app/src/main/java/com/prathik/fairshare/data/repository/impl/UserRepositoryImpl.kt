@@ -42,10 +42,10 @@ class UserRepositoryImpl @Inject constructor(
         val result = safeApiCall {
             userService.updateProfile(
                 UpdateProfileRequest(
-                    fullName = fullName,
-                    phoneNumber = phoneNumber,
-                    preferredCurrency = preferredCurrency,
-                    language = language,
+                    fullName            = fullName,
+                    phoneNumber         = phoneNumber,
+                    preferredCurrency   = preferredCurrency,
+                    language            = language,
                     notificationEnabled = notificationEnabled,
                 )
             )
@@ -70,9 +70,13 @@ class UserRepositoryImpl @Inject constructor(
         return result
     }
 
-    override suspend fun getFriendCode(): ApiResult<String> =
-        safeApiCall { userService.getFriendCode() }
-            .mapSuccess { it["friendCode"] ?: "" }
+    override suspend fun getFriendCode(): ApiResult<String> {
+        // Friend code is part of the user profile
+        return when (val result = getMyProfile()) {
+            is ApiResult.Success -> ApiResult.Success(result.data.friendCode ?: "")
+            else -> ApiResult.HttpError(500, "Failed to load friend code")
+        }
+    }
 
     override suspend fun regenerateFriendCode(): ApiResult<String> =
         safeApiCall { userService.regenerateFriendCode() }
@@ -83,14 +87,14 @@ class UserRepositoryImpl @Inject constructor(
             .mapSuccess { it.toDomain() }
 
     private fun User.toEntity() = UserEntity(
-        id = id,
-        email = email,
-        fullName = fullName,
-        phoneNumber = phoneNumber,
-        profilePictureUrl = profilePictureUrl,
-        preferredCurrency = preferredCurrency,
-        language = language,
+        id                  = id,
+        email               = email,
+        fullName            = fullName,
+        phoneNumber         = phoneNumber,
+        profilePictureUrl   = profilePictureUrl,
+        preferredCurrency   = preferredCurrency,
+        language            = language,
         notificationEnabled = notificationEnabled,
-        isActive = isActive,
+        isActive            = isActive,
     )
 }
