@@ -62,8 +62,13 @@ class GroupDetailViewModel @Inject constructor(
      */
     fun loadData() {
         viewModelScope.launch {
-            _groupState.value = GroupDetailUiState.Loading
-            _expensesState.value = ExpensesUiState.Loading
+            // Only show loading if we have no data yet
+            if (_groupState.value !is GroupDetailUiState.Success) {
+                _groupState.value = GroupDetailUiState.Loading
+            }
+            if (_expensesState.value !is ExpensesUiState.Success) {
+                _expensesState.value = ExpensesUiState.Loading
+            }
 
             val groupDeferred = async { getGroupUseCase(groupId) }
             val expensesDeferred = async { getGroupExpensesUseCase(groupId) }
@@ -72,25 +77,37 @@ class GroupDetailViewModel @Inject constructor(
             // Group
             when (val result = groupDeferred.await()) {
                 is ApiResult.Success -> _groupState.value = GroupDetailUiState.Success(result.data)
-                is ApiResult.NetworkError -> _groupState.value = GroupDetailUiState.Error(
-                    message = result.message, isNetwork = true
-                )
+                is ApiResult.NetworkError -> {
+                    if (_groupState.value !is GroupDetailUiState.Success)
+                        _groupState.value =
+                            GroupDetailUiState.Error(message = result.message, isNetwork = true)
+                }
 
-                else -> _groupState.value = GroupDetailUiState.Error(
-                    message = "Failed to load group.", isNetwork = false
-                )
+                else -> {
+                    if (_groupState.value !is GroupDetailUiState.Success)
+                        _groupState.value = GroupDetailUiState.Error(
+                            message = "Failed to load group.",
+                            isNetwork = false
+                        )
+                }
             }
 
             // Expenses
             when (val result = expensesDeferred.await()) {
                 is ApiResult.Success -> _expensesState.value = ExpensesUiState.Success(result.data)
-                is ApiResult.NetworkError -> _expensesState.value = ExpensesUiState.Error(
-                    message = result.message, isNetwork = true
-                )
+                is ApiResult.NetworkError -> {
+                    if (_expensesState.value !is ExpensesUiState.Success)
+                        _expensesState.value =
+                            ExpensesUiState.Error(message = result.message, isNetwork = true)
+                }
 
-                else -> _expensesState.value = ExpensesUiState.Error(
-                    message = "Failed to load expenses.", isNetwork = false
-                )
+                else -> {
+                    if (_expensesState.value !is ExpensesUiState.Success)
+                        _expensesState.value = ExpensesUiState.Error(
+                            message = "Failed to load expenses.",
+                            isNetwork = false
+                        )
+                }
             }
 
             // Balances — group-scoped, no client-side filter needed

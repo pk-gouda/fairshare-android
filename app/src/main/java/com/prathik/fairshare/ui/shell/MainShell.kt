@@ -31,12 +31,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +62,7 @@ import com.prathik.fairshare.ui.friends.QrCodeScreen
 import com.prathik.fairshare.ui.friends.ScanQrCodeScreen
 import com.prathik.fairshare.ui.activity.ActivityScreen
 import com.prathik.fairshare.ui.account.AccountScreen
+import com.prathik.fairshare.ui.account.AccountViewModel
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
@@ -132,6 +135,14 @@ fun MainShell(
 
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
     val shellNavController = rememberNavController()
+
+    // Keep selectedTabIndex in sync with the actual back stack
+    val currentBackStackEntry by shellNavController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
+    LaunchedEffect(currentRoute) {
+        val index = tabs.indexOfFirst { currentRoute == it.route }
+        if (index >= 0) selectedTabIndex = index
+    }
 
     Scaffold(
         containerColor = Surface0,
@@ -305,10 +316,16 @@ fun MainShell(
             composable(Screen.Friends.route) {
                 FriendsScreen(
                     onNavigateToAddFriendByEmail = { shellNavController.navigate(Screen.AddFriendByEmail.route) },
-                    onNavigateToScanQr           = { shellNavController.navigate(Screen.ScanQrCode.route) },
-                    onNavigateToImport           = { shellNavController.navigate(Screen.ImportSplitwise.route) },
-                    onNavigateToRequests         = { shellNavController.navigate(Screen.FriendRequests.route) },
-                    onNavigateToFriend           = { friendId -> shellNavController.navigate(Screen.FriendDetail.route(friendId)) },
+                    onNavigateToScanQr = { shellNavController.navigate(Screen.ScanQrCode.route) },
+                    onNavigateToImport = { shellNavController.navigate(Screen.ImportSplitwise.route) },
+                    onNavigateToRequests = { shellNavController.navigate(Screen.FriendRequests.route) },
+                    onNavigateToFriend = { friendId ->
+                        shellNavController.navigate(
+                            Screen.FriendDetail.route(
+                                friendId
+                            )
+                        )
+                    },
                 )
             }
             composable(Screen.Activity.route) {
@@ -326,23 +343,19 @@ fun MainShell(
             }
             composable(Screen.Account.route) {
                 AccountScreen(
-                    onNavigateToEditProfile   = { shellNavController.navigate(Screen.EditProfile.route) },
-                    onNavigateToQrCode        = { shellNavController.navigate(Screen.QrCode.route) },
-                    onNavigateToCurrency      = { shellNavController.navigate(Screen.CurrencySelect.route) },
+                    onNavigateToEditProfile = { shellNavController.navigate(Screen.EditProfile.route) },
+                    onNavigateToQrCode = { shellNavController.navigate(Screen.QrCode.route) },
+                    onNavigateToCurrency = { shellNavController.navigate(Screen.CurrencySelect.route) },
                     onNavigateToChangePassword = { shellNavController.navigate(Screen.ChangePassword.route) },
-                    onNavigateToMyAnalytics   = { shellNavController.navigate(Screen.MyAnalytics.route) },
-                    onNavigateToImport        = { shellNavController.navigate(Screen.ImportSplitwise.route) },
-                    onLoggedOut               = {
+                    onNavigateToMyAnalytics = { shellNavController.navigate(Screen.MyAnalytics.route) },
+                    onNavigateToImport = { shellNavController.navigate(Screen.ImportSplitwise.route) },
+                    onLoggedOut = {
                         rootNavController.navigate(Screen.Login.route) {
                             popUpTo(Screen.Groups.route) { inclusive = true }
                         }
                     },
                 )
             }
-            composable(Screen.CurrencySelect.route) {
-                PlaceholderScreen("Currency Select")
-            }
-
             // ── Group screens ─────────────────────────────────────────────────
             composable(
                 route = Screen.GroupDetail.route,
@@ -456,18 +469,40 @@ fun MainShell(
                     },
                 )
             }
-            composable(Screen.CurrencySelect.route) {
-                // Get ViewModel from parent AddExpense back stack entry
-                val parentEntry = remember(it) {
-                    shellNavController.getBackStackEntry(Screen.AddExpense.route)
+            composable(Screen.CurrencySelect.route) { backStackEntry ->
+                // Check if we came from AddExpense (has that route in back stack)
+                val fromAddExpense = remember(backStackEntry) {
+                    try {
+                        shellNavController.getBackStackEntry(Screen.AddExpense.route)
+                        true
+                    } catch (e: Exception) {
+                        false
+                    }
                 }
-                val viewModel = hiltViewModel<AddExpenseViewModel>(parentEntry)
-                val currency by viewModel.currency.collectAsState()
-                CurrencySelectScreen(
-                    currentCurrency = currency,
-                    onSelect = { selected -> viewModel.onCurrencyChanged(selected) },
-                    onBack = { shellNavController.popBackStack() },
-                )
+
+                if (fromAddExpense) {
+                    val parentEntry = remember(backStackEntry) {
+                        shellNavController.getBackStackEntry(Screen.AddExpense.route)
+                    }
+                    val addExpenseViewModel = hiltViewModel<AddExpenseViewModel>(parentEntry)
+                    val currency by addExpenseViewModel.currency.collectAsState()
+                    CurrencySelectScreen(
+                        currentCurrency = currency,
+                        onSelect = { selected -> addExpenseViewModel.onCurrencyChanged(selected) },
+                        onBack = { shellNavController.popBackStack() },
+                    )
+                } else {
+                    // Coming from Account screen — use AccountViewModel
+                    val accountViewModel = hiltViewModel<AccountViewModel>()
+                    val profile by accountViewModel.profile.collectAsState()
+                    CurrencySelectScreen(
+                        currentCurrency = profile?.preferredCurrency ?: "USD",
+                        onSelect = { selected ->
+                            accountViewModel.updateCurrency(selected)
+                        },
+                        onBack = { shellNavController.popBackStack() },
+                    )
+                }
             }
 
             composable(
@@ -570,7 +605,7 @@ fun MainShell(
 
             composable(Screen.ScanQrCode.route) {
                 ScanQrCodeScreen(
-                    onBack        = { shellNavController.popBackStack() },
+                    onBack = { shellNavController.popBackStack() },
                     onCodeScanned = { code ->
                         // TODO: send friend request by code
                         shellNavController.popBackStack()

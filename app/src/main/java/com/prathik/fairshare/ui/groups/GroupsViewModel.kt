@@ -54,7 +54,10 @@ class GroupsViewModel @Inject constructor(
      */
     fun loadData() {
         viewModelScope.launch {
-            _groupsState.value = GroupsUiState.Loading
+            // Only show loading spinner if we have no data yet
+            if (_groupsState.value !is GroupsUiState.Success) {
+                _groupsState.value = GroupsUiState.Loading
+            }
 
             val groupsDeferred = async { getGroupsUseCase() }
             val balancesDeferred = async { getAllBalancesUseCase() }
@@ -62,15 +65,24 @@ class GroupsViewModel @Inject constructor(
             // Handle groups result
             when (val result = groupsDeferred.await()) {
                 is ApiResult.Success -> _groupsState.value = GroupsUiState.Success(result.data)
-                is ApiResult.NetworkError -> _groupsState.value = GroupsUiState.Error(
-                    message = result.message,
-                    isNetwork = true,
-                )
+                is ApiResult.NetworkError -> {
+                    // Only show error if we have no cached data
+                    if (_groupsState.value !is GroupsUiState.Success) {
+                        _groupsState.value = GroupsUiState.Error(
+                            message = result.message,
+                            isNetwork = true,
+                        )
+                    }
+                }
 
-                else -> _groupsState.value = GroupsUiState.Error(
-                    message = "Failed to load groups. Please try again.",
-                    isNetwork = false,
-                )
+                else -> {
+                    if (_groupsState.value !is GroupsUiState.Success) {
+                        _groupsState.value = GroupsUiState.Error(
+                            message = "Failed to load groups. Please try again.",
+                            isNetwork = false,
+                        )
+                    }
+                }
             }
 
             // Handle balances result — silently ignore errors

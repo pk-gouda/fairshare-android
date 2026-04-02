@@ -15,6 +15,9 @@ import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.repository.GroupRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.prathik.fairshare.domain.model.GroupType
@@ -26,6 +29,18 @@ class GroupRepositoryImpl @Inject constructor(
 ) : GroupRepository {
 
     override suspend fun getMyGroups(): ApiResult<List<Group>> {
+        // Return cached data immediately if available
+        val cached = groupDao.getAll()
+        if (cached.isNotEmpty()) {
+            // Refresh in background — caller gets cache instantly
+            refreshGroupsFromNetwork()
+            return ApiResult.Success(cached.map { it.toDomain() })
+        }
+        // No cache — must wait for network
+        return refreshGroupsFromNetwork()
+    }
+
+    private suspend fun refreshGroupsFromNetwork(): ApiResult<List<Group>> {
         val result = safeApiCall { groupService.getMyGroups() }
         if (result is ApiResult.Success) {
             val entities = result.data.map { it.toEntity() }
@@ -36,10 +51,18 @@ class GroupRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getGroup(groupId: String): ApiResult<Group> {
-        val result = safeApiCall { groupService.getGroup(groupId) }
-        if (result is ApiResult.Success) {
-            groupDao.insert(result.data.toEntity())
+        // Return cached group immediately if available
+        val cached = groupDao.getById(groupId)
+        if (cached != null) {
+            // Refresh in background
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val result = safeApiCall { groupService.getGroup(groupId) }
+                if (result is ApiResult.Success) groupDao.insert(result.data.toEntity())
+            }
+            return ApiResult.Success(cached.toDomain())
         }
+        val result = safeApiCall { groupService.getGroup(groupId) }
+        if (result is ApiResult.Success) groupDao.insert(result.data.toEntity())
         return result.mapSuccess { it.toDomain() }
     }
 
@@ -51,15 +74,19 @@ class GroupRepositoryImpl @Inject constructor(
         safeApiCall {
             groupService.createGroup(
                 CreateGroupRequest(
-                    name        = name,
-                    type        = type.toGroupTypeSafe(),
+                    name = name,
+                    type = type.toGroupTypeSafe(),
                     description = description,
                 )
             )
         }.mapSuccess { it.toDomain() }
 
     private fun String.toGroupTypeSafe(): GroupType =
-        try { GroupType.valueOf(this) } catch (e: IllegalArgumentException) { GroupType.OTHER }
+        try {
+            GroupType.valueOf(this)
+        } catch (e: IllegalArgumentException) {
+            GroupType.OTHER
+        }
 
     override suspend fun updateGroup(
         groupId: String,
@@ -107,20 +134,38 @@ class GroupRepositoryImpl @Inject constructor(
             .mapSuccess { list -> list.map { it.toDomain() } }
 
     private fun com.prathik.fairshare.data.model.response.GroupResponse.toEntity() = GroupEntity(
-        id               = id,
-        name             = name,
-        type             = type,
-        groupImage       = groupImage,
-        createdById      = createdById,
-        createdByName    = createdByName,
-        tripStartDate    = tripStartDate,
-        tripEndDate      = tripEndDate,
-        simplifyDebts    = simplifyDebts,
-        inviteCode       = inviteCode,
-        groupNotes       = groupNotes,
+        id = id,
+        name = name,
+        type = type,
+        groupImage = groupImage,
+        createdById = createdById,
+        createdByName = createdByName,
+        tripStartDate = tripStartDate,
+        tripEndDate = tripEndDate,
+        simplifyDebts = simplifyDebts,
+        inviteCode = inviteCode,
+        groupNotes = groupNotes,
         lastActivityDate = lastActivityDate,
-        isArchived       = isArchived,
-        memberCount      = memberCount,
-        createdAt        = createdAt,
+        isArchived = isArchived,
+        memberCount = memberCount,
+        createdAt = createdAt,
+    )
+
+    private fun GroupEntity.toDomain() = Group(
+        id = id,
+        name = name,
+        type = type.toGroupTypeSafe(),
+        createdById = createdById,
+        createdByName = createdByName,
+        inviteCode = inviteCode,
+        simplifyDebts = simplifyDebts,
+        isArchived = isArchived,
+        memberCount = memberCount,
+        groupNotes = groupNotes,
+        groupImage = groupImage,
+        lastActivityDate = lastActivityDate,
+        tripStartDate = tripStartDate,
+        tripEndDate = tripEndDate,
+        createdAt = createdAt,
     )
 }

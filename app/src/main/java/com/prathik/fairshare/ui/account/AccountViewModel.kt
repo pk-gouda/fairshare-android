@@ -42,7 +42,8 @@ class AccountViewModel @Inject constructor(
 
     fun loadData() {
         viewModelScope.launch {
-            _isLoading.value = true
+            // Only show spinner on first load
+            if (_profile.value == null) _isLoading.value = true
 
             val profileDeferred  = async { getMyProfileUseCase() }
             val balanceDeferred  = async { getAllBalancesUseCase() }
@@ -66,6 +67,15 @@ class AccountViewModel @Inject constructor(
             when (val result = updateProfileUseCase(notificationEnabled = !current)) {
                 is ApiResult.Success -> _profile.value = result.data
                 else -> _actionState.value = AccountActionState.Error("Failed to update notifications")
+            }
+        }
+    }
+
+    fun updateCurrency(currency: String) {
+        viewModelScope.launch {
+            when (val result = updateProfileUseCase(preferredCurrency = currency)) {
+                is ApiResult.Success -> _profile.value = result.data
+                else -> _actionState.value = AccountActionState.Error("Failed to update currency")
             }
         }
     }

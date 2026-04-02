@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
@@ -98,12 +97,15 @@ fun ActivityScreen(
                 title = "Activity",
                 actions = {
                     if (hasUnread) {
-                        FsIconButton(
-                            icon = Icons.Outlined.DoneAll,
-                            contentDescription = "Mark all as read",
+                        androidx.compose.material3.TextButton(
                             onClick = { viewModel.markAllRead() },
-                            tint = TextSecondary,
-                        )
+                        ) {
+                            androidx.compose.material3.Text(
+                                text     = "Mark all read",
+                                fontSize = 13.sp,
+                                color    = com.prathik.fairshare.ui.theme.Green400,
+                            )
+                        }
                     }
                 },
             )

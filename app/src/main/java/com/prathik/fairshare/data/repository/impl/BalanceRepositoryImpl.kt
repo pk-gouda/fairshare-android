@@ -10,6 +10,9 @@ import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.repository.BalanceRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,19 +24,37 @@ class BalanceRepositoryImpl @Inject constructor(
 ) : BalanceRepository {
 
     override suspend fun getAllBalances(): ApiResult<List<Balance>> {
+        val userId = tokenStore.getUserId()
+
+        // Return cached balances immediately if available
+        if (userId != null) {
+            val cached = balanceDao.getByUserId(userId)
+            if (cached.isNotEmpty()) {
+                // Refresh in background
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    refreshBalances(userId)
+                }
+                return ApiResult.Success(cached.map { it.toDomain() })
+            }
+        }
+
+        // No cache — must wait for network
+        return refreshBalances(userId)
+    }
+
+    private suspend fun refreshBalances(userId: String?): ApiResult<List<Balance>> {
         val result = safeApiCall { balanceService.getAllBalances() }
-        if (result is ApiResult.Success) {
-            val userId = tokenStore.getUserId() ?: return result.mapSuccess { list -> list.map { it.toDomain() } }
+        if (result is ApiResult.Success && userId != null) {
             balanceDao.deleteByUserId(userId)
             balanceDao.insertAll(result.data.map { response ->
                 BalanceEntity(
-                    userId        = response.userId,
-                    otherUserId   = response.otherUserId,
+                    userId = response.userId,
+                    otherUserId = response.otherUserId,
                     otherUserName = response.otherUserName,
-                    amount        = response.amount,
-                    currency      = response.currency,
-                    groupId       = response.groupId ?: "",
-                    groupName     = response.groupName,
+                    amount = response.amount,
+                    currency = response.currency,
+                    groupId = response.groupId ?: "",
+                    groupName = response.groupName,
                 )
             })
         }
@@ -49,4 +70,14 @@ class BalanceRepositoryImpl @Inject constructor(
     override suspend fun getBalanceSummary(): ApiResult<Map<String, Any>> =
         safeApiCall { balanceService.getBalanceSummary() }
             .mapSuccess { it }
+
+    private fun BalanceEntity.toDomain() = Balance(
+        userId = userId,
+        otherUserId = otherUserId,
+        otherUserName = otherUserName,
+        amount = amount,
+        currency = currency,
+        groupId = groupId.ifEmpty { null },
+        groupName = groupName,
+    )
 }

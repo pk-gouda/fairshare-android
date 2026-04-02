@@ -10,6 +10,9 @@ import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.User
 import com.prathik.fairshare.domain.repository.UserRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,10 +23,22 @@ class UserRepositoryImpl @Inject constructor(
 ) : UserRepository {
 
     override suspend fun getMyProfile(): ApiResult<User> {
+        // Return cached profile immediately if available
+        val cached = userDao.getCurrentUser()
+        if (cached != null) {
+            // Refresh in background
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val result = safeApiCall { userService.getMyProfile() }
+                if (result is ApiResult.Success) {
+                    userDao.insert(result.data.toDomain().toEntity())
+                }
+            }
+            return ApiResult.Success(cached.toDomain())
+        }
+        // No cache — wait for network
         val result = safeApiCall { userService.getMyProfile() }
         if (result is ApiResult.Success) {
-            val user = result.data.toDomain()
-            userDao.insert(user.toEntity())
+            userDao.insert(result.data.toDomain().toEntity())
         }
         return result.mapSuccess { it.toDomain() }
     }
@@ -42,10 +57,10 @@ class UserRepositoryImpl @Inject constructor(
         val result = safeApiCall {
             userService.updateProfile(
                 UpdateProfileRequest(
-                    fullName            = fullName,
-                    phoneNumber         = phoneNumber,
-                    preferredCurrency   = preferredCurrency,
-                    language            = language,
+                    fullName = fullName,
+                    phoneNumber = phoneNumber,
+                    preferredCurrency = preferredCurrency,
+                    language = language,
                     notificationEnabled = notificationEnabled,
                 )
             )
@@ -87,14 +102,27 @@ class UserRepositoryImpl @Inject constructor(
             .mapSuccess { it.toDomain() }
 
     private fun User.toEntity() = UserEntity(
-        id                  = id,
-        email               = email,
-        fullName            = fullName,
-        phoneNumber         = phoneNumber,
-        profilePictureUrl   = profilePictureUrl,
-        preferredCurrency   = preferredCurrency,
-        language            = language,
+        id = id,
+        email = email,
+        fullName = fullName,
+        phoneNumber = phoneNumber,
+        profilePictureUrl = profilePictureUrl,
+        preferredCurrency = preferredCurrency,
+        language = language,
         notificationEnabled = notificationEnabled,
-        isActive            = isActive,
+        isActive = isActive,
+    )
+
+    private fun UserEntity.toDomain() = User(
+        id = id,
+        email = email,
+        fullName = fullName,
+        phoneNumber = phoneNumber,
+        profilePictureUrl = profilePictureUrl,
+        preferredCurrency = preferredCurrency,
+        language = language,
+        notificationEnabled = notificationEnabled,
+        isActive = isActive,
+        friendCode = null, // not stored in Room — fetched from network
     )
 }

@@ -36,7 +36,8 @@ class ActivityViewModel @Inject constructor(
 
     fun loadData() {
         viewModelScope.launch {
-            _isLoading.value = true
+            // Only show spinner on first load
+            if (_notifications.value.isEmpty()) _isLoading.value = true
             when (val result = getNotificationsUseCase()) {
                 is ApiResult.Success -> _notifications.value = result.data
                 else -> Unit

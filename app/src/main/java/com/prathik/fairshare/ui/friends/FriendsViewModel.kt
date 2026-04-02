@@ -62,7 +62,8 @@ class FriendsViewModel @Inject constructor(
 
     fun loadData() {
         viewModelScope.launch {
-            _isLoading.value = true
+            // Only show spinner on first load, not on refreshes
+            if (_friends.value.isEmpty()) _isLoading.value = true
 
             val friendsDeferred = async { getFriendsUseCase() }
             val requestsDeferred = async { getFriendRequestsUseCase() }

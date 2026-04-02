@@ -33,7 +33,10 @@ suspend fun <T> safeApiCall(
         val response = call()
         if (response.success) {
             @Suppress("UNCHECKED_CAST")
-            ApiResult.Success(response.data as T)
+            // response.data is null for Unit responses (e.g. markAllRead, logout)
+            // In those cases, cast null to T safely using Unit as fallback
+            val data = response.data ?: Unit
+            ApiResult.Success(data as T)
         } else {
             ApiResult.HttpError(
                 code = 0,
