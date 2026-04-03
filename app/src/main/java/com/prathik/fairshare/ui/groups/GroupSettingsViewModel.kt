@@ -8,6 +8,7 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.usecase.group.DeleteGroupUseCase
+import com.prathik.fairshare.domain.usecase.group.LeaveGroupUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import com.prathik.fairshare.domain.usecase.group.RemoveMemberUseCase
@@ -26,6 +27,7 @@ class GroupSettingsViewModel @Inject constructor(
     private val updateGroupUseCase : UpdateGroupUseCase,
     private val removeMemberUseCase: RemoveMemberUseCase,
     private val deleteGroupUseCase : DeleteGroupUseCase,
+    private val leaveGroupUseCase  : LeaveGroupUseCase,
     private val tokenStore         : EncryptedTokenStore,
     savedStateHandle               : SavedStateHandle,
 ) : ViewModel() {
@@ -137,6 +139,19 @@ class GroupSettingsViewModel @Inject constructor(
                     GroupSettingsActionState.Error("Settle all balances before deleting")
                 else -> _actionState.value =
                     GroupSettingsActionState.Error("Failed to delete group")
+            }
+        }
+    }
+
+    fun leaveGroup() {
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (leaveGroupUseCase(groupId)) {
+                is ApiResult.Success  -> _actionState.value = GroupSettingsActionState.GroupDeleted
+                is ApiResult.Conflict -> _actionState.value =
+                    GroupSettingsActionState.Error("Settle all balances before leaving")
+                else -> _actionState.value =
+                    GroupSettingsActionState.Error("Failed to leave group")
             }
         }
     }

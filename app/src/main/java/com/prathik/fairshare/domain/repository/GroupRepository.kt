@@ -50,6 +50,7 @@ interface GroupRepository {
      * Returns [ApiResult.Conflict] if group has unsettled balances.
      */
     suspend fun deleteGroup(groupId: String): ApiResult<Unit>
+    suspend fun leaveGroup(groupId: String): ApiResult<Unit>
 
     /**
      * Joins a group using an invite code.

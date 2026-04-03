@@ -15,5 +15,6 @@ data class UserResponse(
     @SerialName("preferredCurrency")   val preferredCurrency: String,
     @SerialName("language")            val language: String,
     @SerialName("notificationEnabled") val notificationEnabled: Boolean,
+    @SerialName("friendCode")          val friendCode: String? = null,
     @SerialName("createdAt")           val createdAt: String,
 )

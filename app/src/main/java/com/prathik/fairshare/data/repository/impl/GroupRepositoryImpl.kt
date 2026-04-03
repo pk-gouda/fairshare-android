@@ -106,6 +106,14 @@ class GroupRepositoryImpl @Inject constructor(
         return result
     }
 
+    override suspend fun leaveGroup(groupId: String): ApiResult<Unit> {
+        val result = safeApiCall { groupService.leaveGroup(groupId) }.mapSuccess { }
+        if (result is ApiResult.Success) {
+            groupDao.deleteById(groupId)
+        }
+        return result
+    }
+
     override suspend fun joinGroup(inviteCode: String): ApiResult<GroupMember> =
         safeApiCall {
             groupService.joinGroup(JoinGroupRequest(inviteCode))

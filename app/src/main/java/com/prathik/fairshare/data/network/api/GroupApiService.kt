@@ -57,6 +57,9 @@ interface GroupApiService {
     @POST("api/groups/{groupId}/archive")
     suspend fun archiveGroup(@Path("groupId") groupId: String): ApiResponse<Unit>
 
+    @POST("api/groups/{groupId}/leave")
+    suspend fun leaveGroup(@Path("groupId") groupId: String): ApiResponse<Unit>
+
     @POST("api/groups/{groupId}/unarchive")
     suspend fun unarchiveGroup(@Path("groupId") groupId: String): ApiResponse<Unit>
 
