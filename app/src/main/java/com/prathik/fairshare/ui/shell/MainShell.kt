@@ -53,14 +53,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.prathik.fairshare.ui.expense.AddExpenseScreen
-import com.prathik.fairshare.ui.groups.CreateGroupScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.friends.FriendsScreen
-import com.prathik.fairshare.ui.friends.AddFriendByEmailScreen
+import com.prathik.fairshare.ui.friends.AddFriendScreen
 import com.prathik.fairshare.ui.friends.QrCodeScreen
 import com.prathik.fairshare.ui.friends.ScanQrCodeScreen
+import com.prathik.fairshare.ui.friends.FriendDetailScreen
+import com.prathik.fairshare.ui.friends.FriendSettingsScreen
 import com.prathik.fairshare.ui.activity.ActivityScreen
 import com.prathik.fairshare.ui.account.AccountScreen
 import com.prathik.fairshare.ui.account.AccountViewModel
@@ -319,7 +320,6 @@ fun MainShell(
                     onNavigateToAddFriendByEmail = { shellNavController.navigate(Screen.AddFriendByEmail.route) },
                     onNavigateToScanQr = { shellNavController.navigate(Screen.ScanQrCode.route) },
                     onNavigateToImport = { shellNavController.navigate(Screen.ImportSplitwise.route) },
-                    onNavigateToRequests = { shellNavController.navigate(Screen.FriendRequests.route) },
                     onNavigateToFriend = { friendId ->
                         shellNavController.navigate(
                             Screen.FriendDetail.route(
@@ -422,14 +422,7 @@ fun MainShell(
             ) { PlaceholderScreen("Group Analytics") }
 
             composable(Screen.CreateGroup.route) {
-                CreateGroupScreen(
-                    onBack = { shellNavController.popBackStack() },
-                    onGroupCreated = { groupId ->
-                        shellNavController.navigate(Screen.GroupDetail.route(groupId)) {
-                            popUpTo(Screen.CreateGroup.route) { inclusive = true }
-                        }
-                    },
-                )
+                PlaceholderScreen("Create Group")
             }
 
             composable(
@@ -581,14 +574,30 @@ fun MainShell(
 
             // ── Friend screens ────────────────────────────────────────────────
             composable(
-                route = Screen.FriendDetail.route,
+                route     = Screen.FriendDetail.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Friend Detail") }
+            ) { backStackEntry ->
+                val friendId = backStackEntry.arguments?.getString("friendId") ?: return@composable
+                FriendDetailScreen(
+                    onBack                = { shellNavController.popBackStack() },
+                    onNavigateToSettings  = { shellNavController.navigate(Screen.FriendSettings.route(friendId)) },
+                    onNavigateToExpense   = { expenseId -> shellNavController.navigate(Screen.ExpenseDetail.route(expenseId)) },
+                    onNavigateToAddExpense = { shellNavController.navigate(Screen.AddExpense.route) },
+                    onNavigateToSettle    = { shellNavController.navigate(Screen.SettleUp.route(friendId)) },
+                )
+            }
 
             composable(
-                route = Screen.FriendSettings.route,
+                route     = Screen.FriendSettings.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Friend Settings") }
+            ) {
+                FriendSettingsScreen(
+                    onBack    = { shellNavController.popBackStack() },
+                    onRemoved = {
+                        shellNavController.popBackStack(Screen.Friends.route, false)
+                    },
+                )
+            }
 
             composable(
                 route = Screen.FriendAnalytics.route,
@@ -600,8 +609,9 @@ fun MainShell(
             }
 
             composable(Screen.AddFriendByEmail.route) {
-                AddFriendByEmailScreen(
+                AddFriendScreen(
                     onBack = { shellNavController.popBackStack() },
+                    onDone = { shellNavController.popBackStack(Screen.Friends.route, false) },
                 )
             }
 
@@ -621,9 +631,6 @@ fun MainShell(
                 )
             }
 
-            composable(Screen.FriendRequests.route) {
-                PlaceholderScreen("Friend Requests")
-            }
 
             // ── Account screens ───────────────────────────────────────────────
             composable(Screen.EditProfile.route) {

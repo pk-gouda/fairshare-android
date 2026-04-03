@@ -15,35 +15,34 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Upload
-import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,20 +76,19 @@ fun FriendsScreen(
     onNavigateToAddFriendByEmail: () -> Unit,
     onNavigateToScanQr          : () -> Unit,
     onNavigateToImport          : () -> Unit,
-    onNavigateToRequests        : () -> Unit,
     onNavigateToFriend          : (String) -> Unit,
     viewModel                   : FriendsViewModel = hiltViewModel(),
 ) {
-    val isLoading       by viewModel.isLoading.collectAsState()
-    val pendingRequests by viewModel.pendingRequests.collectAsState()
-    val owedToYou       by viewModel.owedToYou.collectAsState()
-    val youOwe          by viewModel.youOwe.collectAsState()
-    val balanceMap      by viewModel.balanceMap.collectAsState()
-    val actionState     by viewModel.actionState.collectAsState()
-    val searchQuery     by viewModel.searchQuery.collectAsState()
-    val snackbarHost    = remember { SnackbarHostState() }
-    val sheetState      = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showSheet       by remember { mutableStateOf(false) }
+    val isLoading      by viewModel.isLoading.collectAsState()
+    val invitedFriends by viewModel.invitedFriends.collectAsState()
+    val owedToYou      by viewModel.owedToYou.collectAsState()
+    val youOwe         by viewModel.youOwe.collectAsState()
+    val balanceMap     by viewModel.balanceMap.collectAsState()
+    val actionState    by viewModel.actionState.collectAsState()
+    val searchQuery    by viewModel.searchQuery.collectAsState()
+    val snackbarHost   = remember { SnackbarHostState() }
+    val sheetState     = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showSheet      by remember { mutableStateOf(false) }
 
     val netBalance = owedToYou - youOwe
     val netColor   = when {
@@ -105,7 +103,6 @@ fun FriendsScreen(
     }
 
     val filteredFriends by remember { derivedStateOf { viewModel.filteredFriends() } }
-    val hasPending = pendingRequests.isNotEmpty()
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
@@ -180,7 +177,7 @@ fun FriendsScreen(
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
 
-                // ── Net balance hero — same position/style as GroupsHomeScreen ─
+                // ── Net balance hero ──────────────────────────────────────────
                 item {
                     Column(
                         modifier = Modifier
@@ -209,46 +206,9 @@ fun FriendsScreen(
                     }
                 }
 
-                // ── Pending requests banner — only if requests exist ───────────
-                if (hasPending) {
-                    item {
-                        Row(
-                            modifier          = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Spacing.lg)
-                                .padding(bottom = Spacing.md)
-                                .clip(RoundedCornerShape(Radius.xl))
-                                .background(Color(0xFF0D2A0D))
-                                .clickable { onNavigateToRequests() }
-                                .padding(horizontal = Spacing.md, vertical = Spacing.md),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier         = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF1A3A1A)),
-                            ) {
-                                Text(text = "👤", fontSize = 14.sp)
-                            }
-                            Spacer(modifier = Modifier.width(Spacing.md))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text       = "${pendingRequests.size} pending request${if (pendingRequests.size > 1) "s" else ""}",
-                                    fontSize   = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color      = Green400,
-                                )
-                                Text(text = "Tap to review", fontSize = 11.sp, color = TextTertiary)
-                            }
-                            Text(text = "›", fontSize = 18.sp, color = TextTertiary)
-                        }
-                    }
-                }
-
-                // ── Friends list ──────────────────────────────────────────────
-                if (filteredFriends.isEmpty()) {
+                // ── Unified friends list ──────────────────────────────────────
+                val allEmpty = filteredFriends.isEmpty() && invitedFriends.isEmpty()
+                if (allEmpty) {
                     item {
                         FsEmptyState(
                             title    = "No friends yet",
@@ -257,24 +217,30 @@ fun FriendsScreen(
                         )
                     }
                 } else {
-                    items(
-                        items = filteredFriends,
-                        key   = { it.id },
-                    ) { friend ->
+                    // Accepted friends
+                    items(filteredFriends, key = { it.id }) { friend ->
                         FriendRow(
                             friend  = friend,
                             balance = balanceMap[friend.id] ?: 0.0,
                             onClick = { onNavigateToFriend(friend.id) },
                         )
-                        HorizontalDivider(
-                            color     = Surface3,
-                            thickness = 0.5.dp,
-                            modifier  = Modifier.padding(start = Spacing.lg + 56.dp),
+                        HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                            modifier = Modifier.padding(start = Spacing.lg + 56.dp))
+                    }
+                    // Locally invited / placeholder
+                    items(invitedFriends, key = { "invited_${it.id}" }) { invited ->
+                        PendingFriendRow(
+                            name    = invited.displayName,
+                            userId  = invited.id,
+                            status  = if (invited.isPlaceholder) "placeholder" else "invited",
+                            onClick = { onNavigateToFriend(invited.id.replace("-", "")) },
                         )
+                        HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                            modifier = Modifier.padding(start = Spacing.lg + 56.dp))
                     }
                 }
 
-                // ── Add a new friend button — bottom of list ──────────────────
+                // ── Add a new friend button ───────────────────────────────────
                 item {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -351,11 +317,7 @@ fun FriendsScreen(
 // ── Friend Row ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun FriendRow(
-    friend : Friend,
-    balance: Double,
-    onClick: () -> Unit,
-) {
+private fun FriendRow(friend: Friend, balance: Double, onClick: () -> Unit) {
     Row(
         modifier          = Modifier
             .fillMaxWidth()
@@ -363,24 +325,11 @@ private fun FriendRow(
             .padding(horizontal = Spacing.lg, vertical = Spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FsAvatar(
-            name   = friend.fullName,
-            userId = friend.id,
-            size   = ComponentSize.avatarLg,
-        )
+        FsAvatar(name = friend.fullName, userId = friend.id, size = ComponentSize.avatarLg)
         Spacer(modifier = Modifier.width(Spacing.md))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text       = friend.fullName,
-                fontSize   = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color      = TextPrimary,
-            )
-            Text(
-                text     = friend.email,
-                fontSize = 12.sp,
-                color    = TextTertiary,
-            )
+            Text(text = friend.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Text(text = friend.email,    fontSize = 12.sp, color = TextTertiary)
         }
         Spacer(modifier = Modifier.width(Spacing.sm))
         when {
@@ -397,14 +346,31 @@ private fun FriendRow(
     }
 }
 
-// ── Stat Pill — identical to GroupsHomeScreen ─────────────────────────────────
+// ── Pending / Invited / Placeholder Row ───────────────────────────────────────
 
 @Composable
-private fun StatPill(
-    label : String,
-    amount: String,
-    color : Color,
-) {
+private fun PendingFriendRow(name: String, userId: String, status: String, onClick: () -> Unit = {}) {
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FsAvatar(name = name, userId = userId, size = ComponentSize.avatarLg)
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = name,   fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Text(text = status, fontSize = 11.sp, color = TextTertiary)
+        }
+        Text(text = "›", fontSize = 18.sp, color = TextTertiary)
+    }
+}
+
+// ── Stat Pill ─────────────────────────────────────────────────────────────────
+
+@Composable
+private fun StatPill(label: String, amount: String, color: Color) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier          = Modifier
@@ -417,6 +383,7 @@ private fun StatPill(
         Text(text = amount, fontSize = 12.sp, color = color, fontWeight = FontWeight.SemiBold)
     }
 }
+
 // ── Sheet Option ──────────────────────────────────────────────────────────────
 
 @Composable

@@ -14,6 +14,9 @@ interface FriendApiService {
     @POST("api/friends/request")
     suspend fun sendRequest(@Body body: Map<String, String>): ApiResponse<FriendshipResponse>
 
+    @POST("api/friends/invite")
+    suspend fun inviteFriend(@Body body: Map<String, String>): ApiResponse<Unit>
+
     @POST("api/friends/add-by-code/{code}")
     suspend fun addByFriendCode(@Path("code") code: String): ApiResponse<FriendshipResponse>
 

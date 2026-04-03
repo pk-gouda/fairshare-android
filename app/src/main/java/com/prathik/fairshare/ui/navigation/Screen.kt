@@ -121,7 +121,6 @@ sealed class Screen(val route: String) {
     object AddFriendByEmail : Screen("add_friend_email")
     object QrCode : Screen("qr_code")
     object ScanQrCode : Screen("scan_qr_code")
-    object FriendRequests : Screen("friend_requests")
 
     // ── Account ───────────────────────────────────────────────────────────────
     object EditProfile : Screen("edit_profile")

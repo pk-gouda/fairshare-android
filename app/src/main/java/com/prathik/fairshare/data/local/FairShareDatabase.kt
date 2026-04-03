@@ -2,18 +2,14 @@ package com.prathik.fairshare.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * FairShare Room database.
  *
- * Contains:
- * - groups       — cached group list for offline-first display
- * - expenses     — cached expense list per group
- * - balances     — cached balance data for hero section
- * - users        — cached current user profile
- * - pending_actions — offline action queue (drained by OfflineSyncManager)
- *
- * When schema changes: increment version and add a Migration.
+ * Version history:
+ * 1 → 2: Added invited_friends table for locally stored invites/placeholders
  */
 @Database(
     entities = [
@@ -22,8 +18,9 @@ import androidx.room.RoomDatabase
         BalanceEntity::class,
         UserEntity::class,
         PendingActionEntity::class,
+        InvitedFriendEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -32,4 +29,23 @@ abstract class FairShareDatabase : RoomDatabase() {
     abstract fun balanceDao(): BalanceDao
     abstract fun userDao(): UserDao
     abstract fun pendingActionDao(): PendingActionDao
+    abstract fun invitedFriendDao(): InvitedFriendDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS invited_friends (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        displayName TEXT NOT NULL,
+                        emailOrPhone TEXT NOT NULL,
+                        isPlaceholder INTEGER NOT NULL,
+                        invitedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent()
+                )
+            }
+        }
+    }
 }

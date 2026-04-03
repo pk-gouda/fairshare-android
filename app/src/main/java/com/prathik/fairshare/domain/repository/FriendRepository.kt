@@ -19,10 +19,14 @@ interface FriendRepository {
 
     /**
      * Sends a friend request to another user.
-     * Returns [ApiResult.Conflict] if a request already exists
-     * or if the users are already friends.
      */
     suspend fun sendRequest(receiverId: String): ApiResult<Friendship>
+
+    /**
+     * Invites a non-user to FairShare by email/phone.
+     * Backend stubs this until SES is wired.
+     */
+    suspend fun inviteFriend(email: String, name: String): ApiResult<Unit>
 
     /**
      * Accepts a received friend request.

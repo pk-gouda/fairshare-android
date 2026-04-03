@@ -25,6 +25,10 @@ class FriendRepositoryImpl @Inject constructor(
         safeApiCall { friendService.sendRequest(mapOf("receiverId" to receiverId)) }
             .mapSuccess { it.toDomain() }
 
+    override suspend fun inviteFriend(email: String, name: String): ApiResult<Unit> =
+        safeApiCall { friendService.inviteFriend(mapOf("email" to email, "name" to name)) }
+            .mapSuccess { }
+
     override suspend fun acceptRequest(friendshipId: String): ApiResult<Friendship> =
         safeApiCall { friendService.acceptRequest(friendshipId) }
             .mapSuccess { it.toDomain() }
