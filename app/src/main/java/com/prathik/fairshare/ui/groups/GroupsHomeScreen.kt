@@ -37,8 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -102,10 +106,18 @@ fun GroupsHomeScreen(
     onNavigateToAddExpense: () -> Unit,
     viewModel: GroupsViewModel = hiltViewModel(),
 ) {
-    val groupsState by viewModel.groupsState.collectAsState()
+    val groupsState    by viewModel.groupsState.collectAsState()
     val balanceSummary by viewModel.balanceSummary.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchQuery    by viewModel.searchQuery.collectAsState()
     val isLoading = groupsState is GroupsUiState.Loading
+
+    // Refresh every time this screen becomes RESUMED (e.g. back from CreateGroup/GroupDetail)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.loadData()
+        }
+    }
 
     Scaffold(
         containerColor = Surface0,

@@ -53,6 +53,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.prathik.fairshare.ui.expense.AddExpenseScreen
+import com.prathik.fairshare.ui.groups.CreateGroupScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
@@ -63,8 +64,6 @@ import com.prathik.fairshare.ui.friends.ScanQrCodeScreen
 import com.prathik.fairshare.ui.activity.ActivityScreen
 import com.prathik.fairshare.ui.account.AccountScreen
 import com.prathik.fairshare.ui.account.AccountViewModel
-import com.prathik.fairshare.ui.account.EditProfileScreen
-import com.prathik.fairshare.ui.account.ChangePasswordScreen
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
@@ -423,7 +422,14 @@ fun MainShell(
             ) { PlaceholderScreen("Group Analytics") }
 
             composable(Screen.CreateGroup.route) {
-                PlaceholderScreen("Create Group")
+                CreateGroupScreen(
+                    onBack = { shellNavController.popBackStack() },
+                    onGroupCreated = { groupId ->
+                        shellNavController.navigate(Screen.GroupDetail.route(groupId)) {
+                            popUpTo(Screen.CreateGroup.route) { inclusive = true }
+                        }
+                    },
+                )
             }
 
             composable(
@@ -621,15 +627,10 @@ fun MainShell(
 
             // ── Account screens ───────────────────────────────────────────────
             composable(Screen.EditProfile.route) {
-                EditProfileScreen(
-                    onBack = { shellNavController.popBackStack() },
-                    onNavigateToPassword = { shellNavController.navigate(Screen.ChangePassword.route) },
-                )
+                PlaceholderScreen("Edit Profile")
             }
             composable(Screen.ChangePassword.route) {
-                ChangePasswordScreen(
-                    onBack = { shellNavController.popBackStack() },
-                )
+                PlaceholderScreen("Change Password")
             }
             composable(Screen.MyAnalytics.route) {
                 PlaceholderScreen("My Analytics")
