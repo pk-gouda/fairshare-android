@@ -140,6 +140,7 @@ fun AddExpenseScreen(
     val receiptState by viewModel.receiptState.collectAsState()
     val transferFromId by viewModel.transferFromId.collectAsState()
     val transferToId by viewModel.transferToId.collectAsState()
+    val preselectedFriend by viewModel.preselectedFriend.collectAsState()
 
     val snackbarHost = remember { SnackbarHostState() }
 
@@ -474,36 +475,61 @@ fun AddExpenseScreen(
                         .clip(RoundedCornerShape(Radius.xl))
                         .background(Surface2),
                 ) {
-                    // Group — green when unselected
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showGroupSheet = true }
-                            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            androidx.compose.material3.Icon(
-                                Icons.Outlined.Group, null,
-                                tint = TextSecondary, modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.md))
-                            Text("Group", fontSize = 15.sp, color = TextSecondary)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Group row — shows friend name if direct expense, group otherwise
+                    if (preselectedFriend != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Icon(
+                                    Icons.Outlined.Person, null,
+                                    tint = TextSecondary, modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.md))
+                                Text("With", fontSize = 15.sp, color = TextSecondary)
+                            }
                             Text(
-                                text = groups.find { it.id == selectedGroupId }?.name
-                                    ?: "Select group",
+                                text = preselectedFriend!!.fullName,
                                 fontSize = 15.sp,
-                                color = if (selectedGroupId == null) Green400 else TextPrimary,
+                                color = TextPrimary,
                                 fontWeight = FontWeight.Medium,
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            androidx.compose.material3.Icon(
-                                Icons.AutoMirrored.Outlined.ArrowForwardIos, null,
-                                tint = TextSecondary, modifier = Modifier.size(12.dp)
-                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showGroupSheet = true }
+                                .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Icon(
+                                    Icons.Outlined.Group, null,
+                                    tint = TextSecondary, modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.md))
+                                Text("Group", fontSize = 15.sp, color = TextSecondary)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = groups.find { it.id == selectedGroupId }?.name
+                                        ?: "Select group",
+                                    fontSize = 15.sp,
+                                    color = if (selectedGroupId == null) Green400 else TextPrimary,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                androidx.compose.material3.Icon(
+                                    Icons.AutoMirrored.Outlined.ArrowForwardIos, null,
+                                    tint = TextSecondary, modifier = Modifier.size(12.dp)
+                                )
+                            }
                         }
                     }
 

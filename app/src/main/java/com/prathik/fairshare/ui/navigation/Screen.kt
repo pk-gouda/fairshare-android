@@ -65,10 +65,9 @@ sealed class Screen(val route: String) {
     }
 
     // ── Expense ───────────────────────────────────────────────────────────────
-    object AddExpense : Screen("add_expense?groupId={groupId}") {
-        fun route(groupId: String? = null) =
-            if (groupId != null) "add_expense?groupId=$groupId"
-            else "add_expense?groupId="  // ← always include the param
+    object AddExpense : Screen("add_expense?groupId={groupId}&friendId={friendId}") {
+        fun route(groupId: String? = null, friendId: String? = null) =
+            "add_expense?groupId=${groupId ?: ""}&friendId=${friendId ?: ""}"
     }
 
     object EditExpense : Screen("expense/{expenseId}/edit") {

@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class CreateExpenseRequest(
-    @SerialName("groupId")        val groupId: String,
+    @SerialName("groupId")        val groupId: String?,
     @SerialName("description")    val description: String,
     @SerialName("totalAmount")    val totalAmount: Double,
     @SerialName("currency")       val currency: String,

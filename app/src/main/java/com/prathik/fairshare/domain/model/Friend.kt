@@ -9,7 +9,12 @@ data class Friend(
     val fullName: String,
     val email: String,
     val profilePictureUrl: String?,
-) : Parcelable
+    val accountStatus: AccountStatus = AccountStatus.ACTIVE,
+) : Parcelable {
+    val isPlaceholder: Boolean get() = accountStatus == AccountStatus.PLACEHOLDER
+    val isInvited: Boolean get() = accountStatus == AccountStatus.INVITED
+    val isActive: Boolean get() = accountStatus == AccountStatus.ACTIVE
+}
 
 @Parcelize
 data class Friendship(
@@ -18,6 +23,8 @@ data class Friendship(
     val requesterName: String,
     val receiverId: String,
     val receiverName: String,
+    val receiverEmail: String? = null,
+    val receiverAccountStatus: AccountStatus = AccountStatus.ACTIVE,
     val status: FriendStatus,
     val friendshipType: FriendshipType,
     val createdAt: String,

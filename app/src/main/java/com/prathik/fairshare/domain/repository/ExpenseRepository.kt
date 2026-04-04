@@ -31,7 +31,7 @@ interface ExpenseRepository {
      * splitType — null defaults to EQUAL on the backend.
      */
     suspend fun createExpense(
-        groupId: String,
+        groupId: String?,
         description: String,
         totalAmount: Double,
         currency: String,

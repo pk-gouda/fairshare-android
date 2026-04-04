@@ -41,7 +41,7 @@ class ExpenseRepositoryImpl @Inject constructor(
             .mapSuccess { it.toDomain() }
 
     override suspend fun createExpense(
-        groupId: String,
+        groupId: String?,
         description: String,
         totalAmount: Double,
         currency: String,

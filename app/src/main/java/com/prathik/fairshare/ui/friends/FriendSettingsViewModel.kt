@@ -3,8 +3,6 @@ package com.prathik.fairshare.ui.friends
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.prathik.fairshare.data.local.InvitedFriendDao
-import com.prathik.fairshare.data.local.InvitedFriendEntity
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.Group
@@ -20,42 +18,39 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-// What kind of friend this is — drives the UI
 sealed class FriendType {
-    object Accepted : FriendType()
-    object Pending : FriendType()
+    object Accepted    : FriendType()
+    object Pending     : FriendType()
     data class Invited(val email: String) : FriendType()
     object Placeholder : FriendType()
 }
 
 @HiltViewModel
 class FriendSettingsViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val friendRepository: FriendRepository,
-    private val invitedFriendDao: InvitedFriendDao,
-    private val getGroupsUseCase: GetGroupsUseCase,
-    private val getAllBalancesUseCase: GetAllBalancesUseCase,
-    private val getMyProfileUseCase: GetMyProfileUseCase,
+    savedStateHandle            : SavedStateHandle,
+    private val friendRepository       : FriendRepository,
+    private val getGroupsUseCase       : GetGroupsUseCase,
+    private val getAllBalancesUseCase   : GetAllBalancesUseCase,
+    private val getMyProfileUseCase    : GetMyProfileUseCase,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
 
     private var myEmail: String = ""
 
-    private val _friend = MutableStateFlow<Friend?>(null)
+    private val _friend      = MutableStateFlow<Friend?>(null)
     val friend: StateFlow<Friend?> = _friend.asStateFlow()
 
-    private val _friendType = MutableStateFlow<FriendType>(FriendType.Accepted)
+    private val _friendType  = MutableStateFlow<FriendType>(FriendType.Accepted)
     val friendType: StateFlow<FriendType> = _friendType.asStateFlow()
 
     private val _sharedGroups = MutableStateFlow<List<Group>>(emptyList())
     val sharedGroups: StateFlow<List<Group>> = _sharedGroups.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
+    private val _isLoading   = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _actionState =
-        MutableStateFlow<FriendSettingsActionState>(FriendSettingsActionState.Idle)
+    private val _actionState = MutableStateFlow<FriendSettingsActionState>(FriendSettingsActionState.Idle)
     val actionState: StateFlow<FriendSettingsActionState> = _actionState.asStateFlow()
 
     init {
@@ -72,53 +67,40 @@ class FriendSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
 
-            val friendsDeferred = async { friendRepository.getFriends() }
-            val sentDeferred = async { friendRepository.getSentRequests() }
+            val friendsDeferred  = async { friendRepository.getFriends() }
+            val sentDeferred     = async { friendRepository.getSentRequests() }
             val balancesDeferred = async { getAllBalancesUseCase() }
-            val groupsDeferred = async { getGroupsUseCase() }
+            val groupsDeferred   = async { getGroupsUseCase() }
 
-            // 1. Accepted friend
-            val accepted = (friendsDeferred.await() as? ApiResult.Success)
-                ?.data?.find { it.id == friendId }
+            // Backend now returns ACTIVE, PLACEHOLDER, and INVITED friends
+            val allFriends = (friendsDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
+            val found = allFriends.find { it.id == friendId }
 
-            if (accepted != null) {
-                _friend.value = accepted
-                _friendType.value = FriendType.Accepted
+            if (found != null) {
+                _friend.value = found
+                _friendType.value = when {
+                    found.isPlaceholder -> FriendType.Placeholder
+                    found.isInvited     -> FriendType.Invited(found.email)
+                    else                -> FriendType.Accepted
+                }
             } else {
-                // 2. Sent request (pending existing user)
+                // Sent request — pending acceptance from a real user
                 val sent = (sentDeferred.await() as? ApiResult.Success)
                     ?.data?.find { it.receiverId == friendId }
-
                 if (sent != null) {
                     _friend.value = Friend(
-                        id = sent.receiverId,
-                        fullName = sent.receiverName,
-                        email = "",
+                        id                = sent.receiverId,
+                        fullName          = sent.receiverName,
+                        email             = "",
                         profilePictureUrl = null,
                     )
                     _friendType.value = FriendType.Pending
-                } else {
-                    // 3. Local invited / placeholder
-                    val local = invitedFriendDao.getAll()
-                        .find { it.id.replace("-", "") == friendId.replace("-", "") }
-                    if (local != null) {
-                        _friend.value = Friend(
-                            id = local.id,
-                            fullName = local.displayName,
-                            email = local.emailOrPhone,
-                            profilePictureUrl = null,
-                        )
-                        _friendType.value = if (local.isPlaceholder)
-                            FriendType.Placeholder
-                        else
-                            FriendType.Invited(local.emailOrPhone)
-                    }
                 }
             }
 
-            // Shared groups — only for accepted friends
+            // Shared groups — only relevant for active friends
             val balancesResult = balancesDeferred.await()
-            val groupsResult = groupsDeferred.await()
+            val groupsResult   = groupsDeferred.await()
             if (balancesResult is ApiResult.Success && groupsResult is ApiResult.Success) {
                 val friendGroupIds = balancesResult.data
                     .filter { it.otherUserId == friendId }
@@ -132,7 +114,7 @@ class FriendSettingsViewModel @Inject constructor(
     }
 
     fun sendInvite(onDone: () -> Unit) {
-        val name = _friend.value?.fullName ?: return
+        val name  = _friend.value?.fullName ?: return
         val email = _friend.value?.email ?: ""
         viewModelScope.launch {
             when (friendRepository.inviteFriend(email = email, name = name)) {
@@ -140,9 +122,7 @@ class FriendSettingsViewModel @Inject constructor(
                     _actionState.value = FriendSettingsActionState.Success("Invite sent!")
                     onDone()
                 }
-
-                else -> _actionState.value =
-                    FriendSettingsActionState.Error("Failed to send invite")
+                else -> _actionState.value = FriendSettingsActionState.Error("Failed to send invite")
             }
         }
     }
@@ -152,56 +132,37 @@ class FriendSettingsViewModel @Inject constructor(
         val trimmed = newEmail.trim()
 
         if (trimmed.isBlank()) {
-            _actionState.value =
-                FriendSettingsActionState.Error("Please enter an email or phone number")
+            _actionState.value = FriendSettingsActionState.Error("Please enter an email or phone number")
             return
         }
         if (trimmed.equals(myEmail, ignoreCase = true)) {
-            _actionState.value =
-                FriendSettingsActionState.Error("You can't use your own email address")
+            _actionState.value = FriendSettingsActionState.Error("You can\'t use your own email address")
             return
         }
 
         viewModelScope.launch {
-            // Check if another invited friend already has this email
-            val existing = invitedFriendDao.findByEmail(trimmed)
-            if (existing != null && existing.id != local.id) {
-                _actionState.value =
-                    FriendSettingsActionState.Error("$trimmed has already been invited")
-                return@launch
+            // Re-invite with the updated email — backend handles deduplication
+            when (friendRepository.inviteFriend(email = trimmed, name = local.fullName)) {
+                is ApiResult.Success -> {
+                    _friend.value = local.copy(email = trimmed)
+                    _friendType.value = FriendType.Invited(trimmed)
+                    _actionState.value = FriendSettingsActionState.Success("Contact updated")
+                }
+                else -> _actionState.value = FriendSettingsActionState.Error("Failed to update contact")
             }
-
-            invitedFriendDao.insert(
-                InvitedFriendEntity(
-                    id = local.id,
-                    displayName = local.fullName,
-                    emailOrPhone = trimmed,
-                    isPlaceholder = false,
-                )
-            )
-            _friend.value = local.copy(email = trimmed)
-            _friendType.value = FriendType.Invited(trimmed)
-            _actionState.value = FriendSettingsActionState.Success("Contact updated")
         }
     }
 
     fun removeFriend(onRemoved: () -> Unit) {
         viewModelScope.launch {
             _isLoading.value = true
-            val type = _friendType.value
-            val result = when (type) {
-                is FriendType.Accepted, FriendType.Pending -> friendRepository.removeFriend(friendId)
-                is FriendType.Invited, FriendType.Placeholder -> {
-                    invitedFriendDao.deleteById(friendId)
-                    ApiResult.Success(Unit)
-                }
-            }
-            when (result) {
+            // All friend types (accepted, invited, placeholder) are now server-side
+            // so we always call removeFriend on the backend
+            when (friendRepository.removeFriend(friendId)) {
                 is ApiResult.Success -> {
                     _actionState.value = FriendSettingsActionState.Success("Removed")
                     onRemoved()
                 }
-
                 else -> _actionState.value = FriendSettingsActionState.Error("Failed to remove")
             }
             _isLoading.value = false
@@ -216,20 +177,17 @@ class FriendSettingsViewModel @Inject constructor(
                     _actionState.value = FriendSettingsActionState.Success("User blocked")
                     onBlocked()
                 }
-
                 else -> _actionState.value = FriendSettingsActionState.Error("Failed to block user")
             }
             _isLoading.value = false
         }
     }
 
-    fun resetActionState() {
-        _actionState.value = FriendSettingsActionState.Idle
-    }
+    fun resetActionState() { _actionState.value = FriendSettingsActionState.Idle }
 }
 
 sealed class FriendSettingsActionState {
     object Idle : FriendSettingsActionState()
     data class Success(val message: String) : FriendSettingsActionState()
-    data class Error(val message: String) : FriendSettingsActionState()
+    data class Error(val message: String)   : FriendSettingsActionState()
 }

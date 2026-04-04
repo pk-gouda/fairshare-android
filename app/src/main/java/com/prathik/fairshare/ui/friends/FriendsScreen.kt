@@ -80,7 +80,7 @@ fun FriendsScreen(
     viewModel                   : FriendsViewModel = hiltViewModel(),
 ) {
     val isLoading      by viewModel.isLoading.collectAsState()
-    val invitedFriends by viewModel.invitedFriends.collectAsState()
+    val nonActiveFriends by remember { derivedStateOf { viewModel.filteredNonActiveFriends() } }
     val owedToYou      by viewModel.owedToYou.collectAsState()
     val youOwe         by viewModel.youOwe.collectAsState()
     val balanceMap     by viewModel.balanceMap.collectAsState()
@@ -102,7 +102,7 @@ fun FriendsScreen(
         else           -> MoneyUtils.format(0.0, "USD")
     }
 
-    val filteredFriends by remember { derivedStateOf { viewModel.filteredFriends() } }
+    val filteredFriends by remember { derivedStateOf { viewModel.filteredActiveFriends() } }
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
@@ -207,7 +207,7 @@ fun FriendsScreen(
                 }
 
                 // ── Unified friends list ──────────────────────────────────────
-                val allEmpty = filteredFriends.isEmpty() && invitedFriends.isEmpty()
+                val allEmpty = filteredFriends.isEmpty() && nonActiveFriends.isEmpty()
                 if (allEmpty) {
                     item {
                         FsEmptyState(
@@ -227,13 +227,13 @@ fun FriendsScreen(
                         HorizontalDivider(color = Surface3, thickness = 0.5.dp,
                             modifier = Modifier.padding(start = Spacing.lg + 56.dp))
                     }
-                    // Locally invited / placeholder
-                    items(invitedFriends, key = { "invited_${it.id}" }) { invited ->
+                    // Placeholder and invited friends from backend
+                    items(nonActiveFriends, key = { "noactive_${it.id}" }) { friend ->
                         PendingFriendRow(
-                            name    = invited.displayName,
-                            userId  = invited.id,
-                            status  = if (invited.isPlaceholder) "placeholder" else "invited",
-                            onClick = { onNavigateToFriend(invited.id.replace("-", "")) },
+                            name    = friend.fullName,
+                            userId  = friend.id,
+                            status  = if (friend.isPlaceholder) "placeholder" else "invited",
+                            onClick = { onNavigateToFriend(friend.id) },
                         )
                         HorizontalDivider(color = Surface3, thickness = 0.5.dp,
                             modifier = Modifier.padding(start = Spacing.lg + 56.dp))

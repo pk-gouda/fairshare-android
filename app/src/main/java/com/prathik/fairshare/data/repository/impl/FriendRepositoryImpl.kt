@@ -25,9 +25,13 @@ class FriendRepositoryImpl @Inject constructor(
         safeApiCall { friendService.sendRequest(mapOf("receiverId" to receiverId)) }
             .mapSuccess { it.toDomain() }
 
-    override suspend fun inviteFriend(email: String, name: String): ApiResult<Unit> =
+    override suspend fun inviteFriend(email: String, name: String): ApiResult<Friendship> =
         safeApiCall { friendService.inviteFriend(mapOf("email" to email, "name" to name)) }
-            .mapSuccess { }
+            .mapSuccess { it.toDomain() }
+
+    override suspend fun createPlaceholder(name: String): ApiResult<Friendship> =
+        safeApiCall { friendService.createPlaceholder(mapOf("name" to name)) }
+            .mapSuccess { it.toDomain() }
 
     override suspend fun acceptRequest(friendshipId: String): ApiResult<Friendship> =
         safeApiCall { friendService.acceptRequest(friendshipId) }
@@ -59,11 +63,8 @@ class FriendRepositoryImpl @Inject constructor(
     override suspend fun getFriendStatus(otherUserId: String): ApiResult<FriendStatus> =
         safeApiCall { friendService.getFriendStatus(otherUserId) }
             .mapSuccess {
-                try {
-                    FriendStatus.valueOf(it)
-                } catch (e: IllegalArgumentException) {
-                    FriendStatus.PENDING
-                }
+                try { FriendStatus.valueOf(it) }
+                catch (e: IllegalArgumentException) { FriendStatus.PENDING }
             }
 
     override suspend fun getBlocked(): ApiResult<List<Friend>> =

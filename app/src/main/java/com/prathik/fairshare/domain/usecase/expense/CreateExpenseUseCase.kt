@@ -18,7 +18,7 @@ class CreateExpenseUseCase @Inject constructor(
     private val expenseRepository: ExpenseRepository,
 ) {
     suspend operator fun invoke(
-        groupId: String,
+        groupId: String?,
         description: String,
         totalAmount: Double,
         currency: String,
@@ -30,9 +30,6 @@ class CreateExpenseUseCase @Inject constructor(
         splitData: Map<String, Double>?,
         receiptId: String?,
     ): ApiResult<Expense> {
-        if (groupId.isBlank()) {
-            return ApiResult.ValidationError("Group ID cannot be empty")
-        }
         if (description.isBlank()) {
             return ApiResult.ValidationError("Description cannot be empty")
         }

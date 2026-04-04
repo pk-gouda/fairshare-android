@@ -8,11 +8,13 @@ import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.ExpenseCategory
+import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.Receipt
 import com.prathik.fairshare.domain.model.SplitType
 import com.prathik.fairshare.domain.usecase.expense.CreateExpenseUseCase
+import com.prathik.fairshare.domain.usecase.friend.GetFriendsUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
 import com.prathik.fairshare.domain.usecase.receipt.ScanReceiptUseCase
@@ -44,6 +46,7 @@ class AddExpenseViewModel @Inject constructor(
     private val createExpenseUseCase: CreateExpenseUseCase,
     private val getGroupsUseCase: GetGroupsUseCase,
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
+    private val getFriendsUseCase: GetFriendsUseCase,
     private val scanReceiptUseCase: ScanReceiptUseCase,
     private val tokenStore: EncryptedTokenStore,
     savedStateHandle: SavedStateHandle,
@@ -51,6 +54,10 @@ class AddExpenseViewModel @Inject constructor(
 
     // Optional groupId from nav argument — non-blank only
     val preselectedGroupId: String? = savedStateHandle.get<String>("groupId")
+        ?.takeIf { it.isNotBlank() }
+
+    // Optional friendId from nav argument — pre-selects friend in split
+    val preselectedFriendId: String? = savedStateHandle.get<String>("friendId")
         ?.takeIf { it.isNotBlank() }
 
     // Current user ID — used to default payer to "You"
@@ -135,9 +142,51 @@ class AddExpenseViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<AddExpenseUiState>(AddExpenseUiState.Idle)
     val uiState: StateFlow<AddExpenseUiState> = _uiState.asStateFlow()
 
+    // Pre-selected friend when coming from FriendDetail (direct expense)
+    private val _preselectedFriend = MutableStateFlow<Friend?>(null)
+    val preselectedFriend: StateFlow<Friend?> = _preselectedFriend.asStateFlow()
+
     init {
         loadGroups()
         preselectedGroupId?.let { loadMembers(it) }
+        preselectedFriendId?.let { loadFriendAsSplitParticipant(it) }
+    }
+
+    // Pre-select a friend as the split participant for direct expenses from FriendDetail
+    private fun loadFriendAsSplitParticipant(friendId: String) {
+        viewModelScope.launch {
+            when (val result = getFriendsUseCase()) {
+                is ApiResult.Success -> {
+                    val friend = result.data.find { it.id == friendId } ?: return@launch
+                    val currentId = currentUserId ?: return@launch
+                    _preselectedFriend.value = friend
+
+                    // Synthesize virtual GroupMember objects for you + friend
+                    // so the existing SplitPreviewCard and PayerSheet work unchanged
+                    val now = java.time.LocalDateTime.now().toString()
+                    val youAsMember = com.prathik.fairshare.domain.model.GroupMember(
+                        id                = currentId,
+                        userId            = currentId,
+                        fullName          = "You",
+                        email             = "",
+                        profilePictureUrl = null,
+                        joinedAt          = now,
+                    )
+                    val friendAsMember = com.prathik.fairshare.domain.model.GroupMember(
+                        id                = friendId,
+                        userId            = friendId,
+                        fullName          = friend.fullName,
+                        email             = friend.email,
+                        profilePictureUrl = friend.profilePictureUrl,
+                        joinedAt          = now,
+                    )
+                    _members.value   = listOf(youAsMember, friendAsMember)
+                    _payerData.value = mapOf(currentId to 0.0)
+                    recalculateSplits()
+                }
+                else -> Unit
+            }
+        }
     }
 
     // ── Form field updates ────────────────────────────────────────────────────
@@ -418,9 +467,7 @@ class AddExpenseViewModel @Inject constructor(
         val description = _description.value.trim()
         val amount = _amount.value.toDoubleOrNull()
 
-        if (groupId == null) {
-            _uiState.value = AddExpenseUiState.Error("Please select a group."); return
-        }
+        // groupId is null for direct friend expenses — that's valid
         if (description.isBlank()) {
             _uiState.value = AddExpenseUiState.Error("Please enter a description."); return
         }
@@ -468,9 +515,7 @@ class AddExpenseViewModel @Inject constructor(
         val toId = _transferToId.value
         val amount = _amount.value.toDoubleOrNull()
 
-        if (groupId == null) {
-            _uiState.value = AddExpenseUiState.Error("Please select a group."); return
-        }
+        // groupId is null for direct friend transfers — that's valid
         if (fromId == null) {
             _uiState.value = AddExpenseUiState.Error("Please select who is paying."); return
         }

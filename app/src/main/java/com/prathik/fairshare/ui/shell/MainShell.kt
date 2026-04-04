@@ -65,8 +65,10 @@ import com.prathik.fairshare.ui.friends.FriendSettingsScreen
 import com.prathik.fairshare.ui.activity.ActivityScreen
 import com.prathik.fairshare.ui.account.AccountScreen
 import com.prathik.fairshare.ui.account.AccountViewModel
-import com.prathik.fairshare.ui.search.GlobalSearchScreen
+import com.prathik.fairshare.ui.account.ChangePasswordScreen
+import com.prathik.fairshare.ui.account.EditProfileScreen
 import com.prathik.fairshare.ui.groups.CreateGroupScreen
+import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
 import com.prathik.fairshare.ui.theme.Green400
@@ -424,8 +426,8 @@ fun MainShell(
 
             composable(Screen.CreateGroup.route) {
                 CreateGroupScreen(
-                    onBack         = { shellNavController.popBackStack() },
-                    onGroupCreated = { groupId ->
+                    onBack = { shellNavController.popBackStack() },
+                    onGroupCreated = { groupId: String ->
                         shellNavController.navigate(Screen.GroupDetail.route(groupId)) {
                             popUpTo(Screen.CreateGroup.route) { inclusive = true }
                         }
@@ -467,7 +469,12 @@ fun MainShell(
                         type = NavType.StringType
                         nullable = true
                         defaultValue = null
-                    }
+                    },
+                    navArgument("friendId") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
                 )
             ) {
                 AddExpenseScreen(
@@ -582,25 +589,43 @@ fun MainShell(
 
             // ── Friend screens ────────────────────────────────────────────────
             composable(
-                route     = Screen.FriendDetail.route,
+                route = Screen.FriendDetail.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val friendId = backStackEntry.arguments?.getString("friendId") ?: return@composable
                 FriendDetailScreen(
-                    onBack                = { shellNavController.popBackStack() },
-                    onNavigateToSettings  = { shellNavController.navigate(Screen.FriendSettings.route(friendId)) },
-                    onNavigateToExpense   = { expenseId -> shellNavController.navigate(Screen.ExpenseDetail.route(expenseId)) },
-                    onNavigateToAddExpense = { shellNavController.navigate(Screen.AddExpense.route) },
-                    onNavigateToSettle    = { shellNavController.navigate(Screen.SettleUp.route(friendId)) },
+                    onBack = { shellNavController.popBackStack() },
+                    onNavigateToSettings = {
+                        shellNavController.navigate(
+                            Screen.FriendSettings.route(
+                                friendId
+                            )
+                        )
+                    },
+                    onNavigateToExpense = { expenseId ->
+                        shellNavController.navigate(
+                            Screen.ExpenseDetail.route(
+                                expenseId
+                            )
+                        )
+                    },
+                    onNavigateToAddExpense = { shellNavController.navigate(Screen.AddExpense.route(friendId = friendId)) },
+                    onNavigateToSettle = {
+                        shellNavController.navigate(
+                            Screen.SettleUp.route(
+                                friendId
+                            )
+                        )
+                    },
                 )
             }
 
             composable(
-                route     = Screen.FriendSettings.route,
+                route = Screen.FriendSettings.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
             ) {
                 FriendSettingsScreen(
-                    onBack    = { shellNavController.popBackStack() },
+                    onBack = { shellNavController.popBackStack() },
                     onRemoved = {
                         shellNavController.popBackStack(Screen.Friends.route, false)
                     },
@@ -642,10 +667,15 @@ fun MainShell(
 
             // ── Account screens ───────────────────────────────────────────────
             composable(Screen.EditProfile.route) {
-                PlaceholderScreen("Edit Profile")
+                EditProfileScreen(
+                    onBack               = { shellNavController.popBackStack() },
+                    onNavigateToPassword = { shellNavController.navigate(Screen.ChangePassword.route) },
+                )
             }
             composable(Screen.ChangePassword.route) {
-                PlaceholderScreen("Change Password")
+                ChangePasswordScreen(
+                    onBack = { shellNavController.popBackStack() },
+                )
             }
             composable(Screen.MyAnalytics.route) {
                 PlaceholderScreen("My Analytics")
