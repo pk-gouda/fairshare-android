@@ -243,6 +243,11 @@ class AddExpenseViewModel @Inject constructor(
         }
     }
 
+    // Called when user finishes editing split sheet — replaces entire splitData at once
+    fun onSplitDataConfirmed(newSplitData: Map<String, Double>) {
+        _splitData.value = newSplitData
+    }
+
     // ── Category auto-detection ───────────────────────────────────────────────
 
     /**
