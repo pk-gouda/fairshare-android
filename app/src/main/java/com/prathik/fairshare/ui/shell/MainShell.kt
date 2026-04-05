@@ -78,6 +78,8 @@ import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.expense.CurrencySelectScreen
 import com.prathik.fairshare.ui.expense.AddExpenseViewModel
+import com.prathik.fairshare.ui.expense.EditExpenseScreen
+import com.prathik.fairshare.ui.expense.EditExpenseViewModel
 import com.prathik.fairshare.ui.expense.ExpenseDetailScreen
 import com.prathik.fairshare.ui.settlement.SettleUpScreen
 
@@ -486,10 +488,18 @@ fun MainShell(
                 )
             }
             composable(Screen.CurrencySelect.route) { backStackEntry ->
-                // Check if we came from AddExpense (has that route in back stack)
+                // Check if we came from AddExpense or EditExpense
                 val fromAddExpense = remember(backStackEntry) {
                     try {
                         shellNavController.getBackStackEntry(Screen.AddExpense.route)
+                        true
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+                val fromEditExpense = remember(backStackEntry) {
+                    try {
+                        shellNavController.getBackStackEntry(Screen.EditExpense.route)
                         true
                     } catch (e: Exception) {
                         false
@@ -505,6 +515,17 @@ fun MainShell(
                     CurrencySelectScreen(
                         currentCurrency = currency,
                         onSelect = { selected -> addExpenseViewModel.onCurrencyChanged(selected) },
+                        onBack = { shellNavController.popBackStack() },
+                    )
+                } else if (fromEditExpense) {
+                    val parentEntry = remember(backStackEntry) {
+                        shellNavController.getBackStackEntry(Screen.EditExpense.route)
+                    }
+                    val editExpenseViewModel = hiltViewModel<EditExpenseViewModel>(parentEntry)
+                    val currency by editExpenseViewModel.currency.collectAsState()
+                    CurrencySelectScreen(
+                        currentCurrency = currency,
+                        onSelect = { selected -> editExpenseViewModel.onCurrencyChanged(selected) },
                         onBack = { shellNavController.popBackStack() },
                     )
                 } else {
@@ -524,7 +545,15 @@ fun MainShell(
             composable(
                 route = Screen.EditExpense.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Edit Expense") }
+            ) {
+                EditExpenseScreen(
+                    onBack = { shellNavController.popBackStack() },
+                    onSuccess = { shellNavController.popBackStack() },
+                    onNavigateToCurrency = {
+                        shellNavController.navigate(Screen.CurrencySelect.route)
+                    },
+                )
+            }
 
             composable(
                 route = Screen.ExpenseDetail.route,
@@ -609,7 +638,13 @@ fun MainShell(
                             )
                         )
                     },
-                    onNavigateToAddExpense = { shellNavController.navigate(Screen.AddExpense.route(friendId = friendId)) },
+                    onNavigateToAddExpense = {
+                        shellNavController.navigate(
+                            Screen.AddExpense.route(
+                                friendId = friendId
+                            )
+                        )
+                    },
                     onNavigateToSettle = {
                         shellNavController.navigate(
                             Screen.SettleUp.route(
@@ -668,7 +703,7 @@ fun MainShell(
             // ── Account screens ───────────────────────────────────────────────
             composable(Screen.EditProfile.route) {
                 EditProfileScreen(
-                    onBack               = { shellNavController.popBackStack() },
+                    onBack = { shellNavController.popBackStack() },
                     onNavigateToPassword = { shellNavController.navigate(Screen.ChangePassword.route) },
                 )
             }

@@ -72,6 +72,9 @@ import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
 import com.prathik.fairshare.util.MoneyUtils
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,7 +97,13 @@ fun AccountScreen(
 
     var showLogoutDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { viewModel.loadData() }
+    // Auto-refresh when screen resumes (e.g. returning from EditProfile, CurrencySelect)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.loadData()
+        }
+    }
 
     LaunchedEffect(actionState) {
         when (val s = actionState) {

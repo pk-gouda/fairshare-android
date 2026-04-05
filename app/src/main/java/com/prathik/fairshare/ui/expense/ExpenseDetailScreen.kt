@@ -45,6 +45,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.SplitType
 import com.prathik.fairshare.ui.components.FsErrorScreen
@@ -96,6 +99,14 @@ fun ExpenseDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val isLoading = expenseState is ExpenseDetailUiState.Loading
+
+    // Auto-refresh when screen resumes (e.g. returning from EditExpense)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.loadExpense()
+        }
+    }
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {

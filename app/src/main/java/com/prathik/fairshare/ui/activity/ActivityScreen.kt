@@ -55,6 +55,9 @@ import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,9 +73,12 @@ fun ActivityScreen(
     val grouped by remember { derivedStateOf { viewModel.groupedNotifications() } }
     val hasUnread by remember { derivedStateOf { viewModel.hasUnread } }
 
-    // Reload every time the screen is first composed (navigated to)
-    LaunchedEffect(Unit) {
-        viewModel.loadData()
+    // Auto-refresh when screen resumes (e.g. returning from ExpenseDetail)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.loadData()
+        }
     }
 
     LaunchedEffect(actionState) {

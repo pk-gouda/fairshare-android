@@ -70,6 +70,9 @@ import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 
 /**
  * Group Settings Screen.
@@ -104,6 +107,14 @@ fun GroupSettingsScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRemoveDialog by remember { mutableStateOf<GroupMember?>(null) }
     var showNameDialog   by remember { mutableStateOf(false) }
+
+    // Auto-refresh when screen resumes (e.g. returning from AddMember)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.loadData()
+        }
+    }
 
     // Handle action states
     LaunchedEffect(actionState) {

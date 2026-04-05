@@ -69,6 +69,9 @@ import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
 import com.prathik.fairshare.util.MoneyUtils
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,6 +106,14 @@ fun FriendsScreen(
     }
 
     val filteredFriends by remember { derivedStateOf { viewModel.filteredActiveFriends() } }
+
+    // Auto-refresh when screen resumes (e.g. returning from FriendDetail, AddFriend)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.loadData()
+        }
+    }
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
