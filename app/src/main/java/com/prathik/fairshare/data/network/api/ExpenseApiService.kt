@@ -39,6 +39,9 @@ interface ExpenseApiService {
     @GET("api/groups/{groupId}/expenses")
     suspend fun getGroupExpenses(@Path("groupId") groupId: String): ApiResponse<List<ExpenseResponse>>
 
+    @GET("api/friends/{friendId}/expenses")
+    suspend fun getDirectExpensesWithFriend(@Path("friendId") friendId: String): ApiResponse<List<ExpenseResponse>>
+
     @GET("api/expenses/{expenseId}/items")
     suspend fun getExpenseItems(@Path("expenseId") expenseId: String): ApiResponse<List<ExpenseItemResponse>>
 

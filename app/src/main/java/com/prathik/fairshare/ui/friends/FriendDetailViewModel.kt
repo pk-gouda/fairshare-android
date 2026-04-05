@@ -7,6 +7,7 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.repository.FriendRepository
+import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.expense.GetGroupExpensesUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
@@ -23,6 +24,7 @@ import javax.inject.Inject
 class FriendDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val friendRepository: FriendRepository,
+    private val expenseRepository: ExpenseRepository,
     private val getAllBalancesUseCase: GetAllBalancesUseCase,
     private val getGroupsUseCase: GetGroupsUseCase,
     private val getGroupExpensesUseCase: GetGroupExpensesUseCase,
@@ -101,33 +103,95 @@ class FriendDetailViewModel @Inject constructor(
                 else -> Unit
             }
 
-            // Fetch shared expenses — only for active friends
-            if (_friendStatus.value == null) {
-                when (val groupsResult = groupsDeferred.await()) {
-                    is ApiResult.Success -> {
-                        val allExpenses = groupsResult.data.map { group ->
+            // Fetch shared expenses — direct expenses for ALL friend types,
+            // group expenses only for active friends (placeholder/invited can't be in groups)
+            val directDeferred =
+                async { expenseRepository.getDirectExpensesWithFriend(friendId) }
+
+            val groupExpenses = if (_friendStatus.value == null) {
+                // Active friend — also check group expenses where they're a participant
+                val groupExpensesDeferred = async {
+                    when (val groupsResult = groupsDeferred.await()) {
+                        is ApiResult.Success -> groupsResult.data.map { group ->
                             async {
                                 (getGroupExpensesUseCase(group.id) as? ApiResult.Success)?.data
                                     ?: emptyList()
                             }
-                        }.awaitAll().flatten()
-
-                        val friendExpenses = allExpenses.filter { expense ->
+                        }.awaitAll().flatten().filter { expense ->
                             expense.payers.any { it.userId == friendId } ||
                                     expense.splits.any { it.userId == friendId }
-                        }.sortedByDescending { it.expenseDate }
+                        }
 
-                        _expensesState.value = FriendExpensesState.Success(friendExpenses)
+                        else -> emptyList()
                     }
-
-                    else -> _expensesState.value =
-                        FriendExpensesState.Error("Failed to load expenses")
                 }
+                groupExpensesDeferred.await()
             } else {
-                _expensesState.value = FriendExpensesState.Success(emptyList())
+                emptyList()
             }
 
+            val directExpenses =
+                (directDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
+
+            // Merge, deduplicate by id, sort newest first
+            val allExpenses = (directExpenses + groupExpenses)
+                .distinctBy { it.id }
+                .sortedByDescending { it.expenseDate }
+
+            _expensesState.value = FriendExpensesState.Success(allExpenses)
+
             _isLoading.value = false
+        }
+    }
+
+    /**
+     * Lightweight refresh — re-fetches expenses + balance without
+     * reloading the friend profile. Called on every screen resume.
+     */
+    fun refreshExpenses() {
+        viewModelScope.launch {
+            // Refresh balance
+            when (val result = getAllBalancesUseCase()) {
+                is ApiResult.Success -> {
+                    val friendBalances = result.data.filter { it.otherUserId == friendId }
+                    _netBalance.value = friendBalances.sumOf { it.amount }
+                    _currency.value = friendBalances.firstOrNull()?.currency ?: "USD"
+                }
+                else -> Unit
+            }
+
+            // Refresh expenses — direct for all friend types, group only for active
+            val directDeferred =
+                async { expenseRepository.getDirectExpensesWithFriend(friendId) }
+
+            val groupExpenses = if (_friendStatus.value == null) {
+                val groupExpensesDeferred = async {
+                    when (val groupsResult = getGroupsUseCase()) {
+                        is ApiResult.Success -> groupsResult.data.map { group ->
+                            async {
+                                (getGroupExpensesUseCase(group.id) as? ApiResult.Success)?.data
+                                    ?: emptyList()
+                            }
+                        }.awaitAll().flatten().filter { expense ->
+                            expense.payers.any { it.userId == friendId } ||
+                                    expense.splits.any { it.userId == friendId }
+                        }
+                        else -> emptyList()
+                    }
+                }
+                groupExpensesDeferred.await()
+            } else {
+                emptyList()
+            }
+
+            val directExpenses =
+                (directDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
+
+            val allExpenses = (directExpenses + groupExpenses)
+                .distinctBy { it.id }
+                .sortedByDescending { it.expenseDate }
+
+            _expensesState.value = FriendExpensesState.Success(allExpenses)
         }
     }
 

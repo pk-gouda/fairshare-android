@@ -87,4 +87,9 @@ interface ExpenseRepository {
      * Stops a recurring expense from auto-generating future entries.
      */
     suspend fun stopRecurring(expenseId: String): ApiResult<Unit>
+
+    /**
+     * Fetches all direct (non-group) expenses shared between current user and a friend.
+     */
+    suspend fun getDirectExpensesWithFriend(friendId: String): ApiResult<List<Expense>>
 }

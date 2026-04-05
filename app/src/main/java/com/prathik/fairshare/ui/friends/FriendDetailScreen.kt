@@ -55,6 +55,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
 import com.prathik.fairshare.ui.components.FsAvatar
@@ -110,6 +113,15 @@ fun FriendDetailScreen(
             is FriendDetailActionState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
             is FriendDetailActionState.Success -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
             else -> Unit
+        }
+    }
+
+    // Auto-refresh expenses + balance every time screen resumes
+    // (e.g. returning from AddExpense, SettleUp, ExpenseDetail)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.refreshExpenses()
         }
     }
 

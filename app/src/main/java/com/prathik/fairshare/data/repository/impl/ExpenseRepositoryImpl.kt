@@ -131,6 +131,10 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun stopRecurring(expenseId: String): ApiResult<Unit> =
         safeApiCall { expenseService.stopRecurring(expenseId) }.mapSuccess { }
 
+    override suspend fun getDirectExpensesWithFriend(friendId: String): ApiResult<List<Expense>> =
+        safeApiCall { expenseService.getDirectExpensesWithFriend(friendId) }
+            .mapSuccess { list -> list.map { it.toDomain() } }
+
     private fun com.prathik.fairshare.data.model.response.ExpenseResponse.toEntity() =
         ExpenseEntity(
             id           = id,
