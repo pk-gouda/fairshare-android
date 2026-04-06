@@ -229,9 +229,13 @@ private fun NotificationRow(
 
                         NotificationType.SETTLEMENT_RECEIVED,
                         NotificationType.SETTLEMENT_CONFIRMED -> notification.referenceId?.let {
-                            onNavigateToExpense(
-                                it
-                            )
+                            // referenceType is a groupId UUID for group settlements,
+                            // or "SETTLEMENT" for direct settlements
+                            val groupId = notification.referenceType?.let { ref ->
+                                try { java.util.UUID.fromString(ref); ref } catch (e: Exception) { null }
+                            }
+                            if (groupId != null) onNavigateToGroup(groupId)
+                            else onNavigateToFriend()
                         }
 
                         NotificationType.FRIEND_REQUEST_RECEIVED,

@@ -32,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -40,7 +41,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,11 +64,14 @@ import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupType
+import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsIconButton
 import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsPrimaryButton
+import com.prathik.fairshare.ui.components.FsSecondaryButton
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -115,17 +121,29 @@ fun GroupDetailScreen(
     onNavigateToSearch: (String) -> Unit = {},
     onNavigateToExpense: (String) -> Unit,
     onNavigateToAddExpense: (String) -> Unit,
+    onNavigateToAddMember: (String) -> Unit,
     onNavigateToSettle: (String) -> Unit,
     viewModel: GroupDetailViewModel = hiltViewModel(),
 ) {
     val groupState by viewModel.groupState.collectAsState()
     val expensesState by viewModel.expensesState.collectAsState()
+    val settlements by viewModel.settlements.collectAsState()
     val balances by viewModel.balances.collectAsState()
     val yourBalance by viewModel.yourBalance.collectAsState()
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val groupName = (groupState as? GroupDetailUiState.Success)?.group?.name ?: "Group"
     val groupType = (groupState as? GroupDetailUiState.Success)?.group?.type ?: GroupType.OTHER
+
+    // Settle sheet — shown when there are multiple balances to choose from
+    var showSettleSheet by remember { mutableStateOf(false) }
+    val handleSettleUp: () -> Unit = {
+        when {
+            balances.size == 1 -> onNavigateToSettle(balances.first().otherUserId)
+            balances.isNotEmpty() -> showSettleSheet = true
+            else -> { /* nothing to settle */ }
+        }
+    }
 
     // Cover height in px — used to detect when cover scrolls away
     val coverHeightDp = 220
@@ -208,7 +226,7 @@ fun GroupDetailScreen(
                                     yourBalance = yourBalance,
                                     balances = balances,
                                     currency = "USD",
-                                    onSettle = { onNavigateToSettle(viewModel.groupId) },
+                                    onSettleUser = { otherUserId -> onNavigateToSettle(otherUserId) },
                                     modifier = Modifier.padding(
                                         horizontal = Spacing.lg,
                                         vertical = Spacing.md,
@@ -219,7 +237,7 @@ fun GroupDetailScreen(
                             // ── Action pills row ──────────────────────────────────
                             item {
                                 ActionPillsRow(
-                                    onSettleUp = { onNavigateToSettle(viewModel.groupId) },
+                                    onSettleUp = handleSettleUp,
                                     modifier = Modifier.padding(
                                         start = Spacing.lg,
                                         end = Spacing.lg,
@@ -245,21 +263,56 @@ fun GroupDetailScreen(
                                 }
 
                                 is ExpensesUiState.Success -> {
-                                    if (expenses.expenses.isEmpty()) {
+                                    // Build unified timeline regardless of expense count
+                                    val timeline = buildList {
+                                        expenses.expenses.forEach { add(TimelineItem.ExpenseItem(it)) }
+                                        settlements.forEach { add(TimelineItem.SettlementItem(it)) }
+                                    }.sortedByDescending { it.date }
+
+                                    if (timeline.isEmpty()) {
                                         item {
-                                            FsEmptyState(
-                                                title = "No expenses yet",
-                                                subtitle = "Add the first expense to get started",
-                                                modifier = Modifier.height(300.dp),
-                                            )
+                                            if (state.group.memberCount <= 1) {
+                                                Column(
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = Spacing.lg)
+                                                        .clip(RoundedCornerShape(Radius.xl))
+                                                        .background(Surface2)
+                                                        .padding(horizontal = Spacing.xl, vertical = Spacing.xxl),
+                                                ) {
+                                                    Text(
+                                                        text = "You're the only one here!",
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = TextPrimary,
+                                                        textAlign = TextAlign.Center,
+                                                    )
+                                                    Spacer(modifier = Modifier.height(Spacing.xl))
+                                                    FsPrimaryButton(
+                                                        text = "Add group members",
+                                                        onClick = { onNavigateToAddMember(viewModel.groupId) },
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                    )
+                                                    Spacer(modifier = Modifier.height(Spacing.md))
+                                                    FsSecondaryButton(
+                                                        text = "Share group link",
+                                                        onClick = { /* TODO: share invite code */ },
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                    )
+                                                }
+                                            } else {
+                                                FsEmptyState(
+                                                    title = "No expenses yet",
+                                                    subtitle = "Add the first expense to get started",
+                                                    modifier = Modifier.height(300.dp),
+                                                )
+                                            }
                                         }
                                     } else {
-                                        // Group by month
-                                        val grouped = expenses.expenses
-                                            .sortedByDescending { it.expenseDate }
-                                            .groupBy { it.expenseDate.toMonthHeader() }
+                                        val grouped = timeline.groupBy { it.date.toMonthHeader() }
 
-                                        grouped.forEach { (monthHeader, monthExpenses) ->
+                                        grouped.forEach { (monthHeader, items) ->
                                             item {
                                                 Text(
                                                     text = monthHeader.uppercase(),
@@ -274,13 +327,21 @@ fun GroupDetailScreen(
                                                 )
                                             }
                                             items(
-                                                items = monthExpenses,
-                                                key = { it.id },
-                                            ) { expense ->
-                                                ExpenseRow(
-                                                    expense = expense,
-                                                    onClick = { onNavigateToExpense(expense.id) },
-                                                )
+                                                items = items,
+                                                key = { when (it) {
+                                                    is TimelineItem.ExpenseItem -> "e_${it.expense.id}"
+                                                    is TimelineItem.SettlementItem -> "s_${it.settlement.id}"
+                                                }},
+                                            ) { item ->
+                                                when (item) {
+                                                    is TimelineItem.ExpenseItem -> ExpenseRow(
+                                                        expense = item.expense,
+                                                        onClick = { onNavigateToExpense(item.expense.id) },
+                                                    )
+                                                    is TimelineItem.SettlementItem -> SettlementRow(
+                                                        settlement = item.settlement,
+                                                    )
+                                                }
                                             }
                                         }
 
@@ -373,6 +434,69 @@ fun GroupDetailScreen(
                 }
             }
         } // end outer Box
+    }
+
+    // ── Settle Up — Balance Picker Sheet ──────────────────────────────────────
+    if (showSettleSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSettleSheet = false },
+            containerColor   = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text       = "Who are you settling with?",
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                balances.filter { it.amount != 0.0 }.forEach { balance ->
+                    val isOwed = balance.amount > 0
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showSettleSheet = false
+                                onNavigateToSettle(balance.otherUserId)
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FsAvatar(
+                            name   = balance.otherUserName,
+                            userId = balance.otherUserId,
+                            size   = ComponentSize.avatarMd,
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text       = balance.otherUserName,
+                                fontSize   = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color      = TextPrimary,
+                            )
+                            Text(
+                                text     = if (isOwed) "owes you" else "you owe",
+                                fontSize = 12.sp,
+                                color    = TextSecondary,
+                            )
+                        }
+                        Text(
+                            text       = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
+                            fontSize   = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = if (isOwed) Green400 else Negative,
+                        )
+                    }
+                    HorizontalDivider(
+                        color     = Surface3,
+                        thickness = 0.5.dp,
+                        modifier  = Modifier.padding(start = Spacing.lg + ComponentSize.avatarMd + Spacing.md),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -539,7 +663,7 @@ private fun BalanceCard(
     yourBalance: Double,
     balances: List<Balance>,
     currency: String,
-    onSettle: () -> Unit,
+    onSettleUser: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val overallColor = when {
@@ -551,7 +675,8 @@ private fun BalanceCard(
     val overallText = when {
         yourBalance > 0 -> "You are owed ${MoneyUtils.format(yourBalance, currency)} overall"
         yourBalance < 0 -> "You owe ${MoneyUtils.format(-yourBalance, currency)} overall"
-        else -> "All settled up"
+        balances.all { it.amount == 0.0 } -> "All settled up"
+        else -> "Expenses are balanced"
     }
 
     Column(
@@ -561,62 +686,74 @@ private fun BalanceCard(
             .background(Surface2)
             .padding(Spacing.md),
     ) {
-        // Overall balance summary line
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
+        // Overall summary line
+        Text(
+            text = overallText,
+            fontSize = 13.sp,
+            color = overallColor,
             modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                text = overallText,
-                fontSize = 13.sp,
-                color = TextSecondary,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        )
 
-        // Per-person breakdown — only if there are individual balances
-        if (balances.isNotEmpty()) {
+        // Per-person breakdown — each row tappable to settle with that person
+        val nonZeroBalances = balances.filter { it.amount != 0.0 }
+        if (nonZeroBalances.isNotEmpty()) {
             Spacer(modifier = Modifier.height(Spacing.sm))
             HorizontalDivider(color = Surface4, thickness = 0.5.dp)
-            Spacer(modifier = Modifier.height(Spacing.sm))
 
-            balances.forEach { balance ->
+            nonZeroBalances.forEach { balance ->
                 val isOwed = balance.amount > 0
-                val personName = balance.otherUserName
                 val amountColor = if (isOwed) Green400 else Negative
                 val label = if (isOwed)
-                    "$personName owes you"
+                    "${balance.otherUserName} owes you"
                 else
-                    "You owe $personName"
+                    "You owe ${balance.otherUserName}"
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .clickable { onSettleUser(balance.otherUserId) }
+                        .padding(vertical = 10.dp),
                 ) {
                     FsAvatar(
-                        name = personName,
+                        name = balance.otherUserName,
                         userId = balance.otherUserId,
                         size = ComponentSize.avatarSm,
                     )
                     Spacer(modifier = Modifier.width(Spacing.sm))
-                    Text(
-                        text = label,
-                        fontSize = 12.sp,
-                        color = TextSecondary,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = amountColor,
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = label,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextPrimary,
+                        )
+                        Text(
+                            text = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
+                            fontSize = 12.sp,
+                            color = amountColor,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    // Settle up chip
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(Radius.full))
+                            .background(if (isOwed) Green400.copy(alpha = 0.15f) else Negative.copy(alpha = 0.12f))
+                            .clickable { onSettleUser(balance.otherUserId) }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = "Settle up",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isOwed) Green400 else Negative,
+                        )
+                    }
                 }
+                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
             }
-        } else if (yourBalance == 0.0) {
-            // All settled up — no per-person rows needed
         }
     }
 }
@@ -812,6 +949,87 @@ private fun ExpenseRow(
                 )
             }
         }
+    }
+
+    HorizontalDivider(
+        color = Surface3,
+        thickness = 0.5.dp,
+        modifier = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
+    )
+}
+
+// ── Settlement Row ────────────────────────────────────────────────────────────
+
+@Composable
+private fun SettlementRow(settlement: Settlement) {
+    val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
+        try {
+            val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            val month = dt.format(DateTimeFormatter.ofPattern("MMM"))
+            val day = dt.dayOfMonth.toString()
+            month to day
+        } catch (e: Exception) {
+            "" to ""
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Date column
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(30.dp),
+        ) {
+            Text(monthAbbr, fontSize = 10.sp, color = TextTertiary, textAlign = TextAlign.Center)
+            Text(dayNum, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = TextSecondary, textAlign = TextAlign.Center)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        // Payment icon
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(Radius.md))
+                .background(Green400.copy(alpha = 0.12f)),
+        ) {
+            Text("🤝", fontSize = 18.sp)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.md))
+
+        // Description
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "${settlement.payerName} paid ${settlement.receiverName}",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = Green400,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Payment",
+                fontSize = 12.sp,
+                color = TextTertiary,
+            )
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        // Amount
+        Text(
+            text = MoneyUtils.format(settlement.amount, settlement.currency),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Green400,
+        )
     }
 
     HorizontalDivider(

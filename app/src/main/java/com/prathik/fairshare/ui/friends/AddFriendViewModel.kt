@@ -32,6 +32,7 @@ class AddFriendViewModel @Inject constructor(
     private val sendFriendRequestUseCase: SendFriendRequestUseCase,
     private val friendRepository        : FriendRepository,
     private val getMyProfileUseCase     : GetMyProfileUseCase,
+    private val friendEventBus          : FriendEventBus,
 ) : ViewModel() {
 
     private var myEmail: String = ""
@@ -239,6 +240,7 @@ class AddFriendViewModel @Inject constructor(
                         if (successCount == 1) "Done!" else "$successCount friends added!"
                     )
                 }
+                friendEventBus.notifyFriendAdded()
                 onDone()
             }
         }

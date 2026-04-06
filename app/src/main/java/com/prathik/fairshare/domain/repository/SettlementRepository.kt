@@ -30,6 +30,7 @@ interface SettlementRepository {
         currency: String?,
         paymentMethod: String?,
         notes: String?,
+        payerId: String? = null,
     ): ApiResult<List<Settlement>>
 
     /**
@@ -60,4 +61,11 @@ interface SettlementRepository {
      * Used by the Settle Up screen to show per-group amounts.
      */
     suspend fun getBreakdown(otherUserId: String): ApiResult<Map<String, Any>>
+
+    /**
+     * Deletes a completed settlement and reverses its balance changes.
+     * Returns [ApiResult.Forbidden] if user is not involved.
+     * Returns [ApiResult.Conflict] if a participant has left the group.
+     */
+    suspend fun deleteSettlement(settlementId: String): ApiResult<Unit>
 }

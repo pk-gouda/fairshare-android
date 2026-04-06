@@ -61,6 +61,10 @@ class BalanceRepositoryImpl @Inject constructor(
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }
 
+    override suspend fun getBreakdownWithUser(otherUserId: String): ApiResult<List<Balance>> =
+        safeApiCall { balanceService.getBreakdownWithUser(otherUserId) }
+            .mapSuccess { list -> list.map { it.toDomain() } }
+
     override suspend fun getBalanceWithUser(otherUserId: String): ApiResult<Map<String, Any>> =
         safeApiCall { balanceService.getBalanceWithUser(otherUserId) }
             .mapSuccess { list ->
@@ -79,5 +83,6 @@ class BalanceRepositoryImpl @Inject constructor(
         currency = currency,
         groupId = groupId.ifEmpty { null },
         groupName = groupName,
+        groupLastActivity = groupLastActivity,
     )
 }

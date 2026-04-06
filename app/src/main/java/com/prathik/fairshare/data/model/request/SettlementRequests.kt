@@ -14,4 +14,5 @@ data class SettleRequest(
     @SerialName("paymentMethod")     val paymentMethod: String? = null,
     @SerialName("paymentProofImage") val paymentProofImage: String? = null,
     @SerialName("notes")             val notes: String? = null,
+    @SerialName("payerId")           val payerId: String? = null,
 )

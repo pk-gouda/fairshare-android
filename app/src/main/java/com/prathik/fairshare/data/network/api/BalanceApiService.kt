@@ -10,6 +10,11 @@ interface BalanceApiService {
     @GET("api/balances")
     suspend fun getAllBalances(): ApiResponse<List<BalanceResponse>>
 
+    @GET("api/balances/breakdown/{otherUserId}")
+    suspend fun getBreakdownWithUser(
+        @Path("otherUserId") otherUserId: String,
+    ): ApiResponse<List<BalanceResponse>>
+
     @GET("api/balances/{otherUserId}")
     suspend fun getBalanceWithUser(
         @Path("otherUserId") otherUserId: String,

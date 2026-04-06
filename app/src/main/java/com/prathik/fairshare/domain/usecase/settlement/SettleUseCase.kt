@@ -21,6 +21,7 @@ class SettleUseCase @Inject constructor(
         currency: String?,
         paymentMethod: String?,
         notes: String?,
+        payerId: String? = null,
     ): ApiResult<List<Settlement>> {
         if (otherUserId.isBlank()) {
             return ApiResult.ValidationError("User ID cannot be empty")
@@ -44,6 +45,7 @@ class SettleUseCase @Inject constructor(
             currency      = currency,
             paymentMethod = paymentMethod,
             notes         = notes?.trim(),
+            payerId       = payerId,
         )
     }
 }

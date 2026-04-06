@@ -7,6 +7,8 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.Group
+import com.prathik.fairshare.domain.model.Settlement
+import com.prathik.fairshare.domain.repository.GroupRepository
 import com.prathik.fairshare.domain.usecase.group.GetGroupBalancesUseCase
 import com.prathik.fairshare.domain.usecase.expense.GetGroupExpensesUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
@@ -21,17 +23,15 @@ import javax.inject.Inject
 /**
  * ViewModel for GroupDetailScreen.
  *
- * Loads group info, expenses, and balances in parallel.
- * groupId is extracted from SavedStateHandle (navigation argument).
- *
- * Uses GetGroupBalancesUseCase instead of GetAllBalancesUseCase —
- * fetches only this group's balances from the server, no client-side filtering.
+ * Loads group info, expenses, settlements, and balances in parallel.
+ * Settlements are merged into the timeline alongside expenses.
  */
 @HiltViewModel
 class GroupDetailViewModel @Inject constructor(
     private val getGroupUseCase: GetGroupUseCase,
     private val getGroupExpensesUseCase: GetGroupExpensesUseCase,
     private val getGroupBalancesUseCase: GetGroupBalancesUseCase,
+    private val groupRepository: GroupRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -44,6 +44,10 @@ class GroupDetailViewModel @Inject constructor(
     // ── Expenses state ────────────────────────────────────────────────────────
     private val _expensesState = MutableStateFlow<ExpensesUiState>(ExpensesUiState.Loading)
     val expensesState: StateFlow<ExpensesUiState> = _expensesState.asStateFlow()
+
+    // ── Settlements ───────────────────────────────────────────────────────────
+    private val _settlements = MutableStateFlow<List<Settlement>>(emptyList())
+    val settlements: StateFlow<List<Settlement>> = _settlements.asStateFlow()
 
     // ── Group balances state ──────────────────────────────────────────────────
     private val _balances = MutableStateFlow<List<Balance>>(emptyList())
@@ -58,11 +62,10 @@ class GroupDetailViewModel @Inject constructor(
     }
 
     /**
-     * Loads group, expenses and balances in parallel.
+     * Loads group, expenses, settlements, and balances in parallel.
      */
     fun loadData() {
         viewModelScope.launch {
-            // Only show loading if we have no data yet
             if (_groupState.value !is GroupDetailUiState.Success) {
                 _groupState.value = GroupDetailUiState.Loading
             }
@@ -73,6 +76,7 @@ class GroupDetailViewModel @Inject constructor(
             val groupDeferred = async { getGroupUseCase(groupId) }
             val expensesDeferred = async { getGroupExpensesUseCase(groupId) }
             val balancesDeferred = async { getGroupBalancesUseCase(groupId) }
+            val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
 
             // Group
             when (val result = groupDeferred.await()) {
@@ -82,7 +86,6 @@ class GroupDetailViewModel @Inject constructor(
                         _groupState.value =
                             GroupDetailUiState.Error(message = result.message, isNetwork = true)
                 }
-
                 else -> {
                     if (_groupState.value !is GroupDetailUiState.Success)
                         _groupState.value = GroupDetailUiState.Error(
@@ -100,7 +103,6 @@ class GroupDetailViewModel @Inject constructor(
                         _expensesState.value =
                             ExpensesUiState.Error(message = result.message, isNetwork = true)
                 }
-
                 else -> {
                     if (_expensesState.value !is ExpensesUiState.Success)
                         _expensesState.value = ExpensesUiState.Error(
@@ -110,25 +112,47 @@ class GroupDetailViewModel @Inject constructor(
                 }
             }
 
-            // Balances — group-scoped, no client-side filter needed
+            // Settlements
+            when (val result = settlementsDeferred.await()) {
+                is ApiResult.Success -> _settlements.value = result.data
+                else -> Unit
+            }
+
+            // Balances
             when (val result = balancesDeferred.await()) {
                 is ApiResult.Success -> {
                     _balances.value = result.data
                     _yourBalance.value = result.data.sumOf { it.amount }
                 }
-
                 else -> Unit
             }
         }
     }
 
     /**
-     * Refreshes only the expenses — called after adding/editing/deleting an expense.
+     * Refreshes expenses + settlements + balances on screen resume.
      */
     fun refreshExpenses() {
         viewModelScope.launch {
-            when (val result = getGroupExpensesUseCase(groupId)) {
+            val expensesDeferred = async { getGroupExpensesUseCase(groupId) }
+            val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
+            val balancesDeferred = async { getGroupBalancesUseCase(groupId) }
+
+            when (val result = expensesDeferred.await()) {
                 is ApiResult.Success -> _expensesState.value = ExpensesUiState.Success(result.data)
+                else -> Unit
+            }
+
+            when (val result = settlementsDeferred.await()) {
+                is ApiResult.Success -> _settlements.value = result.data
+                else -> Unit
+            }
+
+            when (val result = balancesDeferred.await()) {
+                is ApiResult.Success -> {
+                    _balances.value = result.data
+                    _yourBalance.value = result.data.sumOf { it.amount }
+                }
                 else -> Unit
             }
         }
@@ -147,4 +171,13 @@ sealed class ExpensesUiState {
     object Loading : ExpensesUiState()
     data class Success(val expenses: List<Expense>) : ExpensesUiState()
     data class Error(val message: String, val isNetwork: Boolean) : ExpensesUiState()
+}
+
+/**
+ * Unified timeline item — either an expense or a settlement.
+ * Used to interleave both in chronological order.
+ */
+sealed class TimelineItem(val date: String) {
+    data class ExpenseItem(val expense: Expense) : TimelineItem(expense.expenseDate)
+    data class SettlementItem(val settlement: Settlement) : TimelineItem(settlement.settlementDate)
 }

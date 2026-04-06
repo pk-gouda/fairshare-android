@@ -68,6 +68,7 @@ import com.prathik.fairshare.ui.account.AccountViewModel
 import com.prathik.fairshare.ui.account.ChangePasswordScreen
 import com.prathik.fairshare.ui.account.EditProfileScreen
 import com.prathik.fairshare.ui.groups.CreateGroupScreen
+import com.prathik.fairshare.ui.groups.AddMemberScreen
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.navigation.Screen
@@ -366,23 +367,27 @@ fun MainShell(
             composable(
                 route = Screen.GroupDetail.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) {
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
                 GroupDetailScreen(
                     onBack = { shellNavController.popBackStack() },
-                    onNavigateToSettings = { groupId ->
-                        shellNavController.navigate(Screen.GroupSettings.route(groupId))
+                    onNavigateToSettings = { gId ->
+                        shellNavController.navigate(Screen.GroupSettings.route(gId))
                     },
-                    onNavigateToSearch = { groupId ->
-                        shellNavController.navigate(Screen.Search.route(groupId))
+                    onNavigateToSearch = { gId ->
+                        shellNavController.navigate(Screen.Search.route(gId))
                     },
                     onNavigateToExpense = { expenseId ->
                         shellNavController.navigate(Screen.ExpenseDetail.route(expenseId))
                     },
-                    onNavigateToAddExpense = { groupId ->
-                        shellNavController.navigate(Screen.AddExpense.route(groupId))
+                    onNavigateToAddExpense = { gId ->
+                        shellNavController.navigate(Screen.AddExpense.route(gId))
+                    },
+                    onNavigateToAddMember = { gId ->
+                        shellNavController.navigate(Screen.AddMember.route(gId))
                     },
                     onNavigateToSettle = { otherUserId ->
-                        shellNavController.navigate(Screen.SettleUp.route(otherUserId))
+                        shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId))
                     },
                 )
             }
@@ -409,7 +414,11 @@ fun MainShell(
             composable(
                 route = Screen.AddMember.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Add Member") }
+            ) {
+                AddMemberScreen(
+                    onBack = { shellNavController.popBackStack() },
+                )
+            }
 
             composable(
                 route = Screen.WhoOwesWho.route,
@@ -638,13 +647,7 @@ fun MainShell(
                             )
                         )
                     },
-                    onNavigateToAddExpense = {
-                        shellNavController.navigate(
-                            Screen.AddExpense.route(
-                                friendId = friendId
-                            )
-                        )
-                    },
+                    onNavigateToAddExpense = { shellNavController.navigate(Screen.AddExpense.route(friendId = friendId)) },
                     onNavigateToSettle = {
                         shellNavController.navigate(
                             Screen.SettleUp.route(
@@ -703,7 +706,7 @@ fun MainShell(
             // ── Account screens ───────────────────────────────────────────────
             composable(Screen.EditProfile.route) {
                 EditProfileScreen(
-                    onBack = { shellNavController.popBackStack() },
+                    onBack               = { shellNavController.popBackStack() },
                     onNavigateToPassword = { shellNavController.navigate(Screen.ChangePassword.route) },
                 )
             }

@@ -29,6 +29,7 @@ sealed class FriendType {
 class FriendSettingsViewModel @Inject constructor(
     savedStateHandle            : SavedStateHandle,
     private val friendRepository       : FriendRepository,
+    private val balanceRepository      : com.prathik.fairshare.domain.repository.BalanceRepository,
     private val getGroupsUseCase       : GetGroupsUseCase,
     private val getAllBalancesUseCase   : GetAllBalancesUseCase,
     private val getMyProfileUseCase    : GetMyProfileUseCase,
@@ -69,7 +70,7 @@ class FriendSettingsViewModel @Inject constructor(
 
             val friendsDeferred  = async { friendRepository.getFriends() }
             val sentDeferred     = async { friendRepository.getSentRequests() }
-            val balancesDeferred = async { getAllBalancesUseCase() }
+            val breakdownDeferred = async { balanceRepository.getBreakdownWithUser(friendId) }
             val groupsDeferred   = async { getGroupsUseCase() }
 
             // Backend now returns ACTIVE, PLACEHOLDER, and INVITED friends
@@ -98,15 +99,14 @@ class FriendSettingsViewModel @Inject constructor(
                 }
             }
 
-            // Shared groups — only relevant for active friends
-            val balancesResult = balancesDeferred.await()
-            val groupsResult   = groupsDeferred.await()
-            if (balancesResult is ApiResult.Success && groupsResult is ApiResult.Success) {
-                val friendGroupIds = balancesResult.data
-                    .filter { it.otherUserId == friendId }
+            // Shared groups — use per-group breakdown which has real groupIds
+            val breakdownResult = breakdownDeferred.await()
+            val groupsResult    = groupsDeferred.await()
+            if (breakdownResult is ApiResult.Success && groupsResult is ApiResult.Success) {
+                val sharedGroupIds = breakdownResult.data
                     .mapNotNull { it.groupId }
                     .toSet()
-                _sharedGroups.value = groupsResult.data.filter { it.id in friendGroupIds }
+                _sharedGroups.value = groupsResult.data.filter { it.id in sharedGroupIds }
             }
 
             _isLoading.value = false

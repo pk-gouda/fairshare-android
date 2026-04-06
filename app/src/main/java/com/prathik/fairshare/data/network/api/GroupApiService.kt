@@ -8,6 +8,7 @@ import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.BalanceResponse
 import com.prathik.fairshare.data.model.response.GroupMemberResponse
 import com.prathik.fairshare.data.model.response.GroupResponse
+import com.prathik.fairshare.data.model.response.SettlementResponse
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -68,4 +69,7 @@ interface GroupApiService {
 
     @GET("api/groups/{groupId}/export")
     suspend fun exportGroupCsv(@Path("groupId") groupId: String): ResponseBody
+
+    @GET("api/groups/{groupId}/settlements")
+    suspend fun getGroupSettlements(@Path("groupId") groupId: String): ApiResponse<List<SettlementResponse>>
 }

@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  *
  * Version history:
  * 1 → 2: Added invited_friends table for locally stored invites/placeholders
+ * 2 → 3: Added groupLastActivity column to balances table (BalanceEntity)
  */
 @Database(
     entities = [
@@ -20,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PendingActionEntity::class,
         InvitedFriendEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -47,5 +48,9 @@ abstract class FairShareDatabase : RoomDatabase() {
                 )
             }
         }
+
+        // No MIGRATION_2_3 needed — fallbackToDestructiveMigration() handles it.
+        // BalanceEntity gained groupLastActivity TEXT NULL column.
+        // Room is a cache only — all data lives on the backend, safe to wipe.
     }
 }

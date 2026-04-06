@@ -20,4 +20,5 @@ data class BalanceEntity(
     val groupId: String = "",
     val groupName: String?,
     val cachedAt: Long = System.currentTimeMillis(),
+    val groupLastActivity: String? = null,
 )

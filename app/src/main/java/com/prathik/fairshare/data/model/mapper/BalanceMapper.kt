@@ -11,11 +11,12 @@ import com.prathik.fairshare.domain.model.Balance
  * Negative amount = you owe otherUser (show in orange)
  */
 fun BalanceResponse.toDomain(): Balance = Balance(
-    userId        = userId,
-    otherUserId   = otherUserId,
-    otherUserName = otherUserName,
-    amount        = amount,
-    currency      = currency,
-    groupId       = groupId,
-    groupName     = groupName,
+    userId            = userId,
+    otherUserId       = otherUserId,
+    otherUserName     = otherUserName,
+    amount            = amount,
+    currency          = currency,
+    groupId           = groupId,
+    groupName         = groupName,
+    groupLastActivity = groupLastActivity,
 )

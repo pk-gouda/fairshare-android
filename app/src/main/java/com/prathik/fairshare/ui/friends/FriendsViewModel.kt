@@ -19,6 +19,7 @@ import javax.inject.Inject
 class FriendsViewModel @Inject constructor(
     private val getFriendsUseCase   : GetFriendsUseCase,
     private val getAllBalancesUseCase: GetAllBalancesUseCase,
+    private val friendEventBus      : FriendEventBus,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -43,7 +44,13 @@ class FriendsViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<FriendsActionState>(FriendsActionState.Idle)
     val actionState: StateFlow<FriendsActionState> = _actionState.asStateFlow()
 
-    init { loadData() }
+    init {
+        loadData()
+        // Reload whenever a friend is added from AddFriendScreen
+        viewModelScope.launch {
+            friendEventBus.friendAdded.collect { loadData() }
+        }
+    }
 
     fun loadData() {
         viewModelScope.launch {

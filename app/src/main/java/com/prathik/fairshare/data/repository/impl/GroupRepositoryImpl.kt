@@ -14,6 +14,7 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
+import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.repository.GroupRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -139,6 +140,10 @@ class GroupRepositoryImpl @Inject constructor(
 
     override suspend fun getGroupBalances(groupId: String): ApiResult<List<Balance>> =
         safeApiCall { groupService.getGroupBalances(groupId) }
+            .mapSuccess { list -> list.map { it.toDomain() } }
+
+    override suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>> =
+        safeApiCall { groupService.getGroupSettlements(groupId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
     private fun com.prathik.fairshare.data.model.response.GroupResponse.toEntity() = GroupEntity(

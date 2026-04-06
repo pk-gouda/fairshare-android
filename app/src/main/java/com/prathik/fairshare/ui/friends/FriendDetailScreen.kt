@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,7 +44,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +63,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
+import com.prathik.fairshare.domain.model.Balance
+import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsLoadingScreen
@@ -93,10 +98,16 @@ fun FriendDetailScreen(
     val friend        by viewModel.friend.collectAsState()
     val netBalance    by viewModel.netBalance.collectAsState()
     val currency      by viewModel.currency.collectAsState()
+    val groupBalances by viewModel.groupBalances.collectAsState()
     val expensesState by viewModel.expensesState.collectAsState()
+    val settlements   by viewModel.settlements.collectAsState()
     val actionState   by viewModel.actionState.collectAsState()
     val snackbarHost  = remember { SnackbarHostState() }
     val lazyListState = rememberLazyListState()
+
+    // Search state
+    var searchActive by remember { mutableStateOf(false) }
+    var searchQuery  by remember { mutableStateOf("") }
 
     // Show top bar name once cover scrolls away (cover is 220dp)
     val showTopBarName by remember {
@@ -170,10 +181,12 @@ fun FriendDetailScreen(
                         // ── Balance Card ──────────────────────────────────────
                         item {
                             FriendBalanceCard(
-                                netBalance = netBalance,
-                                currency   = currency,
-                                onSettle   = { onNavigateToSettle(viewModel.friendId) },
-                                modifier   = Modifier.padding(
+                                netBalance    = netBalance,
+                                currency      = currency,
+                                groupBalances = groupBalances,
+                                friendName    = friendName,
+                                onSettle      = { onNavigateToSettle(viewModel.friendId) },
+                                modifier      = Modifier.padding(
                                     horizontal = Spacing.lg,
                                     vertical   = Spacing.md,
                                 ),
@@ -192,7 +205,7 @@ fun FriendDetailScreen(
                             )
                         }
 
-                        // ── Expenses ──────────────────────────────────────────
+                        // ── Unified Timeline: group balances + direct expenses + settlements ──
                         when (val state = expensesState) {
                             is FriendExpensesState.Loading -> {
                                 item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
@@ -207,20 +220,45 @@ fun FriendDetailScreen(
                                 }
                             }
                             is FriendExpensesState.Success -> {
-                                if (state.expenses.isEmpty()) {
+                                // Build unified timeline
+                                val allItems = buildList<FriendTimelineItem> {
+                                    groupBalances.filter { it.amount != 0.0 }.forEach { balance ->
+                                        add(FriendTimelineItem.GroupBalanceItem(balance))
+                                    }
+                                    state.expenses.forEach { expense ->
+                                        add(FriendTimelineItem.DirectExpenseItem(expense))
+                                    }
+                                    settlements.forEach { settlement ->
+                                        add(FriendTimelineItem.SettlementItem(settlement))
+                                    }
+                                }.sortedByDescending { it.sortDate }
+
+                                // Apply search filter
+                                val timelineItems = if (searchQuery.isBlank()) allItems
+                                else allItems.filter { item ->
+                                    when (item) {
+                                        is FriendTimelineItem.GroupBalanceItem ->
+                                            item.balance.groupName?.contains(searchQuery, ignoreCase = true) == true
+                                        is FriendTimelineItem.DirectExpenseItem ->
+                                            item.expense.description.contains(searchQuery, ignoreCase = true)
+                                        is FriendTimelineItem.SettlementItem ->
+                                            item.settlement.payerName.contains(searchQuery, ignoreCase = true) ||
+                                                    item.settlement.receiverName.contains(searchQuery, ignoreCase = true) ||
+                                                    (item.settlement.notes?.contains(searchQuery, ignoreCase = true) == true)
+                                    }
+                                }
+
+                                if (timelineItems.isEmpty()) {
                                     item {
                                         FsEmptyState(
-                                            title    = "No shared expenses",
-                                            subtitle = "Add an expense to get started",
+                                            title    = if (searchQuery.isBlank()) "No shared expenses" else "No results for \"$searchQuery\"",
+                                            subtitle = if (searchQuery.isBlank()) "Add an expense to get started" else "Try a different search term",
                                             modifier = Modifier.height(300.dp),
                                         )
                                     }
                                 } else {
-                                    val grouped = state.expenses
-                                        .sortedByDescending { it.expenseDate }
-                                        .groupBy { it.expenseDate.toMonthHeader() }
-
-                                    grouped.forEach { (month, expenses) ->
+                                    val grouped = timelineItems.groupBy { it.sortDate.toMonthHeader() }
+                                    grouped.forEach { (month, items) ->
                                         item {
                                             Text(
                                                 text          = month.uppercase(),
@@ -234,11 +272,25 @@ fun FriendDetailScreen(
                                                 ),
                                             )
                                         }
-                                        items(expenses, key = { it.id }) { expense ->
-                                            FriendExpenseRow(
-                                                expense = expense,
-                                                onClick = { onNavigateToExpense(expense.id) },
-                                            )
+                                        items(
+                                            items = items,
+                                            key   = { when (it) {
+                                                is FriendTimelineItem.GroupBalanceItem  -> "gb_${it.balance.groupId}"
+                                                is FriendTimelineItem.DirectExpenseItem -> "ex_${it.expense.id}"
+                                                is FriendTimelineItem.SettlementItem    -> "st_${it.settlement.id}"
+                                            }},
+                                        ) { item ->
+                                            when (item) {
+                                                is FriendTimelineItem.GroupBalanceItem ->
+                                                    GroupBalanceRow(balance = item.balance)
+                                                is FriendTimelineItem.DirectExpenseItem ->
+                                                    FriendExpenseRow(
+                                                        expense = item.expense,
+                                                        onClick = { onNavigateToExpense(item.expense.id) },
+                                                    )
+                                                is FriendTimelineItem.SettlementItem ->
+                                                    FriendSettlementRow(settlement = item.settlement)
+                                            }
                                         }
                                     }
                                 }
@@ -277,8 +329,30 @@ fun FriendDetailScreen(
                     )
                 }
 
-                // Friend name — only visible once cover scrolls away
-                if (showTopBarName) {
+                // Friend name OR search field
+                if (searchActive) {
+                    androidx.compose.material3.TextField(
+                        value         = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder   = { Text("Search expenses...", fontSize = 14.sp) },
+                        singleLine    = true,
+                        colors        = androidx.compose.material3.TextFieldDefaults.colors(
+                            focusedContainerColor   = Color(0x44000000),
+                            unfocusedContainerColor = Color(0x44000000),
+                            focusedTextColor        = Color.White,
+                            unfocusedTextColor      = Color.White,
+                            cursorColor             = Color.White,
+                            focusedPlaceholderColor = Color(0x99FFFFFF),
+                            unfocusedPlaceholderColor = Color(0x99FFFFFF),
+                            focusedIndicatorColor   = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                        ),
+                        shape    = RoundedCornerShape(Radius.full),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = Spacing.sm),
+                    )
+                } else if (showTopBarName) {
                     Text(
                         text     = friendName,
                         fontSize = 17.sp,
@@ -302,11 +376,14 @@ fun FriendDetailScreen(
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(Color(0x55000000))
-                            .clickable { /* TODO: search within friend expenses */ },
+                            .clickable {
+                                searchActive = !searchActive
+                                if (!searchActive) searchQuery = ""
+                            },
                     ) {
                         Icon(
-                            imageVector        = Icons.Outlined.Search,
-                            contentDescription = "Search",
+                            imageVector        = if (searchActive) Icons.Filled.Close else Icons.Outlined.Search,
+                            contentDescription = if (searchActive) "Close search" else "Search",
                             tint               = Color.White,
                             modifier           = Modifier.size(20.dp),
                         )
@@ -330,6 +407,206 @@ fun FriendDetailScreen(
             }
         }
     }
+}
+
+// ── Timeline data model ───────────────────────────────────────────────────────
+
+sealed class FriendTimelineItem(val sortDate: String) {
+    data class GroupBalanceItem(val balance: Balance) :
+        FriendTimelineItem(balance.groupLastActivity ?: "")
+    data class DirectExpenseItem(val expense: Expense) :
+        FriendTimelineItem(expense.expenseDate)
+    data class SettlementItem(val settlement: Settlement) :
+        FriendTimelineItem(settlement.settlementDate)
+}
+
+// ── Friend Settlement Row ─────────────────────────────────────────────────────
+
+/**
+ * Shows a settlement as an expense-like row in the friend detail timeline.
+ * Same layout as GroupDetailScreen's SettlementRow.
+ */
+@Composable
+private fun FriendSettlementRow(settlement: Settlement) {
+    val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
+        try {
+            val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
+        } catch (e: Exception) { "—" to "—" }
+    }
+
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Date column
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier            = Modifier.width(30.dp),
+        ) {
+            Text(monthAbbr, fontSize = 10.sp, color = TextTertiary, textAlign = TextAlign.Center)
+            Text(dayNum, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = TextSecondary, textAlign = TextAlign.Center)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        // Handshake icon box
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(Radius.md))
+                .background(Green400.copy(alpha = 0.12f)),
+        ) {
+            Text("🤝", fontSize = 18.sp)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.md))
+
+        // Payer → Receiver + notes
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text       = "${settlement.payerName} paid ${settlement.receiverName}",
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color      = Green400,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+            )
+            Text(
+                text     = settlement.notes?.takeIf { it.isNotBlank() } ?: "Payment",
+                fontSize = 12.sp,
+                color    = TextTertiary,
+            )
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        // Amount
+        Text(
+            text       = MoneyUtils.format(settlement.amount, settlement.currency),
+            fontSize   = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color      = Green400,
+        )
+    }
+
+    HorizontalDivider(
+        color     = Surface3,
+        thickness = 0.5.dp,
+        modifier  = Modifier.padding(start = Spacing.lg + 30.dp + Spacing.sm),
+    )
+}
+
+// ── Group Balance Row ─────────────────────────────────────────────────────────
+
+/**
+ * Shows a shared group balance as an expense-like row in the friend detail timeline.
+ *
+ * Layout:
+ *   [Mon]  [Group initial box]  [Group name]         you lent / you owe
+ *   [Day]                       in group              $XX.XX
+ */
+@Composable
+private fun GroupBalanceRow(balance: Balance) {
+    val isOwed = balance.amount > 0
+    val balanceColor = if (isOwed) Green400 else Negative
+    val balanceLabel = if (isOwed) "you lent" else "you owe"
+    val displayAmount = MoneyUtils.format(Math.abs(balance.amount), balance.currency)
+
+    val (monthAbbr, dayNum) = remember(balance.groupLastActivity) {
+        if (balance.groupLastActivity.isNullOrBlank()) {
+            "—" to "—"
+        } else {
+            try {
+                val dt = LocalDateTime.parse(balance.groupLastActivity, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
+            } catch (e: Exception) {
+                "—" to "—"
+            }
+        }
+    }
+
+    // Color the group initial box — deterministic from group name
+    val boxColor = remember(balance.groupName) {
+        val colors = listOf(
+            android.graphics.Color.parseColor("#1A2A3A"),
+            android.graphics.Color.parseColor("#1A3A1A"),
+            android.graphics.Color.parseColor("#2A1A0A"),
+            android.graphics.Color.parseColor("#1A1A3A"),
+            android.graphics.Color.parseColor("#2A1A2A"),
+        )
+        val idx = (balance.groupName?.hashCode()?.and(0x7fffffff) ?: 0) % colors.size
+        androidx.compose.ui.graphics.Color(colors[idx])
+    }
+
+    val initial = balance.groupName?.firstOrNull()?.uppercaseChar()?.toString() ?: "G"
+
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Date column
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier            = Modifier.width(30.dp),
+        ) {
+            Text(text = monthAbbr, fontSize = 10.sp, color = TextTertiary, textAlign = TextAlign.Center)
+            Text(text = dayNum,    fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = TextSecondary, textAlign = TextAlign.Center)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        // Group icon box
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(Radius.md))
+                .background(boxColor),
+        ) {
+            Text(text = initial, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.md))
+
+        // Group name + subtitle
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text       = balance.groupName ?: "Group",
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color      = TextPrimary,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+            )
+            Text(
+                text     = "in group",
+                fontSize = 12.sp,
+                color    = TextTertiary,
+            )
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        // Balance direction + amount
+        Column(horizontalAlignment = Alignment.End) {
+            Text(text = balanceLabel, fontSize = 10.sp, color = TextTertiary)
+            Text(text = displayAmount, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = balanceColor)
+        }
+    }
+
+    HorizontalDivider(
+        color     = Surface3,
+        thickness = 0.5.dp,
+        modifier  = Modifier.padding(start = Spacing.lg + 30.dp + Spacing.sm),
+    )
 }
 
 // ── Friend Cover Photo ────────────────────────────────────────────────────────
@@ -394,10 +671,12 @@ private fun FriendCoverPhoto(
 
 @Composable
 private fun FriendBalanceCard(
-    netBalance: Double,
-    currency  : String,
-    onSettle  : () -> Unit,
-    modifier  : Modifier = Modifier,
+    netBalance   : Double,
+    currency     : String,
+    groupBalances: List<Balance>,
+    friendName   : String,
+    onSettle     : () -> Unit,
+    modifier     : Modifier = Modifier,
 ) {
     val balanceColor = when {
         netBalance > 0 -> Green400
@@ -417,6 +696,7 @@ private fun FriendBalanceCard(
             .background(Surface2)
             .padding(Spacing.md),
     ) {
+        // Overall balance
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier          = Modifier.fillMaxWidth(),
@@ -427,6 +707,44 @@ private fun FriendBalanceCard(
                 color    = balanceColor,
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        // Per-group breakdown — show whenever there are non-zero individual balances
+        val nonZeroBalances = groupBalances.filter { it.amount != 0.0 }
+        if (nonZeroBalances.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(Spacing.sm))
+
+            nonZeroBalances.forEach { balance ->
+                val label = balance.groupName ?: "Non-group"
+                val color = if (balance.amount > 0) Green400 else Negative
+                val text = if (balance.amount > 0)
+                    "owes you ${MoneyUtils.format(balance.amount, balance.currency)}"
+                else
+                    "you owe ${MoneyUtils.format(-balance.amount, balance.currency)}"
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = label,
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = text,
+                        fontSize = 12.sp,
+                        color = color,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
         }
     }
 }
@@ -536,7 +854,7 @@ private fun FriendExpenseRow(expense: Expense, onClick: () -> Unit) {
 
         Spacer(modifier = Modifier.width(Spacing.md))
 
-        // Description + paid by
+        // Description + context subtitle
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text       = expense.description,
@@ -546,7 +864,25 @@ private fun FriendExpenseRow(expense: Expense, onClick: () -> Unit) {
                 maxLines   = 1,
                 overflow   = TextOverflow.Ellipsis,
             )
-            Text(text = paidByText, fontSize = 12.sp, color = TextTertiary)
+            if (expense.groupName != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text     = expense.groupName,
+                        fontSize = 12.sp,
+                        color    = TextSecondary,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text     = " · group",
+                        fontSize = 11.sp,
+                        color    = TextTertiary,
+                    )
+                }
+            } else {
+                Text(text = paidByText, fontSize = 12.sp, color = TextTertiary)
+            }
         }
 
         Spacer(modifier = Modifier.width(Spacing.sm))

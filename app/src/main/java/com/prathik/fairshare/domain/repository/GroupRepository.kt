@@ -4,6 +4,7 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
+import com.prathik.fairshare.domain.model.Settlement
 
 /**
  * Contract for all group-related operations.
@@ -92,4 +93,9 @@ interface GroupRepository {
      * Negative amount = you owe other user.
      */
     suspend fun getGroupBalances(groupId: String): ApiResult<List<Balance>>
+
+    /**
+     * Fetches all settlements within a group, ordered by date descending.
+     */
+    suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>>
 }

@@ -19,6 +19,15 @@ interface BalanceRepository {
     suspend fun getAllBalances(): ApiResult<List<Balance>>
 
     /**
+     * Fetches per-group balance breakdown between the current user and [otherUserId].
+     * Returns one Balance per group where a non-zero balance exists.
+     * Each Balance has groupId and groupName populated.
+     *
+     * Powers: FriendDetail per-group rows, FriendSettings shared groups list.
+     */
+    suspend fun getBreakdownWithUser(otherUserId: String): ApiResult<List<Balance>>
+
+    /**
      * Fetches the detailed balance breakdown between the current user
      * and one other user, broken down per group.
      * Used by the Settle Up screen to show per-group amounts.

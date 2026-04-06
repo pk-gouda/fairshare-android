@@ -25,6 +25,7 @@ class SettlementRepositoryImpl @Inject constructor(
         currency: String?,
         paymentMethod: String?,
         notes: String?,
+        payerId: String?,
     ): ApiResult<List<Settlement>> =
         safeApiCall {
             settlementService.settle(
@@ -36,6 +37,7 @@ class SettlementRepositoryImpl @Inject constructor(
                     currency      = currency,
                     paymentMethod = paymentMethod,
                     notes         = notes,
+                    payerId       = payerId,
                 )
             )
         }.mapSuccess { list -> list.map { it.toDomain() } }
@@ -59,4 +61,18 @@ class SettlementRepositoryImpl @Inject constructor(
     override suspend fun getBreakdown(otherUserId: String): ApiResult<Map<String, Any>> =
         safeApiCall { settlementService.getBreakdown(otherUserId) }
             .mapSuccess { list -> mapOf("balances" to list.map { it.toDomain() }) }
+
+    override suspend fun deleteSettlement(settlementId: String): ApiResult<Unit> {
+        val result = safeApiCall { settlementService.deleteSettlement(settlementId) }
+        return when (result) {
+            is ApiResult.Success -> ApiResult.Success(Unit)
+            is ApiResult.NetworkError    -> result
+            is ApiResult.HttpError       -> result
+            is ApiResult.ValidationError -> result
+            is ApiResult.Unauthorized    -> result
+            is ApiResult.NotFound        -> result
+            is ApiResult.Forbidden       -> result
+            is ApiResult.Conflict        -> result
+        }
+    }
 }
