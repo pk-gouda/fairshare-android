@@ -655,6 +655,9 @@ fun MainShell(
                             )
                         )
                     },
+                    onNavigateToSearch = {
+                        shellNavController.navigate(Screen.Search.route())
+                    },
                 )
             }
 

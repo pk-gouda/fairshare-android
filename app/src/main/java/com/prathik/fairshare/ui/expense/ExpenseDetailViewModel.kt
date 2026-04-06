@@ -36,19 +36,30 @@ class ExpenseDetailViewModel @Inject constructor(
         loadExpense()
     }
 
+    private var hasLoadedOnce = false
+
     fun loadExpense() {
         viewModelScope.launch {
-            _expenseState.value = ExpenseDetailUiState.Loading
+            // Only show loading spinner on first load — subsequent refreshes are silent
+            if (!hasLoadedOnce) {
+                _expenseState.value = ExpenseDetailUiState.Loading
+            }
             when (val result = getExpenseUseCase(expenseId)) {
-                is ApiResult.Success -> _expenseState.value =
-                    ExpenseDetailUiState.Success(result.data)
-
+                is ApiResult.Success -> {
+                    _expenseState.value = ExpenseDetailUiState.Success(result.data)
+                    hasLoadedOnce = true
+                }
                 is ApiResult.NotFound -> _expenseState.value = ExpenseDetailUiState.Deleted
-                is ApiResult.NetworkError -> _expenseState.value =
-                    ExpenseDetailUiState.Error("No internet connection.", true)
-
-                else -> _expenseState.value =
-                    ExpenseDetailUiState.Error("Failed to load expense.", false)
+                is ApiResult.NetworkError -> {
+                    if (!hasLoadedOnce) {
+                        _expenseState.value = ExpenseDetailUiState.Error("No internet connection.", true)
+                    }
+                }
+                else -> {
+                    if (!hasLoadedOnce) {
+                        _expenseState.value = ExpenseDetailUiState.Error("Failed to load expense.", false)
+                    }
+                }
             }
         }
     }

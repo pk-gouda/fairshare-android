@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,10 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -25,6 +22,7 @@ import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -67,7 +65,7 @@ import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
-import com.prathik.fairshare.ui.theme.SyneFontFamily
+import com.prathik.fairshare.ui.theme.Surface3
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TileCoupleEnd
@@ -91,7 +89,7 @@ import com.prathik.fairshare.util.MoneyUtils
  *
  * Shows:
  * - Net balance hero section (how much you're owed overall)
- * - LazyVerticalGrid of group tiles with gradients by GroupType
+ * - Vertical list of groups with balance status (settled up, owes you, you owe, no expenses)
  * - "Create a group" button at bottom of grid (always visible)
  * - FAB → Add Expense (quick add)
  * - Top bar GroupAdd icon → Create Group
@@ -108,6 +106,7 @@ fun GroupsHomeScreen(
 ) {
     val groupsState    by viewModel.groupsState.collectAsState()
     val balanceSummary by viewModel.balanceSummary.collectAsState()
+    val groupBalanceMap by viewModel.groupBalanceMap.collectAsState()
     val searchQuery    by viewModel.searchQuery.collectAsState()
     val isLoading = groupsState is GroupsUiState.Loading
 
@@ -231,32 +230,33 @@ fun GroupsHomeScreen(
                                 )
                             }
 
-                            // ── Group tiles grid ──────────────────────────────
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(2),
-                                contentPadding = PaddingValues(Spacing.lg),
-                                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                                verticalArrangement = Arrangement.spacedBy(Spacing.md),
-                            ) {
+                            // ── Group list ────────────────────────────────────
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
                                 items(
                                     items = displayGroups,
                                     key = { it.id },
                                 ) { group ->
-                                    GroupTile(
-                                        group = group,
-                                        onClick = { onNavigateToGroup(group.id) },
+                                    GroupRow(
+                                        group     = group,
+                                        balance   = groupBalanceMap[group.id],
+                                        onClick   = { onNavigateToGroup(group.id) },
+                                    )
+                                    HorizontalDivider(
+                                        color     = Surface3,
+                                        thickness = 0.5.dp,
+                                        modifier  = Modifier.padding(start = Spacing.lg + 56.dp),
                                     )
                                 }
 
-                                // "Create a group" button — spans both columns
-                                item(span = { GridItemSpan(2) }) {
+                                item {
                                     FsSecondaryButton(
-                                        text = "+ Create a group",
+                                        text    = "+ Create a group",
                                         onClick = onNavigateToCreateGroup,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = Spacing.sm),
+                                            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                                     )
+                                    Spacer(modifier = Modifier.height(80.dp))
                                 }
                             }
                         }
@@ -281,14 +281,8 @@ private fun BalanceHeroSection(
     }
 
     val netText = when {
-        summary.netBalance > 0 -> "+${MoneyUtils.format(summary.netBalance, summary.currency)}"
-        summary.netBalance < 0 -> "-${
-            MoneyUtils.format(
-                Math.abs(summary.netBalance),
-                summary.currency
-            )
-        }"
-
+        summary.netBalance > 0 -> MoneyUtils.format(summary.netBalance, summary.currency)
+        summary.netBalance < 0 -> MoneyUtils.format(Math.abs(summary.netBalance), summary.currency)
         else -> MoneyUtils.format(0.0, summary.currency)
     }
 
@@ -347,50 +341,73 @@ private fun StatPill(
     }
 }
 
-// ── Group Tile ────────────────────────────────────────────────────────────────
+// ── Group Row ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun GroupTile(
-    group: Group,
+private fun GroupRow(
+    group  : Group,
+    balance: Double?,   // null = no expenses, 0.0 = settled up, +/- = active balance
     onClick: () -> Unit,
 ) {
     val gradient = groupTypeGradient(group.type)
 
-    Box(
-        modifier = Modifier
+    Row(
+        modifier          = Modifier
             .fillMaxWidth()
-            .height(120.dp)
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(Brush.verticalGradient(gradient))
             .clickable(onClick = onClick)
-            .padding(Spacing.md),
+            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.SpaceBetween,
+        // Coloured group icon
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(Radius.lg))
+                .background(Brush.verticalGradient(gradient)),
         ) {
-            Text(
-                text = groupTypeEmoji(group.type),
-                fontSize = 24.sp,
-            )
+            Text(groupTypeEmoji(group.type), fontSize = 22.sp)
+        }
 
-            Column {
-                Text(
-                    text = group.name,
-                    fontFamily = SyneFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "${group.memberCount} members",
-                    fontSize = 11.sp,
-                    color = TextSecondary,
-                )
+        Spacer(modifier = Modifier.width(Spacing.md))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text       = group.name,
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color      = TextPrimary,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+            )
+            Text(
+                text     = "${group.memberCount} members",
+                fontSize = 12.sp,
+                color    = TextSecondary,
+            )
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        when {
+            balance == null -> Text(
+                text     = "no expenses",
+                fontSize = 12.sp,
+                color    = TextSecondary,
+            )
+            balance > 0 -> Column(horizontalAlignment = Alignment.End) {
+                Text(text = "you are owed", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Green400)
+                Text(text = MoneyUtils.format(balance, "USD"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Green400)
             }
+            balance < 0 -> Column(horizontalAlignment = Alignment.End) {
+                Text(text = "you owe", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Negative)
+                Text(text = MoneyUtils.format(-balance, "USD"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Negative)
+            }
+            else -> Text(
+                text     = "settled up",
+                fontSize = 12.sp,
+                color    = TextSecondary,
+            )
         }
     }
 }

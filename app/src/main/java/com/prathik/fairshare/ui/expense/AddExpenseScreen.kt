@@ -111,6 +111,7 @@ fun AddExpenseScreen(
     val members           by viewModel.members.collectAsState()
     val payerData         by viewModel.payerData.collectAsState()
     val splitData         by viewModel.splitData.collectAsState()
+    val equalExcluded     by viewModel.equalExcluded.collectAsState()
     val receiptState      by viewModel.receiptState.collectAsState()
     val preselectedFriend by viewModel.preselectedFriend.collectAsState()
 
@@ -298,16 +299,6 @@ fun AddExpenseScreen(
                         }
                     }
                 )
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(Radius.sm))
-                        .background(Surface2)
-                        .clickable { onNavigateToCurrency() }
-                        .padding(horizontal = Spacing.sm, vertical = 6.dp),
-                ) {
-                    Text(currency, fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
-                }
             }
 
             HorizontalDivider(color = Surface3, thickness = 0.5.dp,
@@ -352,6 +343,57 @@ fun AddExpenseScreen(
 
             HorizontalDivider(color = Surface3, thickness = 0.5.dp,
                 modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm))
+
+            // ── Equal split member toggles ────────────────────────────────────
+            // Only shown for EQUAL split — lets user uncheck members not in this split
+            if (splitType == SplitType.EQUAL && members.isNotEmpty()) {
+                members.forEach { member ->
+                    val isIncluded = !equalExcluded.contains(member.userId)
+                    val name = if (member.userId == viewModel.currentUserId) "You" else member.fullName
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.onToggleEqualMember(member.userId) }
+                            .padding(horizontal = Spacing.lg, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FsAvatar(name = member.fullName, userId = member.userId, size = 32.dp)
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(
+                            text     = name,
+                            fontSize = 14.sp,
+                            color    = if (isIncluded) TextPrimary else TextTertiary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (isIncluded) {
+                            Text(
+                                text       = MoneyUtils.format(splitData[member.userId] ?: 0.0, currency),
+                                fontSize   = 13.sp,
+                                color      = Green400,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Spacer(modifier = Modifier.width(Spacing.md))
+                        }
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(22.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isIncluded) Green400 else Surface2),
+                        ) {
+                            if (isIncluded) {
+                                Text("✓", fontSize = 11.sp, color = Surface0, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    HorizontalDivider(
+                        color     = Surface3,
+                        thickness = 0.5.dp,
+                        modifier  = Modifier.padding(start = Spacing.lg + 32.dp + Spacing.md),
+                    )
+                }
+                Spacer(modifier = Modifier.height(Spacing.sm))
+            }
 
             // ── Date / Category / Note card ───────────────────────────────────
             Column(
@@ -445,17 +487,6 @@ fun AddExpenseScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(name, fontSize = 10.sp, color = TextSecondary)
                         }
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.lg)) {
-                        Icon(Icons.Outlined.CalendarMonth, "Date", tint = TextSecondary,
-                            modifier = Modifier.size(22.dp).clickable { showDatePicker = true })
-                        Icon(Icons.Outlined.Category, "Category", tint = TextSecondary,
-                            modifier = Modifier.size(22.dp).clickable { showCategorySheet = true })
-                        Icon(Icons.Outlined.Edit, "Split", tint = TextSecondary,
-                            modifier = Modifier.size(22.dp).clickable {
-                                if (splitType != SplitType.EQUAL) showSplitSheet = true
-                            })
                     }
                 }
                 HorizontalDivider(color = Surface3, thickness = 0.5.dp)

@@ -27,7 +27,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,9 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,12 +84,13 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendDetailScreen(
-    onBack               : () -> Unit,
-    onNavigateToSettings : () -> Unit,
-    onNavigateToExpense  : (String) -> Unit,
-    onNavigateToAddExpense: () -> Unit,
-    onNavigateToSettle   : (String) -> Unit,
-    viewModel            : FriendDetailViewModel = hiltViewModel(),
+    onBack                : () -> Unit,
+    onNavigateToSettings  : () -> Unit,
+    onNavigateToExpense   : (String) -> Unit,
+    onNavigateToAddExpense : () -> Unit,
+    onNavigateToSettle    : (String) -> Unit,
+    onNavigateToSearch    : () -> Unit,
+    viewModel             : FriendDetailViewModel = hiltViewModel(),
 ) {
     val isLoading     by viewModel.isLoading.collectAsState()
     val friend        by viewModel.friend.collectAsState()
@@ -104,10 +102,6 @@ fun FriendDetailScreen(
     val actionState   by viewModel.actionState.collectAsState()
     val snackbarHost  = remember { SnackbarHostState() }
     val lazyListState = rememberLazyListState()
-
-    // Search state
-    var searchActive by remember { mutableStateOf(false) }
-    var searchQuery  by remember { mutableStateOf("") }
 
     // Show top bar name once cover scrolls away (cover is 220dp)
     val showTopBarName by remember {
@@ -234,25 +228,13 @@ fun FriendDetailScreen(
                                 }.sortedByDescending { it.sortDate }
 
                                 // Apply search filter
-                                val timelineItems = if (searchQuery.isBlank()) allItems
-                                else allItems.filter { item ->
-                                    when (item) {
-                                        is FriendTimelineItem.GroupBalanceItem ->
-                                            item.balance.groupName?.contains(searchQuery, ignoreCase = true) == true
-                                        is FriendTimelineItem.DirectExpenseItem ->
-                                            item.expense.description.contains(searchQuery, ignoreCase = true)
-                                        is FriendTimelineItem.SettlementItem ->
-                                            item.settlement.payerName.contains(searchQuery, ignoreCase = true) ||
-                                                    item.settlement.receiverName.contains(searchQuery, ignoreCase = true) ||
-                                                    (item.settlement.notes?.contains(searchQuery, ignoreCase = true) == true)
-                                    }
-                                }
+                                val timelineItems = allItems
 
                                 if (timelineItems.isEmpty()) {
                                     item {
                                         FsEmptyState(
-                                            title    = if (searchQuery.isBlank()) "No shared expenses" else "No results for \"$searchQuery\"",
-                                            subtitle = if (searchQuery.isBlank()) "Add an expense to get started" else "Try a different search term",
+                                            title    = "No shared expenses",
+                                            subtitle = "Add an expense to get started",
                                             modifier = Modifier.height(300.dp),
                                         )
                                     }
@@ -329,38 +311,16 @@ fun FriendDetailScreen(
                     )
                 }
 
-                // Friend name OR search field
-                if (searchActive) {
-                    androidx.compose.material3.TextField(
-                        value         = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder   = { Text("Search expenses...", fontSize = 14.sp) },
-                        singleLine    = true,
-                        colors        = androidx.compose.material3.TextFieldDefaults.colors(
-                            focusedContainerColor   = Color(0x44000000),
-                            unfocusedContainerColor = Color(0x44000000),
-                            focusedTextColor        = Color.White,
-                            unfocusedTextColor      = Color.White,
-                            cursorColor             = Color.White,
-                            focusedPlaceholderColor = Color(0x99FFFFFF),
-                            unfocusedPlaceholderColor = Color(0x99FFFFFF),
-                            focusedIndicatorColor   = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                        ),
-                        shape    = RoundedCornerShape(Radius.full),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = Spacing.sm),
-                    )
-                } else if (showTopBarName) {
+                // Friend name — only visible once cover scrolls away
+                if (showTopBarName) {
                     Text(
-                        text     = friendName,
-                        fontSize = 17.sp,
+                        text       = friendName,
+                        fontSize   = 17.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color    = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
+                        color      = Color.White,
+                        maxLines   = 1,
+                        overflow   = TextOverflow.Ellipsis,
+                        modifier   = Modifier
                             .weight(1f)
                             .padding(horizontal = Spacing.md),
                     )
@@ -376,14 +336,11 @@ fun FriendDetailScreen(
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(Color(0x55000000))
-                            .clickable {
-                                searchActive = !searchActive
-                                if (!searchActive) searchQuery = ""
-                            },
+                            .clickable { onNavigateToSearch() },
                     ) {
                         Icon(
-                            imageVector        = if (searchActive) Icons.Filled.Close else Icons.Outlined.Search,
-                            contentDescription = if (searchActive) "Close search" else "Search",
+                            imageVector        = Icons.Outlined.Search,
+                            contentDescription = "Search",
                             tint               = Color.White,
                             modifier           = Modifier.size(20.dp),
                         )

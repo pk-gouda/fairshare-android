@@ -6,7 +6,9 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
+import com.prathik.fairshare.domain.usecase.group.GetGroupBalancesUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
+import kotlinx.coroutines.awaitAll
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +28,7 @@ import javax.inject.Inject
 class GroupsViewModel @Inject constructor(
     private val getGroupsUseCase: GetGroupsUseCase,
     private val getAllBalancesUseCase: GetAllBalancesUseCase,
+    private val getGroupBalancesUseCase: GetGroupBalancesUseCase,
 ) : ViewModel() {
 
     // ── Groups state ──────────────────────────────────────────────────────────
@@ -43,6 +46,12 @@ class GroupsViewModel @Inject constructor(
     // ── Balance summary state ─────────────────────────────────────────────────
     private val _balanceSummary = MutableStateFlow<BalanceSummary?>(null)
     val balanceSummary: StateFlow<BalanceSummary?> = _balanceSummary.asStateFlow()
+
+    // ── Per-group balance: groupId → net amount for current user ──────────────
+    // Positive = others owe you in this group, Negative = you owe in this group
+    // null key not present = no expenses yet
+    private val _groupBalanceMap = MutableStateFlow<Map<String, Double>>(emptyMap())
+    val groupBalanceMap: StateFlow<Map<String, Double>> = _groupBalanceMap.asStateFlow()
 
     init {
         loadData()
@@ -64,9 +73,22 @@ class GroupsViewModel @Inject constructor(
 
             // Handle groups result
             when (val result = groupsDeferred.await()) {
-                is ApiResult.Success -> _groupsState.value = GroupsUiState.Success(result.data)
+                is ApiResult.Success -> {
+                    _groupsState.value = GroupsUiState.Success(result.data)
+                    // Load per-group balances in parallel
+                    val groupBalanceResults = result.data.map { group ->
+                        async {
+                            group.id to when (val r = getGroupBalancesUseCase(group.id)) {
+                                is ApiResult.Success -> r.data.sumOf { it.amount }
+                                else -> null
+                            }
+                        }
+                    }.awaitAll()
+                    _groupBalanceMap.value = groupBalanceResults
+                        .mapNotNull { (id, bal) -> bal?.let { id to it } }
+                        .toMap()
+                }
                 is ApiResult.NetworkError -> {
-                    // Only show error if we have no cached data
                     if (_groupsState.value !is GroupsUiState.Success) {
                         _groupsState.value = GroupsUiState.Error(
                             message = result.message,
@@ -74,7 +96,6 @@ class GroupsViewModel @Inject constructor(
                         )
                     }
                 }
-
                 else -> {
                     if (_groupsState.value !is GroupsUiState.Success) {
                         _groupsState.value = GroupsUiState.Error(

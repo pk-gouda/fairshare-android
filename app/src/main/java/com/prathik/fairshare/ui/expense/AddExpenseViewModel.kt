@@ -109,6 +109,20 @@ class AddExpenseViewModel @Inject constructor(
     private val _splitData = MutableStateFlow<Map<String, Double>>(emptyMap())
     val splitData: StateFlow<Map<String, Double>> = _splitData.asStateFlow()
 
+    // Members excluded from the EQUAL split — empty = all included
+    private val _equalExcluded = MutableStateFlow<Set<String>>(emptySet())
+    val equalExcluded: StateFlow<Set<String>> = _equalExcluded.asStateFlow()
+
+    fun onToggleEqualMember(userId: String) {
+        val current = _equalExcluded.value.toMutableSet()
+        if (current.contains(userId)) current.remove(userId) else current.add(userId)
+        // Always keep at least one member included
+        val includedCount = (_members.value.size - current.size)
+        if (includedCount < 1) return
+        _equalExcluded.value = current
+        recalculateSplits()
+    }
+
     // ── Transfer tab state ────────────────────────────────────────────────────
     // fromUserId defaults to current user
     private val _transferFromId = MutableStateFlow(currentUserId)
@@ -395,11 +409,12 @@ class AddExpenseViewModel @Inject constructor(
 
         when (_splitType.value) {
             SplitType.EQUAL -> {
-                // Rounding fix: work in cents to avoid floating point loss
+                val included = members.filter { !_equalExcluded.value.contains(it.userId) }
+                if (included.isEmpty()) return
                 val totalCents = Math.round(total * 100)
-                val shareCents = totalCents / members.size
-                val remainder = totalCents - (shareCents * members.size)
-                _splitData.value = members.mapIndexed { index, member ->
+                val shareCents = totalCents / included.size
+                val remainder = totalCents - (shareCents * included.size)
+                _splitData.value = included.mapIndexed { index, member ->
                     val amount = if (index == 0) (shareCents + remainder) / 100.0
                     else shareCents / 100.0
                     member.userId to amount

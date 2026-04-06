@@ -30,7 +30,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -64,7 +63,6 @@ import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
 import com.prathik.fairshare.ui.theme.Surface4
-import com.prathik.fairshare.ui.theme.SyneFontFamily
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.util.MoneyUtils
@@ -156,9 +154,7 @@ fun ExpenseDetailScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHost) },
     ) { innerPadding ->
-        PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh = { viewModel.loadExpense() },
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
@@ -232,7 +228,6 @@ private fun ExpenseDetailContent(
             Spacer(modifier = Modifier.height(Spacing.sm))
             Text(
                 text = MoneyUtils.format(expense.totalAmount, expense.currency),
-                fontFamily = SyneFontFamily,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 42.sp,
                 color = TextPrimary,

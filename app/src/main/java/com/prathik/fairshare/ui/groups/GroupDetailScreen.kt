@@ -735,22 +735,6 @@ private fun BalanceCard(
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
-                    // Settle up chip
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(Radius.full))
-                            .background(if (isOwed) Green400.copy(alpha = 0.15f) else Negative.copy(alpha = 0.12f))
-                            .clickable { onSettleUser(balance.otherUserId) }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            text = "Settle up",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isOwed) Green400 else Negative,
-                        )
-                    }
                 }
                 HorizontalDivider(color = Surface3, thickness = 0.5.dp)
             }

@@ -100,8 +100,8 @@ fun FriendsScreen(
         else           -> TextSecondary
     }
     val netText = when {
-        netBalance > 0 -> "+${MoneyUtils.format(netBalance, "USD")}"
-        netBalance < 0 -> "-${MoneyUtils.format(-netBalance, "USD")}"
+        netBalance > 0 -> MoneyUtils.format(netBalance, "USD")
+        netBalance < 0 -> MoneyUtils.format(-netBalance, "USD")
         else           -> MoneyUtils.format(0.0, "USD")
     }
 
@@ -232,7 +232,7 @@ fun FriendsScreen(
                     items(filteredFriends, key = { it.id }) { friend ->
                         FriendRow(
                             friend  = friend,
-                            balance = balanceMap[friend.id] ?: 0.0,
+                            balance = balanceMap[friend.id],   // null = no expenses yet
                             onClick = { onNavigateToFriend(friend.id) },
                         )
                         HorizontalDivider(color = Surface3, thickness = 0.5.dp,
@@ -328,7 +328,7 @@ fun FriendsScreen(
 // ── Friend Row ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun FriendRow(friend: Friend, balance: Double, onClick: () -> Unit) {
+private fun FriendRow(friend: Friend, balance: Double?, onClick: () -> Unit) {
     Row(
         modifier          = Modifier
             .fillMaxWidth()
@@ -344,15 +344,24 @@ private fun FriendRow(friend: Friend, balance: Double, onClick: () -> Unit) {
         }
         Spacer(modifier = Modifier.width(Spacing.sm))
         when {
+            balance == null -> Text(
+                text     = "no expenses",
+                fontSize = 12.sp,
+                color    = TextTertiary,
+            )
             balance > 0 -> Column(horizontalAlignment = Alignment.End) {
-                Text(text = "owes you",                         fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Green400)
-                Text(text = MoneyUtils.format(balance, "USD"),  fontSize = 14.sp, fontWeight = FontWeight.Bold,   color = Green400)
+                Text(text = "owes you",                        fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Green400)
+                Text(text = MoneyUtils.format(balance, "USD"), fontSize = 14.sp, fontWeight = FontWeight.Bold,   color = Green400)
             }
             balance < 0 -> Column(horizontalAlignment = Alignment.End) {
                 Text(text = "you owe",                          fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Negative)
                 Text(text = MoneyUtils.format(-balance, "USD"), fontSize = 14.sp, fontWeight = FontWeight.Bold,   color = Negative)
             }
-            else -> Text(text = "settled", fontSize = 13.sp, color = TextTertiary)
+            else -> Text(
+                text     = "settled up",
+                fontSize = 12.sp,
+                color    = TextTertiary,
+            )
         }
     }
 }
@@ -374,7 +383,6 @@ private fun PendingFriendRow(name: String, userId: String, status: String, onCli
             Text(text = name,   fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
             Text(text = status, fontSize = 11.sp, color = TextTertiary)
         }
-        Text(text = "›", fontSize = 18.sp, color = TextTertiary)
     }
 }
 
