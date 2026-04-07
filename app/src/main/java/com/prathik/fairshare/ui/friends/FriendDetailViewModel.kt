@@ -11,6 +11,7 @@ import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.repository.FriendRepository
+import com.prathik.fairshare.domain.repository.SettlementRepository
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.settlement.GetSettlementHistoryUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +30,7 @@ class FriendDetailViewModel @Inject constructor(
     private val getAllBalancesUseCase: GetAllBalancesUseCase,
     private val balanceRepository: BalanceRepository,
     private val getSettlementHistoryUseCase: GetSettlementHistoryUseCase,
+    private val settlementRepository: SettlementRepository,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
@@ -165,6 +167,24 @@ class FriendDetailViewModel @Inject constructor(
             when (val result = getSettlementHistoryUseCase(friendId)) {
                 is ApiResult.Success -> _settlements.value = result.data
                 else -> Unit
+            }
+        }
+    }
+
+    fun deleteSettlement(settlementId: String) {
+        viewModelScope.launch {
+            when (val result = settlementRepository.deleteSettlement(settlementId)) {
+                is ApiResult.Success -> {
+                    // Remove from local list immediately
+                    _settlements.value = _settlements.value.filter { it.id != settlementId }
+                    // Refresh balances since delete reverses them
+                    refreshExpenses()
+                    _actionState.value = FriendDetailActionState.Success("Settlement deleted")
+                }
+                is ApiResult.NetworkError ->
+                    _actionState.value = FriendDetailActionState.Error("No internet connection.")
+                else ->
+                    _actionState.value = FriendDetailActionState.Error("Failed to delete settlement.")
             }
         }
     }

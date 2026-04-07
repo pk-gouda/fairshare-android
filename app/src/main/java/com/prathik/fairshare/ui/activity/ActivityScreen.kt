@@ -65,6 +65,7 @@ fun ActivityScreen(
     onNavigateToExpense: (String) -> Unit,
     onNavigateToFriend: () -> Unit,
     onNavigateToGroup: (String) -> Unit,
+    onNavigateToSettlement: (String) -> Unit,
     viewModel: ActivityViewModel = hiltViewModel(),
 ) {
     val isLoading by viewModel.isLoading.collectAsState()
@@ -175,10 +176,11 @@ fun ActivityScreen(
                         key = { it.id },
                     ) { notification ->
                         NotificationRow(
-                            notification = notification,
-                            onNavigateToExpense = onNavigateToExpense,
-                            onNavigateToFriend = onNavigateToFriend,
-                            onNavigateToGroup = onNavigateToGroup,
+                            notification           = notification,
+                            onNavigateToExpense    = onNavigateToExpense,
+                            onNavigateToFriend     = onNavigateToFriend,
+                            onNavigateToGroup      = onNavigateToGroup,
+                            onNavigateToSettlement = onNavigateToSettlement,
                         )
                         HorizontalDivider(
                             color = Surface3,
@@ -198,10 +200,11 @@ fun ActivityScreen(
 
 @Composable
 private fun NotificationRow(
-    notification: Notification,
-    onNavigateToExpense: (String) -> Unit,
-    onNavigateToFriend: () -> Unit,
-    onNavigateToGroup: (String) -> Unit,
+    notification           : Notification,
+    onNavigateToExpense    : (String) -> Unit,
+    onNavigateToFriend     : () -> Unit,
+    onNavigateToGroup      : (String) -> Unit,
+    onNavigateToSettlement : (String) -> Unit,
 ) {
     val isUnread = !notification.isRead
 
@@ -222,20 +225,13 @@ private fun NotificationRow(
                     when (notification.type) {
                         NotificationType.EXPENSE_ADDED,
                         NotificationType.EXPENSE_UPDATED -> notification.referenceId?.let {
-                            onNavigateToExpense(
-                                it
-                            )
+                            onNavigateToExpense(it)
                         }
 
                         NotificationType.SETTLEMENT_RECEIVED,
                         NotificationType.SETTLEMENT_CONFIRMED -> notification.referenceId?.let {
-                            // referenceType is a groupId UUID for group settlements,
-                            // or "SETTLEMENT" for direct settlements
-                            val groupId = notification.referenceType?.let { ref ->
-                                try { java.util.UUID.fromString(ref); ref } catch (e: Exception) { null }
-                            }
-                            if (groupId != null) onNavigateToGroup(groupId)
-                            else onNavigateToFriend()
+                            // referenceId is the settlement UUID — navigate directly to detail screen
+                            onNavigateToSettlement(it)
                         }
 
                         NotificationType.FRIEND_REQUEST_RECEIVED,
@@ -243,9 +239,7 @@ private fun NotificationRow(
 
                         NotificationType.GROUP_INVITE_RECEIVED,
                         NotificationType.GROUP_MEMBER_JOINED -> notification.referenceId?.let {
-                            onNavigateToGroup(
-                                it
-                            )
+                            onNavigateToGroup(it)
                         }
 
                         NotificationType.SETTLE_UP_REMINDER -> onNavigateToFriend()

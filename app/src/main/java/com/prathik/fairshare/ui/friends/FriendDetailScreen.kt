@@ -2,6 +2,8 @@ package com.prathik.fairshare.ui.friends
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -43,7 +46,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -271,7 +276,10 @@ fun FriendDetailScreen(
                                                         onClick = { onNavigateToExpense(item.expense.id) },
                                                     )
                                                 is FriendTimelineItem.SettlementItem ->
-                                                    FriendSettlementRow(settlement = item.settlement)
+                                                    FriendSettlementRow(
+                                                        settlement = item.settlement,
+                                                        onDelete   = { viewModel.deleteSettlement(item.settlement.id) },
+                                                    )
                                             }
                                         }
                                     }
@@ -383,8 +391,9 @@ sealed class FriendTimelineItem(val sortDate: String) {
  * Shows a settlement as an expense-like row in the friend detail timeline.
  * Same layout as GroupDetailScreen's SettlementRow.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FriendSettlementRow(settlement: Settlement) {
+private fun FriendSettlementRow(settlement: Settlement, onDelete: () -> Unit) {
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -392,9 +401,34 @@ private fun FriendSettlementRow(settlement: Settlement) {
         } catch (e: Exception) { "—" to "—" }
     }
 
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title   = { Text("Delete settlement?") },
+            text    = { Text("This will reverse the balance changes. This cannot be undone.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDelete()
+                }) { Text("Delete", color = Negative) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     Row(
         modifier          = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                onClick     = {},
+                onLongClick = { showDeleteDialog = true },
+            )
             .padding(horizontal = Spacing.lg, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

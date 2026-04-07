@@ -2,6 +2,7 @@ package com.prathik.fairshare.data.repository.impl
 
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.SettleRequest
+import com.prathik.fairshare.data.model.request.UpdateSettlementRequest
 import com.prathik.fairshare.data.network.api.SettlementApiService
 import com.prathik.fairshare.data.network.mapSuccess
 import com.prathik.fairshare.data.network.safeApiCall
@@ -75,4 +76,25 @@ class SettlementRepositoryImpl @Inject constructor(
             is ApiResult.Conflict        -> result
         }
     }
+
+    override suspend fun getSettlementById(settlementId: String): ApiResult<Settlement> =
+        safeApiCall { settlementService.getSettlementById(settlementId) }
+            .mapSuccess { it.toDomain() }
+
+    override suspend fun updateSettlement(
+        settlementId: String,
+        amount: Double?,
+        notes: String?,
+        paymentMethod: String?,
+    ): ApiResult<Settlement> =
+        safeApiCall {
+            settlementService.updateSettlement(
+                settlementId,
+                UpdateSettlementRequest(
+                    amount        = amount,
+                    notes         = notes,
+                    paymentMethod = paymentMethod,
+                )
+            )
+        }.mapSuccess { it.toDomain() }
 }

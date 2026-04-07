@@ -2,6 +2,8 @@ package com.prathik.fairshare.ui.groups
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -130,7 +133,24 @@ fun GroupDetailScreen(
     val settlements by viewModel.settlements.collectAsState()
     val balances by viewModel.balances.collectAsState()
     val yourBalance by viewModel.yourBalance.collectAsState()
+    val settlementActionState by viewModel.settlementActionState.collectAsState()
     val isLoading = groupState is GroupDetailUiState.Loading
+
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+
+    LaunchedEffect(settlementActionState) {
+        when (val s = settlementActionState) {
+            is SettlementActionState.Deleted -> {
+                snackbarHostState.showSnackbar("Settlement deleted")
+                viewModel.resetSettlementActionState()
+            }
+            is SettlementActionState.Error -> {
+                snackbarHostState.showSnackbar(s.message)
+                viewModel.resetSettlementActionState()
+            }
+            else -> Unit
+        }
+    }
 
     val groupName = (groupState as? GroupDetailUiState.Success)?.group?.name ?: "Group"
     val groupType = (groupState as? GroupDetailUiState.Success)?.group?.type ?: GroupType.OTHER
@@ -173,6 +193,7 @@ fun GroupDetailScreen(
     Scaffold(
         containerColor = Surface0,
         contentWindowInsets = WindowInsets(0),
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { onNavigateToAddExpense(viewModel.groupId) },
@@ -340,6 +361,7 @@ fun GroupDetailScreen(
                                                     )
                                                     is TimelineItem.SettlementItem -> SettlementRow(
                                                         settlement = item.settlement,
+                                                        onDelete   = { viewModel.deleteSettlement(item.settlement.id) },
                                                     )
                                                 }
                                             }
@@ -945,7 +967,8 @@ private fun ExpenseRow(
 // ── Settlement Row ────────────────────────────────────────────────────────────
 
 @Composable
-private fun SettlementRow(settlement: Settlement) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun SettlementRow(settlement: Settlement, onDelete: () -> Unit) {
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -957,9 +980,34 @@ private fun SettlementRow(settlement: Settlement) {
         }
     }
 
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title   = { Text("Delete settlement?") },
+            text    = { Text("This will reverse the balance changes. This cannot be undone.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDelete()
+                }) { Text("Delete", color = Negative) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                onClick     = {},
+                onLongClick = { showDeleteDialog = true },
+            )
             .padding(horizontal = Spacing.lg, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

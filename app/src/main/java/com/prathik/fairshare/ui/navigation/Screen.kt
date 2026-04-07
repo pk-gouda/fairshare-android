@@ -103,6 +103,14 @@ sealed class Screen(val route: String) {
         fun route(otherUserId: String) = "settle/$otherUserId/history"
     }
 
+    object SettlementDetail : Screen("settlement/{settlementId}") {
+        fun route(settlementId: String) = "settlement/$settlementId"
+    }
+
+    object EditSettlement : Screen("settlement/{settlementId}/edit") {
+        fun route(settlementId: String) = "settlement/$settlementId/edit"
+    }
+
     // ── Friend ────────────────────────────────────────────────────────────────
     object FriendDetail : Screen("friend/{friendId}") {
         fun route(friendId: String) = "friend/$friendId"

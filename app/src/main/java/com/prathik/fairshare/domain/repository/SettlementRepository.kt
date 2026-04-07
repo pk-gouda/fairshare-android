@@ -68,4 +68,21 @@ interface SettlementRepository {
      * Returns [ApiResult.Conflict] if a participant has left the group.
      */
     suspend fun deleteSettlement(settlementId: String): ApiResult<Unit>
+
+    /**
+     * Fetches a single settlement by ID.
+     * Only participants (payer or receiver) can view.
+     */
+    suspend fun getSettlementById(settlementId: String): ApiResult<Settlement>
+
+    /**
+     * Updates a settlement's amount, notes, or payment method.
+     * Only the person who recorded it can edit.
+     */
+    suspend fun updateSettlement(
+        settlementId: String,
+        amount: Double?,
+        notes: String?,
+        paymentMethod: String?,
+    ): ApiResult<Settlement>
 }

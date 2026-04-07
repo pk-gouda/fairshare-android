@@ -9,6 +9,7 @@ import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.repository.GroupRepository
+import com.prathik.fairshare.domain.repository.SettlementRepository
 import com.prathik.fairshare.domain.usecase.group.GetGroupBalancesUseCase
 import com.prathik.fairshare.domain.usecase.expense.GetGroupExpensesUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
@@ -32,6 +33,7 @@ class GroupDetailViewModel @Inject constructor(
     private val getGroupExpensesUseCase: GetGroupExpensesUseCase,
     private val getGroupBalancesUseCase: GetGroupBalancesUseCase,
     private val groupRepository: GroupRepository,
+    private val settlementRepository: SettlementRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -157,6 +159,33 @@ class GroupDetailViewModel @Inject constructor(
             }
         }
     }
+    // ── Settlement delete ─────────────────────────────────────────────────────
+
+    private val _settlementActionState = MutableStateFlow<SettlementActionState>(SettlementActionState.Idle)
+    val settlementActionState: StateFlow<SettlementActionState> = _settlementActionState.asStateFlow()
+
+    fun deleteSettlement(settlementId: String) {
+        viewModelScope.launch {
+            _settlementActionState.value = SettlementActionState.Loading
+            when (val result = settlementRepository.deleteSettlement(settlementId)) {
+                is ApiResult.Success -> {
+                    // Remove from local list immediately — don't wait for refresh
+                    _settlements.value = _settlements.value.filter { it.id != settlementId }
+                    // Also refresh balances since delete reverses them
+                    loadData()
+                    _settlementActionState.value = SettlementActionState.Deleted
+                }
+                is ApiResult.NetworkError -> _settlementActionState.value =
+                    SettlementActionState.Error("No internet connection.")
+                else -> _settlementActionState.value =
+                    SettlementActionState.Error("Failed to delete settlement.")
+            }
+        }
+    }
+
+    fun resetSettlementActionState() {
+        _settlementActionState.value = SettlementActionState.Idle
+    }
 }
 
 // ── UI States ─────────────────────────────────────────────────────────────────
@@ -180,4 +209,11 @@ sealed class ExpensesUiState {
 sealed class TimelineItem(val date: String) {
     data class ExpenseItem(val expense: Expense) : TimelineItem(expense.expenseDate)
     data class SettlementItem(val settlement: Settlement) : TimelineItem(settlement.settlementDate)
+}
+
+sealed class SettlementActionState {
+    object Idle    : SettlementActionState()
+    object Loading : SettlementActionState()
+    object Deleted : SettlementActionState()
+    data class Error(val message: String) : SettlementActionState()
 }

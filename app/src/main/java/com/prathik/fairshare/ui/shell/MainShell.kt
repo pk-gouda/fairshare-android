@@ -82,6 +82,8 @@ import com.prathik.fairshare.ui.expense.AddExpenseViewModel
 import com.prathik.fairshare.ui.expense.EditExpenseScreen
 import com.prathik.fairshare.ui.expense.EditExpenseViewModel
 import com.prathik.fairshare.ui.expense.ExpenseDetailScreen
+import com.prathik.fairshare.ui.settlement.EditSettlementScreen
+import com.prathik.fairshare.ui.settlement.SettlementDetailScreen
 import com.prathik.fairshare.ui.settlement.SettleUpScreen
 
 
@@ -345,6 +347,9 @@ fun MainShell(
                     },
                     onNavigateToGroup = { groupId ->
                         shellNavController.navigate(Screen.GroupDetail.route(groupId))
+                    },
+                    onNavigateToSettlement = { settlementId ->
+                        shellNavController.navigate(Screen.SettlementDetail.route(settlementId))
                     },
                 )
             }
@@ -624,6 +629,29 @@ fun MainShell(
                 route = Screen.SettlementHistory.route,
                 arguments = listOf(navArgument("otherUserId") { type = NavType.StringType })
             ) { PlaceholderScreen("Settlement History") }
+
+            composable(
+                route = Screen.SettlementDetail.route,
+                arguments = listOf(navArgument("settlementId") { type = NavType.StringType }),
+            ) {
+                SettlementDetailScreen(
+                    onBack           = { shellNavController.popBackStack() },
+                    onNavigateToEdit = { settlementId ->
+                        shellNavController.navigate(Screen.EditSettlement.route(settlementId))
+                    },
+                    onDeleted        = { shellNavController.popBackStack() },
+                )
+            }
+
+            composable(
+                route = Screen.EditSettlement.route,
+                arguments = listOf(navArgument("settlementId") { type = NavType.StringType }),
+            ) {
+                EditSettlementScreen(
+                    onBack  = { shellNavController.popBackStack() },
+                    onSaved = { shellNavController.popBackStack() },
+                )
+            }
 
             // ── Friend screens ────────────────────────────────────────────────
             composable(
