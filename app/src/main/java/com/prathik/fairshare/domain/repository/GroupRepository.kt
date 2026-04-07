@@ -95,6 +95,12 @@ interface GroupRepository {
     suspend fun getGroupBalances(groupId: String): ApiResult<List<Balance>>
 
     /**
+     * Fetches all member-to-member balances across the whole group.
+     * Used by the Balances screen to show every member's net position.
+     */
+    suspend fun getAllGroupBalances(groupId: String): ApiResult<List<Balance>>
+
+    /**
      * Fetches all settlements within a group, ordered by date descending.
      */
     suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>>

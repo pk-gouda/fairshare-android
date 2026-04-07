@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import com.prathik.fairshare.util.MoneyUtils
 import javax.inject.Inject
 
 @HiltViewModel
@@ -91,14 +90,6 @@ class SettleUpViewModel @Inject constructor(
         val amt = _amount.value.toDoubleOrNull()
         if (amt == null || amt <= 0) {
             _uiState.value = SettleUpUiState.Error("Please enter a valid amount.")
-            return
-        }
-        // Cap at the actual balance — entering more would flip the debt direction
-        val maxSettleable = Math.abs(_balanceAmount.value)
-        if (maxSettleable > 0 && amt > maxSettleable + 0.01) {
-            _uiState.value = SettleUpUiState.Error(
-                "Amount cannot exceed ${MoneyUtils.format(maxSettleable, _balanceCurrency.value)}"
-            )
             return
         }
         settle(type = SettleType.PARTIAL, amount = amt)

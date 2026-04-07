@@ -142,6 +142,10 @@ class GroupRepositoryImpl @Inject constructor(
         safeApiCall { groupService.getGroupBalances(groupId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
+    override suspend fun getAllGroupBalances(groupId: String): ApiResult<List<Balance>> =
+        safeApiCall { groupService.getAllGroupBalances(groupId) }
+            .mapSuccess { list -> list.map { it.toDomain() } }
+
     override suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>> =
         safeApiCall { groupService.getGroupSettlements(groupId) }
             .mapSuccess { list -> list.map { it.toDomain() } }

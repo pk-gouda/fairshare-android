@@ -53,6 +53,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.prathik.fairshare.ui.expense.AddExpenseScreen
+import com.prathik.fairshare.ui.groups.GroupBalancesScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
@@ -394,6 +395,12 @@ fun MainShell(
                     onNavigateToSettle = { otherUserId ->
                         shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId))
                     },
+                    onNavigateToSettlement = { settlementId ->
+                        shellNavController.navigate(Screen.SettlementDetail.route(settlementId))
+                    },
+                    onNavigateToBalances = {
+                        shellNavController.navigate(Screen.GroupBalances.route(groupId))
+                    },
                 )
             }
             composable(
@@ -429,6 +436,19 @@ fun MainShell(
                 route = Screen.WhoOwesWho.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) { PlaceholderScreen("Who Owes Who") }
+
+            composable(
+                route = Screen.GroupBalances.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType }),
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
+                GroupBalancesScreen(
+                    onBack       = { shellNavController.popBackStack() },
+                    onSettleWith = { otherUserId ->
+                        shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId))
+                    },
+                )
+            }
 
             composable(
                 route = Screen.TotalsSheet.route,

@@ -126,6 +126,8 @@ fun GroupDetailScreen(
     onNavigateToAddExpense: (String) -> Unit,
     onNavigateToAddMember: (String) -> Unit,
     onNavigateToSettle: (String) -> Unit,
+    onNavigateToSettlement: (String) -> Unit = {},
+    onNavigateToBalances: () -> Unit = {},
     viewModel: GroupDetailViewModel = hiltViewModel(),
 ) {
     val groupState by viewModel.groupState.collectAsState()
@@ -258,7 +260,8 @@ fun GroupDetailScreen(
                             // ── Action pills row ──────────────────────────────────
                             item {
                                 ActionPillsRow(
-                                    onSettleUp = handleSettleUp,
+                                    onSettleUp       = handleSettleUp,
+                                    onNavigateToBalances = onNavigateToBalances,
                                     modifier = Modifier.padding(
                                         start = Spacing.lg,
                                         end = Spacing.lg,
@@ -701,66 +704,18 @@ private fun BalanceCard(
         else -> "Expenses are balanced"
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.xl))
             .background(Surface2)
-            .padding(Spacing.md),
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
     ) {
-        // Overall summary line
         Text(
-            text = overallText,
+            text     = overallText,
             fontSize = 13.sp,
-            color = overallColor,
-            modifier = Modifier.fillMaxWidth(),
+            color    = overallColor,
         )
-
-        // Per-person breakdown — each row tappable to settle with that person
-        val nonZeroBalances = balances.filter { it.amount != 0.0 }
-        if (nonZeroBalances.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(Spacing.sm))
-            HorizontalDivider(color = Surface4, thickness = 0.5.dp)
-
-            nonZeroBalances.forEach { balance ->
-                val isOwed = balance.amount > 0
-                val amountColor = if (isOwed) Green400 else Negative
-                val label = if (isOwed)
-                    "${balance.otherUserName} owes you"
-                else
-                    "You owe ${balance.otherUserName}"
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSettleUser(balance.otherUserId) }
-                        .padding(vertical = 10.dp),
-                ) {
-                    FsAvatar(
-                        name = balance.otherUserName,
-                        userId = balance.otherUserId,
-                        size = ComponentSize.avatarSm,
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.sm))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = label,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextPrimary,
-                        )
-                        Text(
-                            text = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
-                            fontSize = 12.sp,
-                            color = amountColor,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-            }
-        }
     }
 }
 
@@ -768,8 +723,9 @@ private fun BalanceCard(
 
 @Composable
 private fun ActionPillsRow(
-    onSettleUp: () -> Unit,
-    modifier: Modifier = Modifier,
+    onSettleUp          : () -> Unit,
+    onNavigateToBalances: () -> Unit = {},
+    modifier            : Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
@@ -794,14 +750,30 @@ private fun ActionPillsRow(
             )
         }
 
+        // Balances — navigates to full member balance breakdown
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .clip(RoundedCornerShape(Radius.full))
+                .background(Surface2)
+                .clickable { onNavigateToBalances() }
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        ) {
+            Text(
+                text = "Balances",
+                fontSize = 12.sp,
+                color = TextSecondary,
+            )
+        }
+
         // Info pills — placeholder for now
-        listOf("Balances", "Charts", "Totals").forEach { label ->
+        listOf("Charts", "Totals").forEach { label ->
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .clip(RoundedCornerShape(Radius.full))
                     .background(Surface2)
-                    .clickable { /* TODO Day 17 — Analytics */ }
+                    .clickable { /* TODO */ }
                     .padding(horizontal = Spacing.md, vertical = Spacing.sm),
             ) {
                 Text(

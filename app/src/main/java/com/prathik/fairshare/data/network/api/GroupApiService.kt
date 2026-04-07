@@ -67,6 +67,9 @@ interface GroupApiService {
     @GET("api/groups/{groupId}/balances")
     suspend fun getGroupBalances(@Path("groupId") groupId: String): ApiResponse<List<BalanceResponse>>
 
+    @GET("api/groups/{groupId}/balances/all")
+    suspend fun getAllGroupBalances(@Path("groupId") groupId: String): ApiResponse<List<BalanceResponse>>
+
     @GET("api/groups/{groupId}/export")
     suspend fun exportGroupCsv(@Path("groupId") groupId: String): ResponseBody
 

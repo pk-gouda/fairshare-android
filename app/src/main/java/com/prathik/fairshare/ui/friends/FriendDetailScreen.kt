@@ -89,13 +89,14 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendDetailScreen(
-    onBack                : () -> Unit,
-    onNavigateToSettings  : () -> Unit,
-    onNavigateToExpense   : (String) -> Unit,
-    onNavigateToAddExpense : () -> Unit,
-    onNavigateToSettle    : (String) -> Unit,
-    onNavigateToSearch    : () -> Unit,
-    viewModel             : FriendDetailViewModel = hiltViewModel(),
+    onBack                 : () -> Unit,
+    onNavigateToSettings   : () -> Unit,
+    onNavigateToExpense    : (String) -> Unit,
+    onNavigateToAddExpense  : () -> Unit,
+    onNavigateToSettle     : (String) -> Unit,
+    onNavigateToSearch     : () -> Unit,
+    onNavigateToSettlement : (String) -> Unit = {},
+    viewModel              : FriendDetailViewModel = hiltViewModel(),
 ) {
     val isLoading     by viewModel.isLoading.collectAsState()
     val friend        by viewModel.friend.collectAsState()
@@ -278,6 +279,7 @@ fun FriendDetailScreen(
                                                 is FriendTimelineItem.SettlementItem ->
                                                     FriendSettlementRow(
                                                         settlement = item.settlement,
+                                                        onClick    = { onNavigateToSettlement(item.settlement.id) },
                                                         onDelete   = { viewModel.deleteSettlement(item.settlement.id) },
                                                     )
                                             }
@@ -393,7 +395,7 @@ sealed class FriendTimelineItem(val sortDate: String) {
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FriendSettlementRow(settlement: Settlement, onDelete: () -> Unit) {
+private fun FriendSettlementRow(settlement: Settlement, onClick: () -> Unit, onDelete: () -> Unit) {
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -426,7 +428,7 @@ private fun FriendSettlementRow(settlement: Settlement, onDelete: () -> Unit) {
         modifier          = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick     = {},
+                onClick     = onClick,
                 onLongClick = { showDeleteDialog = true },
             )
             .padding(horizontal = Spacing.lg, vertical = 11.dp),
