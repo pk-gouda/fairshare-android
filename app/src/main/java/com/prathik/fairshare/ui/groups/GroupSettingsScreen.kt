@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.GroupType
 import com.prathik.fairshare.ui.components.FsAvatar
@@ -94,19 +95,24 @@ fun GroupSettingsScreen(
     onGroupDeleted      : () -> Unit,
     viewModel           : GroupSettingsViewModel = hiltViewModel(),
 ) {
-    val group           by viewModel.group.collectAsState()
-    val members         by viewModel.members.collectAsState()
-    val isLoading       by viewModel.isLoading.collectAsState()
-    val actionState     by viewModel.actionState.collectAsState()
-    val simplifyDebts   by viewModel.simplifyDebts.collectAsState()
+    val group             by viewModel.group.collectAsState()
+    val members           by viewModel.members.collectAsState()
+    val isLoading         by viewModel.isLoading.collectAsState()
+    val actionState       by viewModel.actionState.collectAsState()
+    val simplifyDebts     by viewModel.simplifyDebts.collectAsState()
     val muteNotifications by viewModel.muteNotifications.collectAsState()
+    val friends           by viewModel.friends.collectAsState()
+    val claimState        by viewModel.claimState.collectAsState()
 
-    val snackbarHost    = remember { SnackbarHostState() }
-    val clipboard       = LocalClipboardManager.current
+    val snackbarHost  = remember { SnackbarHostState() }
+    val clipboard     = LocalClipboardManager.current
 
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showRemoveDialog by remember { mutableStateOf<GroupMember?>(null) }
-    var showNameDialog   by remember { mutableStateOf(false) }
+    var showDeleteDialog  by remember { mutableStateOf(false) }
+    var showRemoveDialog  by remember { mutableStateOf<GroupMember?>(null) }
+    var showNameDialog    by remember { mutableStateOf(false) }
+    var showLeaveDialog   by remember { mutableStateOf(false) }
+    var showArchiveDialog by remember { mutableStateOf(false) }
+    var showAssignSheet   by remember { mutableStateOf<GroupMember?>(null) }
 
     // Auto-refresh when screen resumes (e.g. returning from AddMember)
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -128,6 +134,15 @@ fun GroupSettingsScreen(
                 viewModel.resetActionState()
             }
             is GroupSettingsActionState.GroupDeleted -> onGroupDeleted()
+            else -> Unit
+        }
+    }
+
+    // Handle claim states
+    LaunchedEffect(claimState) {
+        when (val s = claimState) {
+            is ClaimActionState.Success -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
+            is ClaimActionState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
             else -> Unit
         }
     }
@@ -287,13 +302,17 @@ fun GroupSettingsScreen(
             SectionLabel("MEMBERS")
             SettingsCard {
                 members.forEachIndexed { index, member ->
-                    val isMe = member.userId == viewModel.currentUserId
-                    val isLast = index == members.lastIndex
+                    val isMe          = member.userId == viewModel.currentUserId
+                    val isLast        = index == members.lastIndex
+                    val isPlaceholder = member.email.startsWith("placeholder+") &&
+                            (member.email.contains("@fairshare.import") ||
+                                    member.email.contains("@fairshare.local"))
                     MemberRow(
-                        member  = member,
-                        isMe    = isMe,
+                        member    = member,
+                        isMe      = isMe,
                         isCreator = group?.createdById == member.userId,
-                        onRemove = if (!isMe) { { showRemoveDialog = member } } else null,
+                        onAssign  = if (isPlaceholder && !isMe) { { showAssignSheet = member } } else null,
+                        onRemove  = if (!isPlaceholder && !isMe) { { showRemoveDialog = member } } else null,
                     )
                     if (!isLast) HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                 }
@@ -413,12 +432,12 @@ fun GroupSettingsScreen(
             // ── Danger zone ───────────────────────────────────────────────────
             SectionLabel("DANGER ZONE")
             SettingsCard {
-                NavRow(label = "Archive group", onClick = { /* TODO */ })
+                NavRow(label = "Archive group", onClick = { showArchiveDialog = true })
                 HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                 NavRow(
                     label     = "Leave group",
                     textColor = Negative,
-                    onClick   = { /* TODO: backend endpoint needed */ },
+                    onClick   = { showLeaveDialog = true },
                 )
                 HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                 NavRow(
@@ -442,6 +461,137 @@ fun GroupSettingsScreen(
             )
 
             Spacer(modifier = Modifier.height(Spacing.xxxl))
+        }
+    }
+
+    // ── Leave group dialog ────────────────────────────────────────────────────
+    if (showLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            containerColor   = Surface2,
+            title = { Text("Leave group?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                Text(
+                    "You will be removed from this group. You must settle all balances before leaving.",
+                    color = TextSecondary, fontSize = 14.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showLeaveDialog = false; viewModel.leaveGroup() }) {
+                    Text("Leave", color = Negative, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveDialog = false }) { Text("Cancel", color = TextSecondary) }
+            },
+        )
+    }
+
+    // ── Archive group dialog ──────────────────────────────────────────────────
+    if (showArchiveDialog) {
+        AlertDialog(
+            onDismissRequest = { showArchiveDialog = false },
+            containerColor   = Surface2,
+            title = { Text("Archive group?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                Text(
+                    "The group will be hidden from your active groups list. Expenses and balances are preserved.",
+                    color = TextSecondary, fontSize = 14.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showArchiveDialog = false; viewModel.archiveGroup() }) {
+                    Text("Archive", color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showArchiveDialog = false }) { Text("Cancel", color = TextSecondary) }
+            },
+        )
+    }
+
+    // ── Assign / Claim sheet for PLACEHOLDER members ──────────────────────────
+    showAssignSheet?.let { member ->
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { showAssignSheet = null },
+            containerColor   = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text       = "Who is ${member.fullName}?",
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                Text(
+                    text     = "Link this placeholder to a real FairShare account.",
+                    fontSize = 13.sp,
+                    color    = TextSecondary,
+                    modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
+                )
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+
+                // "That's me"
+                Row(
+                    modifier          = Modifier
+                        .fillMaxWidth()
+                        .clickable { showAssignSheet = null; viewModel.claimMember(member.userId) }
+                        .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .size(ComponentSize.avatarMd)
+                            .clip(CircleShape)
+                            .background(Green400.copy(alpha = 0.15f)),
+                    ) { Text("👤", fontSize = 18.sp) }
+                    Spacer(modifier = Modifier.width(Spacing.md))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("That's me", fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium, color = Green400)
+                        Text("Claim this as your identity", fontSize = 12.sp, color = TextTertiary)
+                    }
+                }
+                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+
+                // Friends list
+                if (friends.isNotEmpty()) {
+                    Text("Or assign to a friend:",
+                        fontSize = 12.sp, color = TextTertiary,
+                        modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg,
+                            top = Spacing.md, bottom = Spacing.sm))
+                    friends.forEach { friend ->
+                        Row(
+                            modifier          = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showAssignSheet = null
+                                    viewModel.assignMember(member.userId, friend.id)
+                                }
+                                .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            FsAvatar(name = friend.fullName, userId = friend.id,
+                                size = ComponentSize.avatarMd)
+                            Spacer(modifier = Modifier.width(Spacing.md))
+                            Text(friend.fullName, fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium, color = TextPrimary,
+                                modifier = Modifier.weight(1f))
+                        }
+                        HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                    }
+                }
+
+                // Skip
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showAssignSheet = null }
+                        .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                ) { Text("Skip for now", fontSize = 14.sp, color = TextTertiary) }
+            }
         }
     }
 }
@@ -478,6 +628,7 @@ private fun MemberRow(
     member   : GroupMember,
     isMe     : Boolean,
     isCreator: Boolean,
+    onAssign : (() -> Unit)?,
     onRemove : (() -> Unit)?,
 ) {
     Row(
@@ -528,6 +679,18 @@ private fun MemberRow(
                     .padding(horizontal = 8.dp, vertical = 2.dp),
             ) {
                 Text(text = "admin", fontSize = 10.sp, color = TextSecondary)
+            }
+        } else if (onAssign != null) {
+            // PLACEHOLDER — show link icon
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Green400.copy(alpha = 0.12f))
+                    .clickable { onAssign() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = "🔗", fontSize = 14.sp)
             }
         } else if (onRemove != null) {
             Box(

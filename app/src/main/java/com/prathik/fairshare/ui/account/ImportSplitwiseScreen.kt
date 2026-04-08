@@ -1,0 +1,725 @@
+package com.prathik.fairshare.ui.account
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.prathik.fairshare.domain.model.Friend
+import com.prathik.fairshare.domain.model.GroupMember
+import com.prathik.fairshare.ui.components.FsAvatar
+import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsPrimaryButton
+import com.prathik.fairshare.ui.components.FsSecondaryButton
+import com.prathik.fairshare.ui.components.FsTextField
+import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.theme.ComponentSize
+import com.prathik.fairshare.ui.theme.Green400
+import com.prathik.fairshare.ui.theme.Negative
+import com.prathik.fairshare.ui.theme.Radius
+import com.prathik.fairshare.ui.theme.Spacing
+import com.prathik.fairshare.ui.theme.Surface0
+import com.prathik.fairshare.ui.theme.Surface2
+import com.prathik.fairshare.ui.theme.Surface3
+import com.prathik.fairshare.ui.theme.Surface4
+import com.prathik.fairshare.ui.theme.TextPrimary
+import com.prathik.fairshare.ui.theme.TextSecondary
+import com.prathik.fairshare.ui.theme.TextTertiary
+import androidx.compose.material3.Icon
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ImportSplitwiseScreen(
+    onBack          : () -> Unit,
+    onGroupImported : (groupId: String) -> Unit,
+    viewModel       : ImportSplitwiseViewModel = hiltViewModel(),
+) {
+    val context         = LocalContext.current
+    val uiState         by viewModel.uiState.collectAsState()
+    val friends         by viewModel.friends.collectAsState()
+    val claimState      by viewModel.claimState.collectAsState()
+    val snackbarHost    = remember { SnackbarHostState() }
+
+    // Import type selection
+    var importType          by remember { mutableStateOf<ImportType?>(null) }
+    var groupName           by remember { mutableStateOf("") }
+    var showGroupNameDialog by remember { mutableStateOf(false) }
+    var showWhoAreYouDialog by remember { mutableStateOf(false) }
+    var pendingCsv          by remember { mutableStateOf<String?>(null) }
+    val csvMemberNames      by viewModel.csvMemberNames.collectAsState()
+
+    // Assign sheet
+    var showAssignSheet by remember { mutableStateOf(false) }
+    var selectedMember  by remember { mutableStateOf<GroupMember?>(null) }
+
+    // File pickers — read CSV immediately while URI permission is still valid
+    val groupFilePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val csv = try {
+                context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()?.replace("\r\n", "\n")?.replace("\r", "\n")
+            } catch (e: Exception) { null }
+            if (csv != null) {
+                pendingCsv = csv
+                viewModel.parseCsvNames(csv)
+                showGroupNameDialog = true
+            } else {
+                viewModel.setError("Could not read CSV file. Try a different file manager app.")
+            }
+        }
+    }
+    val friendFilePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val csv = try {
+                context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()?.replace("\r\n", "\n")?.replace("\r", "\n")
+            } catch (e: Exception) { null }
+            if (csv != null) viewModel.importFriend(csv)
+            else viewModel.setError("Could not read CSV file. Try a different file manager app.")
+        }
+    }
+
+    LaunchedEffect(claimState) {
+        when (val s = claimState) {
+            is ClaimState.Done  -> { snackbarHost.showSnackbar("Member linked ✓"); viewModel.resetClaimState() }
+            is ClaimState.Error -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
+            else -> Unit
+        }
+    }
+
+    // Group name dialog
+    if (showGroupNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showGroupNameDialog = false },
+            title   = { Text("Name your group") },
+            text    = {
+                FsTextField(
+                    value         = groupName,
+                    onValueChange = { groupName = it },
+                    label         = "Group name (e.g. Hawaii Trip)",
+                    modifier      = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (groupName.isNotBlank()) {
+                        showGroupNameDialog = false
+                        showWhoAreYouDialog = true
+                    }
+                }) { Text("Next →", color = Green400) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGroupNameDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // ── "Which one is you?" sheet — shown after group name is entered ──────────
+    if (showWhoAreYouDialog) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showWhoAreYouDialog = false
+                // User skipped — import without importer mapping (old behaviour)
+                pendingCsv?.let { viewModel.importGroup(it, groupName, null) }
+                viewModel.clearCsvNames()
+            },
+            sheetState     = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = com.prathik.fairshare.ui.theme.Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text       = "Which one is you?",
+                    fontSize   = 18.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color      = com.prathik.fairshare.ui.theme.TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                // Show the logged-in account name so user knows what to look for
+                val myName = viewModel.currentUserFullName
+                if (myName.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.sm)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(com.prathik.fairshare.ui.theme.Radius.lg))
+                            .background(Green400.copy(alpha = 0.08f))
+                            .padding(Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("👤 ", fontSize = 14.sp)
+                        Text(
+                            text = "You are signed in as ",
+                            fontSize = 13.sp,
+                            color = com.prathik.fairshare.ui.theme.TextSecondary,
+                        )
+                        Text(
+                            text = myName,
+                            fontSize = 13.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                            color = Green400,
+                        )
+                    }
+                }
+                Text(
+                    text     = "Your Splitwise name may be different. Tap whichever CSV name is you.",
+                    fontSize = 13.sp,
+                    color    = com.prathik.fairshare.ui.theme.TextSecondary,
+                    modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
+                )
+                androidx.compose.material3.HorizontalDivider(
+                    color = com.prathik.fairshare.ui.theme.Surface4, thickness = 0.5.dp)
+
+                csvMemberNames.forEach { name ->
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showWhoAreYouDialog = false
+                                viewModel.clearCsvNames()
+                                pendingCsv?.let { viewModel.importGroup(it, groupName, name) }
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(ComponentSize.avatarMd)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(com.prathik.fairshare.ui.theme.Surface4),
+                        ) {
+                            Text(
+                                name.firstOrNull()?.uppercase() ?: "?",
+                                fontSize = 16.sp,
+                                color    = com.prathik.fairshare.ui.theme.TextPrimary,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(name, fontSize = 15.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                            color = com.prathik.fairshare.ui.theme.TextPrimary,
+                            modifier = Modifier.weight(1f))
+                        Text("→", fontSize = 18.sp,
+                            color = com.prathik.fairshare.ui.theme.TextTertiary)
+                    }
+                    androidx.compose.material3.HorizontalDivider(
+                        color = com.prathik.fairshare.ui.theme.Surface3, thickness = 0.5.dp)
+                }
+
+                // None of these is me
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showWhoAreYouDialog = false
+                            viewModel.clearCsvNames()
+                            pendingCsv?.let { viewModel.importGroup(it, groupName, null) }
+                        }
+                        .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                ) {
+                    Text("None of these is me — skip",
+                        fontSize = 14.sp,
+                        color = com.prathik.fairshare.ui.theme.TextTertiary)
+                }
+            }
+        }
+    }
+
+    // Assign sheet
+    if (showAssignSheet && selectedMember != null) {
+        val member = selectedMember!!
+        val groupId = (uiState as? ImportUiState.GroupSuccess)?.groupId
+        ModalBottomSheet(
+            onDismissRequest = { showAssignSheet = false },
+            sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor   = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text       = "Who is ${member.fullName}?",
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                Text(
+                    text     = "Link this Splitwise member to a friend in FairShare",
+                    fontSize = 13.sp,
+                    color    = TextSecondary,
+                    modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
+                )
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+
+                // "That's me" row
+                if (groupId != null) {
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showAssignSheet = false
+                                viewModel.claimIdentity(groupId, member.userId)
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(ComponentSize.avatarMd)
+                                .clip(CircleShape)
+                                .background(Green400.copy(alpha = 0.15f)),
+                        ) {
+                            Text("👤", fontSize = 18.sp)
+                        }
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("That's me", fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium, color = Green400)
+                            Text("Claim this as your identity", fontSize = 12.sp, color = TextTertiary)
+                        }
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                }
+
+                // Friends list
+                friends.forEach { friend ->
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showAssignSheet = false
+                                if (groupId != null) {
+                                    viewModel.assignPlaceholder(groupId, member.userId, friend.id)
+                                }
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FsAvatar(name = friend.fullName, userId = friend.id,
+                            size = ComponentSize.avatarMd)
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(friend.fullName, fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium, color = TextPrimary,
+                            modifier = Modifier.weight(1f))
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                }
+
+                // Skip
+                Row(
+                    modifier          = Modifier
+                        .fillMaxWidth()
+                        .clickable { showAssignSheet = false }
+                        .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                ) {
+                    Text("Skip for now", fontSize = 14.sp, color = TextTertiary)
+                }
+            }
+        }
+    }
+
+    Scaffold(
+        containerColor = Surface0,
+        topBar         = { FsTopBar(title = "Import from Splitwise", onBack = onBack) },
+        snackbarHost   = { SnackbarHost(snackbarHost) },
+    ) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            when (val state = uiState) {
+
+                // ── Idle: pick import type ────────────────────────────────────
+                is ImportUiState.Idle -> {
+                    Column(
+                        modifier            = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(Spacing.lg),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Spacer(modifier = Modifier.height(Spacing.xl))
+
+                        Text("📥", fontSize = 48.sp)
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        Text(
+                            text       = "Import your Splitwise history",
+                            fontSize   = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = TextPrimary,
+                            textAlign  = TextAlign.Center,
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.sm))
+                        Text(
+                            text      = "Export a CSV from Splitwise, then choose what to import.",
+                            fontSize  = 14.sp,
+                            color     = TextSecondary,
+                            textAlign = TextAlign.Center,
+                        )
+
+                        Spacer(modifier = Modifier.height(Spacing.xxxl))
+
+                        // Group import card
+                        ImportOptionCard(
+                            emoji    = "👥",
+                            title    = "Import a group",
+                            subtitle = "Creates a new group with all expenses and members from your Splitwise export.",
+                            onClick  = { groupFilePicker.launch(arrayOf("text/*", "text/csv", "*/*")) },
+                        )
+
+                        Spacer(modifier = Modifier.height(Spacing.md))
+
+                        // Friend import card
+                        ImportOptionCard(
+                            emoji    = "👤",
+                            title    = "Import friend expenses",
+                            subtitle = "Imports direct (non-group) expenses with a friend from Splitwise.",
+                            onClick  = { friendFilePicker.launch(arrayOf("text/*", "text/csv", "*/*")) },
+                        )
+
+                        Spacer(modifier = Modifier.height(Spacing.xxxl))
+
+                        // How to export instructions
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.xl))
+                                .background(Surface2)
+                                .padding(Spacing.md),
+                        ) {
+                            Text("How to export from Splitwise",
+                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            Spacer(modifier = Modifier.height(Spacing.sm))
+                            listOf(
+                                "Open Splitwise on web or mobile",
+                                "Go to the group or friend you want to export",
+                                "Tap ⚙️ Settings → Export to CSV",
+                                "Save the file and import it here",
+                            ).forEachIndexed { i, step ->
+                                Row(modifier = Modifier.padding(vertical = 3.dp)) {
+                                    Text("${i + 1}.", fontSize = 13.sp, color = Green400,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.width(20.dp))
+                                    Text(step, fontSize = 13.sp, color = TextSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Loading ───────────────────────────────────────────────────
+                is ImportUiState.Loading -> {
+                    Column(
+                        modifier            = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        FsLoadingScreen()
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        Text(state.message, fontSize = 14.sp, color = TextSecondary)
+                    }
+                }
+
+                // ── Group success ─────────────────────────────────────────────
+                is ImportUiState.GroupSuccess -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(Spacing.lg),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Spacer(modifier = Modifier.height(Spacing.xl))
+
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(Green400.copy(alpha = 0.12f)),
+                        ) {
+                            Icon(Icons.Outlined.Check, contentDescription = null,
+                                tint = Green400, modifier = Modifier.size(36.dp))
+                        }
+
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        Text("Import complete!", fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(state.groupName, fontSize = 15.sp, color = TextSecondary)
+
+                        Spacer(modifier = Modifier.height(Spacing.xl))
+
+                        // Stats
+                        Row(
+                            modifier              = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        ) {
+                            StatCard("Expenses", state.expensesCreated.toString(),
+                                Modifier.weight(1f))
+                            StatCard("Payments", state.settlementsCreated.toString(),
+                                Modifier.weight(1f))
+                        }
+
+                        // Warnings
+                        if (state.warnings.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(Spacing.md))
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(Radius.xl))
+                                    .background(Surface2)
+                                    .padding(Spacing.md),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.Warning, contentDescription = null,
+                                        tint = Negative, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(Spacing.sm))
+                                    Text("${state.warnings.size} rows skipped",
+                                        fontSize = 13.sp, color = Negative,
+                                        fontWeight = FontWeight.Medium)
+                                }
+                                state.warnings.take(3).forEach { w ->
+                                    Text("• $w", fontSize = 12.sp, color = TextTertiary,
+                                        modifier = Modifier.padding(top = 4.dp))
+                                }
+                            }
+                        }
+
+                        // Unclaimed members section
+                        if (state.unclaimedMembers.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(Spacing.xl))
+                            Text(
+                                text       = "Link members to FairShare friends",
+                                fontSize   = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color      = TextPrimary,
+                                modifier   = Modifier.fillMaxWidth(),
+                            )
+                            Text(
+                                text     = "These people were in your Splitwise group. Tap to link them to existing FairShare users.",
+                                fontSize = 13.sp,
+                                color    = TextSecondary,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp, bottom = Spacing.md),
+                            )
+
+                            val currentUnclaimed by viewModel.unclaimedMembers.collectAsState()
+                            currentUnclaimed.forEach { member ->
+                                Row(
+                                    modifier          = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(Radius.xl))
+                                        .background(Surface2)
+                                        .clickable {
+                                            selectedMember = member
+                                            showAssignSheet = true
+                                        }
+                                        .padding(horizontal = Spacing.md, vertical = Spacing.md),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    FsAvatar(name = member.fullName, userId = member.userId,
+                                        size = ComponentSize.avatarMd)
+                                    Spacer(modifier = Modifier.width(Spacing.md))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(member.fullName, fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium, color = TextPrimary)
+                                        Text("Tap to link", fontSize = 12.sp, color = TextTertiary)
+                                    }
+                                    Text("→", fontSize = 18.sp, color = TextTertiary)
+                                }
+                                Spacer(modifier = Modifier.height(Spacing.sm))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(Spacing.xl))
+
+                        if (state.groupId != null) {
+                            FsPrimaryButton(
+                                text     = "Go to ${state.groupName}",
+                                onClick  = { onGroupImported(state.groupId) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(modifier = Modifier.height(Spacing.md))
+                        }
+                        FsSecondaryButton(
+                            text     = "Import another",
+                            onClick  = { viewModel.reset() },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                // ── Friend success ────────────────────────────────────────────
+                is ImportUiState.FriendSuccess -> {
+                    Column(
+                        modifier            = Modifier
+                            .fillMaxSize()
+                            .padding(Spacing.lg),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(Green400.copy(alpha = 0.12f)),
+                        ) {
+                            Icon(Icons.Outlined.Check, contentDescription = null,
+                                tint = Green400, modifier = Modifier.size(36.dp))
+                        }
+
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        Text("Import complete!", fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(Spacing.xl))
+
+                        Row(
+                            modifier              = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        ) {
+                            StatCard("Expenses", state.expensesCreated.toString(),
+                                Modifier.weight(1f))
+                            StatCard("Payments", state.settlementsCreated.toString(),
+                                Modifier.weight(1f))
+                        }
+
+                        Spacer(modifier = Modifier.height(Spacing.xxxl))
+                        FsPrimaryButton(
+                            text     = "Done",
+                            onClick  = onBack,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        FsSecondaryButton(
+                            text     = "Import another",
+                            onClick  = { viewModel.reset() },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                // ── Error ─────────────────────────────────────────────────────
+                is ImportUiState.Error -> {
+                    Column(
+                        modifier            = Modifier
+                            .fillMaxSize()
+                            .padding(Spacing.lg),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text("❌", fontSize = 48.sp)
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        Text("Import failed", fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(Spacing.sm))
+                        Text(state.message, fontSize = 14.sp,
+                            color = TextSecondary, textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(Spacing.xl))
+                        FsPrimaryButton(
+                            text     = "Try again",
+                            onClick  = { viewModel.reset() },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImportOptionCard(
+    emoji   : String,
+    title   : String,
+    subtitle: String,
+    onClick : () -> Unit,
+) {
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.xl))
+            .background(Surface2)
+            .clickable(onClick = onClick)
+            .padding(Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Surface4),
+        ) { Text(emoji, fontSize = 22.sp) }
+
+        Spacer(modifier = Modifier.width(Spacing.md))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Text(subtitle, fontSize = 13.sp, color = TextSecondary)
+        }
+
+        Text("→", fontSize = 18.sp, color = TextTertiary)
+    }
+}
+
+@Composable
+private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier            = modifier
+            .clip(RoundedCornerShape(Radius.xl))
+            .background(Surface2)
+            .padding(Spacing.md),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(value, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Green400)
+        Text(label, fontSize = 13.sp, color = TextSecondary)
+    }
+}
+
+private enum class ImportType { GROUP, FRIEND }

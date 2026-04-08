@@ -731,7 +731,10 @@ fun MainShell(
             ) { PlaceholderScreen("Friend Analytics") }
 
             composable(Screen.AddFriend.route) {
-                PlaceholderScreen("Add Friend")
+                AddFriendScreen(
+                    onBack = { shellNavController.popBackStack() },
+                    onDone = { shellNavController.popBackStack(Screen.Friends.route, false) },
+                )
             }
 
             composable(Screen.AddFriendByEmail.route) {
@@ -751,8 +754,8 @@ fun MainShell(
                 ScanQrCodeScreen(
                     onBack = { shellNavController.popBackStack() },
                     onCodeScanned = { code ->
-                        // TODO: send friend request by code
                         shellNavController.popBackStack()
+                        shellNavController.navigate(Screen.AddFriendByEmail.route + "?code=$code")
                     },
                 )
             }
@@ -774,7 +777,14 @@ fun MainShell(
                 PlaceholderScreen("My Analytics")
             }
             composable(Screen.ImportSplitwise.route) {
-                PlaceholderScreen("Import from Splitwise")
+                com.prathik.fairshare.ui.account.ImportSplitwiseScreen(
+                    onBack          = { shellNavController.popBackStack() },
+                    onGroupImported = { groupId ->
+                        shellNavController.navigate(Screen.GroupDetail.route(groupId)) {
+                            popUpTo(Screen.ImportSplitwise.route) { inclusive = true }
+                        }
+                    },
+                )
             }
 
             // ── Search ────────────────────────────────────────────────────────

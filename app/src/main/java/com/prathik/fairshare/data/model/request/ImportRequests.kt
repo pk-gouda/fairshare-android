@@ -5,9 +5,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ImportRequest(
-    @SerialName("type")       val type: String,
-    @SerialName("groupName")  val groupName: String? = null,
-    @SerialName("csvContent") val csvContent: String,
+    @SerialName("type")            val type: String,
+    @SerialName("groupName")       val groupName: String? = null,
+    @SerialName("csvContent")      val csvContent: String,
+    @SerialName("importerCsvName") val importerCsvName: String? = null,
 )
 
 @Serializable

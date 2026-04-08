@@ -5,6 +5,7 @@ import com.prathik.fairshare.data.model.request.AssignPlaceholderRequest
 import com.prathik.fairshare.data.model.request.ClaimIdentityRequest
 import com.prathik.fairshare.data.model.request.ImportRequest
 import com.prathik.fairshare.data.model.request.UnclaimIdentityRequest
+import com.prathik.fairshare.data.model.response.ImportResponse
 import com.prathik.fairshare.data.network.api.ImportApiService
 import com.prathik.fairshare.data.network.mapSuccess
 import com.prathik.fairshare.data.network.safeApiCall
@@ -22,19 +23,25 @@ class ImportRepositoryImpl @Inject constructor(
     override suspend fun importGroup(
         csvContent: String,
         groupName: String,
+        importerCsvName: String?,
     ): ApiResult<Map<String, Any>> =
         safeApiCall {
             importService.importGroup(
-                ImportRequest(type = "GROUP", groupName = groupName, csvContent = csvContent)
+                ImportRequest(
+                    type            = "GROUP",
+                    groupName       = groupName,
+                    csvContent      = csvContent,
+                    importerCsvName = importerCsvName,
+                )
             )
-        }.mapSuccess { it ?: emptyMap() }
+        }.mapSuccess { it?.toMap() ?: emptyMap() }
 
     override suspend fun importFriend(csvContent: String): ApiResult<Map<String, Any>> =
         safeApiCall {
             importService.importFriend(
                 ImportRequest(type = "FRIEND", csvContent = csvContent)
             )
-        }.mapSuccess { it ?: emptyMap() }
+        }.mapSuccess { it?.toMap() ?: emptyMap() }
 
     override suspend fun getUnclaimedMembers(groupId: String): ApiResult<List<GroupMember>> =
         safeApiCall { importService.getUnclaimedMembers(groupId) }
@@ -53,7 +60,7 @@ class ImportRepositoryImpl @Inject constructor(
                     friendUserId      = friendUserId,
                 )
             )
-        }.mapSuccess { it ?: emptyMap() }
+        }.mapSuccess { emptyMap() }
 
     override suspend fun claimIdentity(
         groupId: String,
@@ -64,7 +71,7 @@ class ImportRepositoryImpl @Inject constructor(
                 groupId,
                 ClaimIdentityRequest(placeholderUserId = placeholderUserId)
             )
-        }.mapSuccess { it ?: emptyMap() }
+        }.mapSuccess { emptyMap() }
 
     override suspend fun unclaimIdentity(
         groupId: String,
@@ -78,5 +85,20 @@ class ImportRepositoryImpl @Inject constructor(
                     originalCsvName   = "",
                 )
             )
-        }.mapSuccess { it ?: emptyMap() }
+        }.mapSuccess { emptyMap() }
+}
+
+// Extension to convert ImportResponse → Map<String, Any> (keeps domain layer unchanged)
+private fun ImportResponse.toMap(): Map<String, Any> = buildMap {
+    put("type",               type ?: "")
+    put("groupId",            groupId ?: "")
+    put("groupName",          groupName ?: "")
+    put("inviteCode",         inviteCode ?: "")
+    put("expensesCreated",    expensesCreated)
+    put("settlementsCreated", settlementsCreated)
+    put("rowsSkipped",        rowsSkipped)
+    put("totalRows",          totalRows)
+    put("members",            members)
+    put("removedNames",       removedNames)
+    put("warnings",           warnings)
 }

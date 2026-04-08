@@ -67,24 +67,23 @@ class EncryptedTokenStore @Inject constructor(
         private const val KEY_ACCESS_TOKEN       = "access_token"
         private const val KEY_REFRESH_TOKEN      = "refresh_token"
         private const val KEY_USER_ID            = "user_id"
-        private const val KEY_PREFERRED_CURRENCY = "preferred_currency" // ← add
+        private const val KEY_PREFERRED_CURRENCY = "preferred_currency"
+        private const val KEY_FULL_NAME          = "full_name"
     }
 
-    /**
-     * Saves all three tokens atomically after successful login or register.
-     * Uses commit() for guaranteed disk persistence before returning.
-     */
     fun saveTokens(
         accessToken      : String,
         refreshToken     : String,
         userId           : String,
         preferredCurrency: String = "USD",
+        fullName         : String = "",
     ) {
         prefs.edit()
             .putString(KEY_ACCESS_TOKEN, accessToken)
             .putString(KEY_REFRESH_TOKEN, refreshToken)
             .putString(KEY_USER_ID, userId)
             .putString(KEY_PREFERRED_CURRENCY, preferredCurrency)
+            .putString(KEY_FULL_NAME, fullName)
             .commit()
     }
 
@@ -103,35 +102,18 @@ class EncryptedTokenStore @Inject constructor(
      * Returns the stored access token, or null if not logged in.
      */
     fun getAccessToken(): String? = prefs.getString(KEY_ACCESS_TOKEN, null)
-
-    /**
-     * Returns the stored refresh token, or null if not logged in.
-     */
     fun getRefreshToken(): String? = prefs.getString(KEY_REFRESH_TOKEN, null)
-
-    /**
-     * Returns the stored user ID, or null if not logged in.
-     */
-    fun getPreferredCurrency(): String =
-        prefs.getString(KEY_PREFERRED_CURRENCY, "USD") ?: "USD"
-
+    fun getPreferredCurrency(): String = prefs.getString(KEY_PREFERRED_CURRENCY, "USD") ?: "USD"
     fun getUserId(): String? = prefs.getString(KEY_USER_ID, null)
-
-    /**
-     * Returns true if an access token exists — used by IsLoggedInUseCase.
-     * Does not validate the token — that happens on the first API call.
-     */
+    fun getFullName(): String = prefs.getString(KEY_FULL_NAME, "") ?: ""
     fun isLoggedIn(): Boolean = getAccessToken() != null
 
-    /**
-     * Clears all stored tokens — called on logout.
-     * Uses commit() to guarantee tokens are wiped from disk before navigating to Login.
-     */
     fun clearTokens() {
         prefs.edit()
             .remove(KEY_ACCESS_TOKEN)
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_USER_ID)
+            .remove(KEY_FULL_NAME)
             .commit()
     }
 }

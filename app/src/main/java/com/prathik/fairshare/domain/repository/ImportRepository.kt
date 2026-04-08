@@ -30,6 +30,7 @@ interface ImportRepository {
     suspend fun importGroup(
         csvContent: String,
         groupName: String,
+        importerCsvName: String? = null,
     ): ApiResult<Map<String, Any>>
 
     /**

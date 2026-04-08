@@ -5,8 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
+import com.prathik.fairshare.domain.repository.FriendRepository
+import com.prathik.fairshare.domain.repository.GroupRepository
+import com.prathik.fairshare.domain.repository.ImportRepository
 import com.prathik.fairshare.domain.usecase.group.DeleteGroupUseCase
 import com.prathik.fairshare.domain.usecase.group.LeaveGroupUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
@@ -28,11 +32,14 @@ class GroupSettingsViewModel @Inject constructor(
     private val removeMemberUseCase: RemoveMemberUseCase,
     private val deleteGroupUseCase : DeleteGroupUseCase,
     private val leaveGroupUseCase  : LeaveGroupUseCase,
+    private val groupRepository    : GroupRepository,
+    private val importRepository   : ImportRepository,
+    private val friendRepository   : FriendRepository,
     private val tokenStore         : EncryptedTokenStore,
     savedStateHandle               : SavedStateHandle,
 ) : ViewModel() {
 
-    val groupId    : String = checkNotNull(savedStateHandle["groupId"])
+    val groupId      : String  = checkNotNull(savedStateHandle["groupId"])
     val currentUserId: String? = tokenStore.getUserId()
 
     // ── UI state ──────────────────────────────────────────────────────────────
@@ -48,6 +55,12 @@ class GroupSettingsViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<GroupSettingsActionState>(GroupSettingsActionState.Idle)
     val actionState: StateFlow<GroupSettingsActionState> = _actionState.asStateFlow()
 
+    private val _friends = MutableStateFlow<List<Friend>>(emptyList())
+    val friends: StateFlow<List<Friend>> = _friends.asStateFlow()
+
+    private val _claimState = MutableStateFlow<ClaimActionState>(ClaimActionState.Idle)
+    val claimState: StateFlow<ClaimActionState> = _claimState.asStateFlow()
+
     // Editable fields
     private val _editName = MutableStateFlow("")
     val editName: StateFlow<String> = _editName.asStateFlow()
@@ -58,7 +71,19 @@ class GroupSettingsViewModel @Inject constructor(
     private val _muteNotifications = MutableStateFlow(false)
     val muteNotifications: StateFlow<Boolean> = _muteNotifications.asStateFlow()
 
-    init { loadData() }
+    init {
+        loadData()
+        loadFriends()
+    }
+
+    private fun loadFriends() {
+        viewModelScope.launch {
+            when (val r = friendRepository.getFriends()) {
+                is ApiResult.Success -> _friends.value = r.data
+                else -> Unit
+            }
+        }
+    }
 
     fun loadData() {
         viewModelScope.launch {
@@ -156,6 +181,45 @@ class GroupSettingsViewModel @Inject constructor(
         }
     }
 
+    fun archiveGroup() {
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (groupRepository.archiveGroup(groupId)) {
+                is ApiResult.Success -> _actionState.value =
+                    GroupSettingsActionState.Success("Group archived")
+                else -> _actionState.value =
+                    GroupSettingsActionState.Error("Failed to archive group")
+            }
+        }
+    }
+
+    fun claimMember(placeholderUserId: String) {
+        viewModelScope.launch {
+            _claimState.value = ClaimActionState.Loading
+            when (importRepository.claimIdentity(groupId, placeholderUserId)) {
+                is ApiResult.Success -> {
+                    loadData()
+                    _claimState.value = ClaimActionState.Success("You've claimed this identity. Balances updated.")
+                }
+                else -> _claimState.value = ClaimActionState.Error("Failed to claim identity.")
+            }
+        }
+    }
+
+    fun assignMember(placeholderUserId: String, friendUserId: String) {
+        viewModelScope.launch {
+            _claimState.value = ClaimActionState.Loading
+            when (importRepository.assignPlaceholder(groupId, placeholderUserId, friendUserId)) {
+                is ApiResult.Success -> {
+                    loadData()
+                    _claimState.value = ClaimActionState.Success("Member linked successfully.")
+                }
+                else -> _claimState.value = ClaimActionState.Error("Failed to assign member.")
+            }
+        }
+    }
+
+    fun resetClaimState() { _claimState.value = ClaimActionState.Idle }
     fun resetActionState() { _actionState.value = GroupSettingsActionState.Idle }
 }
 
@@ -165,4 +229,11 @@ sealed class GroupSettingsActionState {
     object GroupDeleted : GroupSettingsActionState()
     data class Success(val message: String) : GroupSettingsActionState()
     data class Error(val message: String)   : GroupSettingsActionState()
+}
+
+sealed class ClaimActionState {
+    object Idle    : ClaimActionState()
+    object Loading : ClaimActionState()
+    data class Success(val message: String) : ClaimActionState()
+    data class Error(val message: String)   : ClaimActionState()
 }
