@@ -91,10 +91,9 @@ sealed class Screen(val route: String) {
     }
 
     // ── Settlement ────────────────────────────────────────────────────────────
-    object SettleUp : Screen("settle/{otherUserId}?groupId={groupId}") {
-        fun route(otherUserId: String, groupId: String? = null) =
-            if (groupId != null) "settle/$otherUserId?groupId=$groupId"
-            else "settle/$otherUserId"
+    object SettleUp : Screen("settle/{otherUserId}?groupId={groupId}&payerId={payerId}") {
+        fun route(otherUserId: String, groupId: String? = null, payerId: String? = null) =
+            "settle/$otherUserId?groupId=${groupId ?: ""}&payerId=${payerId ?: ""}"
     }
 
     object PartialSettle : Screen("settle/{otherUserId}/partial?groupId={groupId}") {

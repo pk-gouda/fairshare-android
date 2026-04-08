@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -49,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -125,7 +127,7 @@ fun GroupDetailScreen(
     onNavigateToExpense: (String) -> Unit,
     onNavigateToAddExpense: (String) -> Unit,
     onNavigateToAddMember: (String) -> Unit,
-    onNavigateToSettle: (String) -> Unit,
+    onNavigateToSettle: (otherUserId: String, payerId: String?) -> Unit,
     onNavigateToSettlement: (String) -> Unit = {},
     onNavigateToBalances: () -> Unit = {},
     viewModel: GroupDetailViewModel = hiltViewModel(),
@@ -136,6 +138,7 @@ fun GroupDetailScreen(
     val balances by viewModel.balances.collectAsState()
     val yourBalance by viewModel.yourBalance.collectAsState()
     val settlementActionState by viewModel.settlementActionState.collectAsState()
+    val members by viewModel.members.collectAsState()
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -157,14 +160,19 @@ fun GroupDetailScreen(
     val groupName = (groupState as? GroupDetailUiState.Success)?.group?.name ?: "Group"
     val groupType = (groupState as? GroupDetailUiState.Success)?.group?.type ?: GroupType.OTHER
 
-    // Settle sheet — shown when there are multiple balances to choose from
-    var showSettleSheet by remember { mutableStateOf(false) }
+    // ── Settle up sheet state ─────────────────────────────────────────────────
+    // Step 1: always show person list (even 1 person) + "More options"
+    var showSettleSheet    by remember { mutableStateOf(false) }
+    // Step 2 (More options): select payer from all group members
+    var showPayerSheet     by remember { mutableStateOf(false) }
+    // Step 3: select recipient (payer faded), then navigate
+    var showRecipientSheet by remember { mutableStateOf(false) }
+    var selectedPayerId    by remember { mutableStateOf<String?>(null) }
+    var selectedPayerName  by remember { mutableStateOf("") }
+
     val handleSettleUp: () -> Unit = {
-        when {
-            balances.size == 1 -> onNavigateToSettle(balances.first().otherUserId)
-            balances.isNotEmpty() -> showSettleSheet = true
-            else -> { /* nothing to settle */ }
-        }
+        if (balances.isNotEmpty()) showSettleSheet = true
+        // if all settled up: nothing to do (button should be disabled/hidden upstream)
     }
 
     // Cover height in px — used to detect when cover scrolls away
@@ -249,7 +257,7 @@ fun GroupDetailScreen(
                                     yourBalance = yourBalance,
                                     balances = balances,
                                     currency = "USD",
-                                    onSettleUser = { otherUserId -> onNavigateToSettle(otherUserId) },
+                                    onSettleUser = { otherUserId -> onNavigateToSettle(otherUserId, null) },
                                     modifier = Modifier.padding(
                                         horizontal = Spacing.lg,
                                         vertical = Spacing.md,
@@ -290,7 +298,9 @@ fun GroupDetailScreen(
                                     // Build unified timeline regardless of expense count
                                     val timeline = buildList {
                                         expenses.expenses.forEach { add(TimelineItem.ExpenseItem(it)) }
-                                        settlements.forEach { add(TimelineItem.SettlementItem(it)) }
+                                        // Settlements intentionally excluded from group timeline.
+                                        // Friend-level payments that touch a group should not
+                                        // appear here — they are visible in the friend's timeline.
                                     }.sortedByDescending { it.date }
 
                                     if (timeline.isEmpty()) {
@@ -364,6 +374,7 @@ fun GroupDetailScreen(
                                                     )
                                                     is TimelineItem.SettlementItem -> SettlementRow(
                                                         settlement = item.settlement,
+                                                        onClick    = { onNavigateToSettlement(item.settlement.id) },
                                                         onDelete   = { viewModel.deleteSettlement(item.settlement.id) },
                                                     )
                                                 }
@@ -462,6 +473,7 @@ fun GroupDetailScreen(
     }
 
     // ── Settle Up — Balance Picker Sheet ──────────────────────────────────────
+    // ── Sheet 1: Who are you settling with? ──────────────────────────────────
     if (showSettleSheet) {
         ModalBottomSheet(
             onDismissRequest = { showSettleSheet = false },
@@ -469,13 +481,15 @@ fun GroupDetailScreen(
         ) {
             Column(modifier = Modifier.padding(bottom = 32.dp)) {
                 Text(
-                    text       = "Who are you settling with?",
+                    text       = "Settle up",
                     fontSize   = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color      = TextPrimary,
                     modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 )
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+
+                // One row per person you have a balance with
                 balances.filter { it.amount != 0.0 }.forEach { balance ->
                     val isOwed = balance.amount > 0
                     Row(
@@ -483,42 +497,146 @@ fun GroupDetailScreen(
                             .fillMaxWidth()
                             .clickable {
                                 showSettleSheet = false
-                                onNavigateToSettle(balance.otherUserId)
+                                onNavigateToSettle(balance.otherUserId, null)
                             }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(
-                            name   = balance.otherUserName,
-                            userId = balance.otherUserId,
-                            size   = ComponentSize.avatarMd,
-                        )
+                        FsAvatar(name = balance.otherUserName, userId = balance.otherUserId,
+                            size = ComponentSize.avatarMd)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Column(modifier = Modifier.weight(1f)) {
+                            Text(balance.otherUserName, fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium, color = TextPrimary)
                             Text(
-                                text       = balance.otherUserName,
-                                fontSize   = 15.sp,
-                                fontWeight = FontWeight.Medium,
-                                color      = TextPrimary,
-                            )
-                            Text(
-                                text     = if (isOwed) "owes you" else "you owe",
-                                fontSize = 12.sp,
-                                color    = TextSecondary,
+                                text     = if (isOwed) "owes you ${MoneyUtils.format(balance.amount, balance.currency)}"
+                                else "you owe ${MoneyUtils.format(-balance.amount, balance.currency)}",
+                                fontSize = 12.sp, color = TextSecondary,
                             )
                         }
-                        Text(
-                            text       = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
-                            fontSize   = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color      = if (isOwed) Green400 else Negative,
+                        Icon(
+                            imageVector        = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                            contentDescription = null,
+                            tint               = TextTertiary,
+                            modifier           = Modifier.size(14.dp),
                         )
                     }
-                    HorizontalDivider(
-                        color     = Surface3,
-                        thickness = 0.5.dp,
-                        modifier  = Modifier.padding(start = Spacing.lg + ComponentSize.avatarMd + Spacing.md),
-                    )
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                        modifier = Modifier.padding(start = Spacing.lg + ComponentSize.avatarMd + Spacing.md))
+                }
+
+                // More options — custom payer/recipient
+                Row(
+                    modifier          = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showSettleSheet = false
+                            showPayerSheet  = true
+                        }
+                        .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(ComponentSize.avatarMd)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(Surface3),
+                    ) {
+                        Text("⋯", fontSize = 18.sp, color = TextSecondary)
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.md))
+                    Text("More options", fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium, color = TextSecondary)
+                }
+            }
+        }
+    }
+
+    // ── Sheet 2: Select payer ─────────────────────────────────────────────────
+    if (showPayerSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showPayerSheet = false },
+            containerColor   = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text       = "Who paid?",
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                members.forEach { member ->
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedPayerId   = member.userId
+                                selectedPayerName = member.fullName
+                                showPayerSheet    = false
+                                showRecipientSheet = true
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FsAvatar(name = member.fullName, userId = member.userId,
+                            size = ComponentSize.avatarMd)
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(member.fullName, fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium, color = TextPrimary,
+                            modifier = Modifier.weight(1f))
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                        modifier = Modifier.padding(start = Spacing.lg + ComponentSize.avatarMd + Spacing.md))
+                }
+            }
+        }
+    }
+
+    // ── Sheet 3: Select recipient (payer faded) ───────────────────────────────
+    if (showRecipientSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showRecipientSheet = false },
+            containerColor   = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text       = "Who received?",
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                members.forEach { member ->
+                    val isPayer = member.userId == selectedPayerId
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (!isPayer) Modifier.clickable {
+                                    showRecipientSheet = false
+                                    onNavigateToSettle(member.userId, selectedPayerId)
+                                } else Modifier
+                            )
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FsAvatar(name = member.fullName, userId = member.userId,
+                            size = ComponentSize.avatarMd,
+                            modifier = Modifier.alpha(if (isPayer) 0.35f else 1f))
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(member.fullName, fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isPayer) TextTertiary else TextPrimary)
+                            if (isPayer) Text("paying", fontSize = 12.sp, color = TextTertiary)
+                        }
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                        modifier = Modifier.padding(start = Spacing.lg + ComponentSize.avatarMd + Spacing.md))
                 }
             }
         }
@@ -940,7 +1058,7 @@ private fun ExpenseRow(
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun SettlementRow(settlement: Settlement, onDelete: () -> Unit) {
+private fun SettlementRow(settlement: Settlement, onClick: () -> Unit, onDelete: () -> Unit) {
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -977,7 +1095,7 @@ private fun SettlementRow(settlement: Settlement, onDelete: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick     = {},
+                onClick     = onClick,
                 onLongClick = { showDeleteDialog = true },
             )
             .padding(horizontal = Spacing.lg, vertical = 11.dp),

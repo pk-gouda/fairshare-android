@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.SettleType
+import com.prathik.fairshare.domain.repository.BalanceRepository
+import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.settlement.SettleUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,13 +21,17 @@ import javax.inject.Inject
 class SettleUpViewModel @Inject constructor(
     private val settleUseCase       : SettleUseCase,
     private val getAllBalancesUseCase: GetAllBalancesUseCase,
+    private val balanceRepository   : BalanceRepository,
+    private val friendRepository    : FriendRepository,
     private val tokenStore          : EncryptedTokenStore,
     savedStateHandle                : SavedStateHandle,
 ) : ViewModel() {
 
-    val otherUserId: String  = savedStateHandle.get<String>("otherUserId") ?: ""
-    val groupId    : String? = savedStateHandle.get<String>("groupId")?.takeIf { it.isNotBlank() }
-    val currency   : String  = tokenStore.getPreferredCurrency()
+    val otherUserId   : String  = savedStateHandle.get<String>("otherUserId") ?: ""
+    val groupId       : String? = savedStateHandle.get<String>("groupId")?.takeIf { it.isNotBlank() }
+    val overridePayerId: String? = savedStateHandle.get<String>("payerId")?.takeIf { it.isNotBlank() }
+    val currency      : String  = tokenStore.getPreferredCurrency()
+    val currentUserId : String? = tokenStore.getUserId()
 
     private val _notes = MutableStateFlow("")
     val notes: StateFlow<String> = _notes.asStateFlow()
@@ -60,20 +66,42 @@ class SettleUpViewModel @Inject constructor(
      */
     private fun loadBalance() {
         viewModelScope.launch {
-            when (val result = getAllBalancesUseCase()) {
-                is ApiResult.Success -> {
-                    val relevant = if (groupId != null) {
-                        result.data.filter { it.otherUserId == otherUserId && it.groupId == groupId }
-                            .ifEmpty { result.data.filter { it.otherUserId == otherUserId } }
-                    } else {
-                        result.data.filter { it.otherUserId == otherUserId }
+            if (groupId != null) {
+                // Scoped settle: use breakdown to get the exact balance for this group
+                when (val result = balanceRepository.getBreakdownWithUser(otherUserId)) {
+                    is ApiResult.Success -> {
+                        val scoped = result.data.filter { it.groupId == groupId }
+                        _balanceAmount.value   = scoped.sumOf { it.amount }
+                        _balanceCurrency.value = scoped.firstOrNull()?.currency ?: currency
+                        val name = scoped.firstOrNull()?.otherUserName
+                        if (!name.isNullOrBlank()) _otherUserName.value = name
+                        else loadNameFromFriends()
                     }
-                    _otherUserName.value  = relevant.firstOrNull()?.otherUserName ?: ""
-                    _balanceAmount.value  = relevant.sumOf { it.amount }
-                    _balanceCurrency.value = relevant.firstOrNull()?.currency ?: currency
+                    else -> Unit
                 }
-                else -> Unit
+            } else {
+                // Full net settle: use UserBalance (net across all contexts)
+                when (val result = getAllBalancesUseCase()) {
+                    is ApiResult.Success -> {
+                        val relevant = result.data.filter { it.otherUserId == otherUserId }
+                        _balanceAmount.value   = relevant.sumOf { it.amount }
+                        _balanceCurrency.value = relevant.firstOrNull()?.currency ?: currency
+                        val name = relevant.firstOrNull()?.otherUserName
+                        if (!name.isNullOrBlank()) _otherUserName.value = name
+                        else loadNameFromFriends()
+                    }
+                    else -> Unit
+                }
             }
+        }
+    }
+
+    private suspend fun loadNameFromFriends() {
+        when (val friends = friendRepository.getFriends()) {
+            is ApiResult.Success -> {
+                _otherUserName.value = friends.data.find { it.id == otherUserId }?.fullName ?: ""
+            }
+            else -> Unit
         }
     }
 
@@ -99,9 +127,10 @@ class SettleUpViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = SettleUpUiState.Loading
 
-            // When balanceAmount > 0, the other user owes us — they are the payer.
-            // When balanceAmount <= 0, we owe them — we are the payer (payerId = null = default).
-            val payerId = if (_balanceAmount.value > 0) otherUserId else null
+            // Direction: use overridePayerId if set (from "More options" flow),
+            // otherwise derive from balance sign.
+            val payerId = overridePayerId
+                ?: if (_balanceAmount.value > 0) otherUserId else null
 
             when (val result = settleUseCase(
                 otherUserId   = otherUserId,

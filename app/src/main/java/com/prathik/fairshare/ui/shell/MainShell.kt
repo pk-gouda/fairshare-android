@@ -392,8 +392,8 @@ fun MainShell(
                     onNavigateToAddMember = { gId ->
                         shellNavController.navigate(Screen.AddMember.route(gId))
                     },
-                    onNavigateToSettle = { otherUserId ->
-                        shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId))
+                    onNavigateToSettle = { otherUserId, payerId ->
+                        shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId, payerId))
                     },
                     onNavigateToSettlement = { settlementId ->
                         shellNavController.navigate(Screen.SettlementDetail.route(settlementId))
@@ -624,7 +624,12 @@ fun MainShell(
                         type = NavType.StringType
                         nullable = true
                         defaultValue = null
-                    }
+                    },
+                    navArgument("payerId") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
                 )
             ) {
                 SettleUpScreen(
@@ -696,15 +701,14 @@ fun MainShell(
                         )
                     },
                     onNavigateToAddExpense = { shellNavController.navigate(Screen.AddExpense.route(friendId = friendId)) },
-                    onNavigateToSettle = {
-                        shellNavController.navigate(
-                            Screen.SettleUp.route(
-                                friendId
-                            )
-                        )
+                    onNavigateToSettle = { fId, gId, payerId ->
+                        shellNavController.navigate(Screen.SettleUp.route(fId, gId, payerId))
                     },
                     onNavigateToSearch = {
                         shellNavController.navigate(Screen.Search.route())
+                    },
+                    onNavigateToSettlement = { settlementId ->
+                        shellNavController.navigate(Screen.SettlementDetail.route(settlementId))
                     },
                 )
             }

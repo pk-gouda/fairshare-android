@@ -17,11 +17,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -33,85 +34,85 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalContext
-import androidx.fragment.app.FragmentActivity
-import com.prathik.fairshare.ui.auth.BiometricHelper
-import com.prathik.fairshare.ui.auth.BiometricResult
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.prathik.fairshare.ui.auth.BiometricHelper
+import com.prathik.fairshare.ui.auth.BiometricResult
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsPrimaryButton
-import com.prathik.fairshare.ui.components.FsSectionLabel
-import com.prathik.fairshare.ui.components.FsTextField
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
-import com.prathik.fairshare.ui.theme.Negative
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
-import com.prathik.fairshare.ui.theme.Surface4
-import com.prathik.fairshare.ui.theme.SyneFontFamily
+import com.prathik.fairshare.ui.theme.Surface3
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
-import com.prathik.fairshare.util.MoneyUtils
+import kotlinx.coroutines.launch
 
-/**
- * Settle Up Screen.
- *
- * Shows who is paying whom with a direction header, then lets the user
- * record a full or partial settlement.
- *
- * Payment direction:
- *   balance > 0 → they owe you → they pay you (Friend → You)
- *   balance < 0 → you owe them → you pay them (You → Friend)
- *   balance = 0 → all settled
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettleUpScreen(
-    onBack     : () -> Unit,
-    onSuccess  : () -> Unit,
-    viewModel  : SettleUpViewModel = hiltViewModel(),
+    onBack    : () -> Unit,
+    onSuccess : () -> Unit,
+    viewModel : SettleUpViewModel = hiltViewModel(),
 ) {
-    val uiState        by viewModel.uiState.collectAsState()
-    val notes          by viewModel.notes.collectAsState()
-    val amount         by viewModel.amount.collectAsState()
-    val paymentMethod  by viewModel.paymentMethod.collectAsState()
-    val otherUserName  by viewModel.otherUserName.collectAsState()
-    val balanceAmount  by viewModel.balanceAmount.collectAsState()
+    val uiState         by viewModel.uiState.collectAsState()
+    val notes           by viewModel.notes.collectAsState()
+    val amount          by viewModel.amount.collectAsState()
+    val paymentMethod   by viewModel.paymentMethod.collectAsState()
+    val otherUserName   by viewModel.otherUserName.collectAsState()
+    val balanceAmount   by viewModel.balanceAmount.collectAsState()
     val balanceCurrency by viewModel.balanceCurrency.collectAsState()
-    val snackbarHost   = remember { SnackbarHostState() }
-    val scope          = rememberCoroutineScope()
-    val context        = LocalContext.current
-    val activity       = context as? FragmentActivity
-    val isLoading      = uiState is SettleUpUiState.Loading
-
+    val snackbarHost    = remember { SnackbarHostState() }
+    val scope           = rememberCoroutineScope()
+    val context         = LocalContext.current
+    val activity        = context as? FragmentActivity
+    val isLoading       = uiState is SettleUpUiState.Loading
     val biometricHelper = remember { BiometricHelper(context) }
+
+    // Direction: overridePayerId set → payer chosen manually ("More options")
+    // otherwise → derive from balance sign (positive = they owe you → they pay)
+    val payerIsOther = (viewModel.overridePayerId != null &&
+            viewModel.overridePayerId != viewModel.currentUserId) ||
+            (viewModel.overridePayerId == null && balanceAmount > 0)
+
+    val fromName   = if (payerIsOther) otherUserName.ifBlank { "Friend" } else "You"
+    val fromUserId = if (payerIsOther) viewModel.otherUserId else ""
+    val toName     = if (payerIsOther) "You" else otherUserName.ifBlank { "Friend" }
+    val toUserId   = if (payerIsOther) "" else viewModel.otherUserId
+
+    // Amount to show as placeholder / default
+    val defaultAmount = when {
+        balanceAmount > 0 -> balanceAmount
+        balanceAmount < 0 -> -balanceAmount
+        else              -> 0.0
+    }
 
     fun confirmAndSettle(settleAction: () -> Unit) {
         val amt = amount.toDoubleOrNull() ?: 0.0
         val needsBiometric = amt >= 50.0 || amount.isBlank()
         if (needsBiometric && activity != null && biometricHelper.canAuthenticate()) {
             scope.launch {
-                val amountLabel = if (amount.isBlank()) "the full balance" else "$${"%,.2f".format(amt)}"
-                when (biometricHelper.authenticate(
-                    activity = activity,
-                    title    = "Confirm settlement",
-                    subtitle = "Settling $amountLabel",
-                )) {
+                val label = if (amount.isBlank()) "the full balance" else "$${"%.2f".format(amt)}"
+                when (biometricHelper.authenticate(activity, "Confirm settlement", "Settling $label")) {
                     is BiometricResult.Success   -> settleAction()
-                    is BiometricResult.Cancelled -> { /* do nothing */ }
+                    is BiometricResult.Cancelled -> Unit
                     is BiometricResult.Error     -> scope.launch {
                         snackbarHost.showSnackbar("Biometric auth failed. Try again.")
                     }
@@ -123,130 +124,222 @@ fun SettleUpScreen(
     }
 
     LaunchedEffect(uiState) {
-        when (val state = uiState) {
+        when (val s = uiState) {
             is SettleUpUiState.Success -> { onSuccess(); viewModel.resetUiState() }
-            is SettleUpUiState.Error   -> { snackbarHost.showSnackbar(state.message); viewModel.resetUiState() }
+            is SettleUpUiState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetUiState() }
             else -> Unit
         }
     }
 
     Scaffold(
         containerColor = Surface0,
-        topBar = { FsTopBar(title = "Settle up", onBack = onBack) },
-        snackbarHost = { SnackbarHost(snackbarHost) },
+        topBar         = { FsTopBar(title = "Record a payment", onBack = onBack) },
+        snackbarHost   = { SnackbarHost(snackbarHost) },
     ) { innerPadding ->
         Column(
-            modifier = Modifier
+            modifier            = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .imePadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(modifier = Modifier.height(Spacing.xl))
+            Spacer(modifier = Modifier.height(48.dp))
 
-            // ── Direction header ───────────────────────────────────────────────
-            DirectionHeader(
-                otherUserName   = otherUserName,
-                otherUserId     = viewModel.otherUserId,
-                balanceAmount   = balanceAmount,
-                balanceCurrency = balanceCurrency,
-            )
+            // ── Avatars + arrow ───────────────────────────────────────────────
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier              = Modifier.fillMaxWidth(),
+            ) {
+                // From
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    PersonAvatar(name = fromName, userId = fromUserId, size = 72.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(fromName, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                }
 
-            Spacer(modifier = Modifier.height(Spacing.xl))
-            HorizontalDivider(color = Surface4, thickness = 0.5.dp)
-            Spacer(modifier = Modifier.height(Spacing.lg))
+                Spacer(modifier = Modifier.width(32.dp))
 
-            // ── Partial amount ────────────────────────────────────────────────
-            FsSectionLabel(
-                text     = "Amount (optional)",
-                modifier = Modifier.padding(horizontal = Spacing.lg),
-            )
-            Spacer(modifier = Modifier.height(Spacing.sm))
+                Icon(
+                    imageVector        = Icons.Filled.ArrowForward,
+                    contentDescription = "pays",
+                    tint               = TextTertiary,
+                    modifier           = Modifier.size(22.dp),
+                )
+
+                Spacer(modifier = Modifier.width(32.dp))
+
+                // To
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    PersonAvatar(name = toName, userId = toUserId, size = 72.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(toName, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Editable amount ───────────────────────────────────────────────
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                // Currency symbol
+                val symbol = remember(balanceCurrency) {
+                    try {
+                        java.util.Currency.getInstance(balanceCurrency).symbol
+                    } catch (e: Exception) { "$" }
+                }
+                Text(
+                    text       = symbol,
+                    fontSize   = 28.sp,
+                    fontWeight = FontWeight.Medium,
+                    color      = TextSecondary,
+                    modifier   = Modifier.padding(end = 4.dp),
+                )
+                // Inline editable amount — grows with text
+                BasicTextField(
+                    value         = amount,
+                    onValueChange = { new ->
+                        if (new.isEmpty() || new.matches(Regex("^\\d*(\\.\\d{0,2})?$")))
+                            viewModel.onAmountChanged(new)
+                    },
+                    textStyle     = TextStyle(
+                        fontSize   = 48.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = TextPrimary,
+                        textAlign  = TextAlign.Start,
+                    ),
+                    cursorBrush   = SolidColor(Green400),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction    = ImeAction.Done,
+                    ),
+                    singleLine    = true,
+                    decorationBox = { inner ->
+                        if (amount.isEmpty()) {
+                            Text(
+                                text       = if (defaultAmount > 0)
+                                    "%.2f".format(defaultAmount)
+                                else "0.00",
+                                fontSize   = 48.sp,
+                                fontWeight = FontWeight.Bold,
+                                color      = TextTertiary,
+                            )
+                        }
+                        inner()
+                    },
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text     = "Leave blank to settle everything",
+                text     = if (amount.isEmpty() && defaultAmount > 0)
+                    "Tap to edit · leave blank to settle all"
+                else
+                    "Leave blank to settle everything",
                 fontSize = 12.sp,
-                color    = TextSecondary,
-                modifier = Modifier.padding(horizontal = Spacing.lg),
-            )
-            Spacer(modifier = Modifier.height(Spacing.md))
-            FsTextField(
-                value         = amount,
-                onValueChange = { viewModel.onAmountChanged(it) },
-                label         = "Enter amount",
-                imeAction     = ImeAction.Next,
-                modifier      = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.lg),
+                color    = TextTertiary,
             )
 
-            Spacer(modifier = Modifier.height(Spacing.xl))
+            Spacer(modifier = Modifier.height(36.dp))
 
             // ── Payment method ────────────────────────────────────────────────
-            FsSectionLabel(
-                text     = "Payment method",
-                modifier = Modifier.padding(horizontal = Spacing.lg),
-            )
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            val methods = listOf("Cash", "Bank transfer", "UPI", "Other")
             Row(
                 modifier              = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Spacing.lg),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
-                methods.forEach { method ->
-                    val isSelected = paymentMethod == method
+                listOf("Cash", "Bank transfer", "UPI", "Other").forEach { method ->
+                    val selected = paymentMethod == method
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier         = Modifier
+                        modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(Radius.full))
-                            .background(if (isSelected) Green400 else Surface2)
+                            .background(if (selected) Green400 else Surface2)
                             .clickable { viewModel.onPaymentMethodChanged(method) }
                             .padding(vertical = Spacing.sm),
                     ) {
                         Text(
                             text       = method,
                             fontSize   = 12.sp,
-                            color      = if (isSelected) Surface0 else TextSecondary,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color      = if (selected) Surface0 else TextSecondary,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(Spacing.xl))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── Notes ─────────────────────────────────────────────────────────
-            FsSectionLabel(
-                text     = "Notes",
-                modifier = Modifier.padding(horizontal = Spacing.lg),
-            )
-            Spacer(modifier = Modifier.height(Spacing.md))
-            FsTextField(
+            BasicTextField(
                 value         = notes,
                 onValueChange = { viewModel.onNotesChanged(it) },
-                label         = "Add a note (optional)",
-                imeAction     = ImeAction.Done,
-                singleLine    = false,
-                maxLines      = 3,
-                modifier      = Modifier
+                textStyle     = TextStyle(
+                    fontSize  = 14.sp,
+                    color     = TextPrimary,
+                    textAlign = TextAlign.Center,
+                ),
+                cursorBrush   = SolidColor(Green400),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                singleLine    = true,
+                decorationBox = { inner ->
+                    if (notes.isEmpty()) {
+                        Text(
+                            text      = "Add a comment",
+                            fontSize  = 14.sp,
+                            color     = TextTertiary,
+                            textAlign = TextAlign.Center,
+                            modifier  = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    inner()
+                },
+                modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Spacing.lg),
             )
 
+            // Underline for the notes field
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .height(0.5.dp)
+                    .background(Surface3),
+            )
+
+            Spacer(modifier = Modifier.height(Spacing.xl))
+
+            // ── Info note ─────────────────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .clip(RoundedCornerShape(Radius.xl))
+                    .background(Surface2)
+                    .padding(Spacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("ⓘ", fontSize = 16.sp, color = TextTertiary)
+                Spacer(modifier = Modifier.width(Spacing.sm))
+                Text(
+                    text     = "You are recording a payment that happened outside FairShare. No money will be moved.",
+                    fontSize = 12.sp,
+                    color    = TextSecondary,
+                )
+            }
+
             Spacer(modifier = Modifier.height(Spacing.xxxl))
 
-            // ── Actions ───────────────────────────────────────────────────────
-            val buttonLabel = when {
-                amount.isNotBlank() -> "Record payment of $amount"
-                balanceAmount > 0   -> "Record payment of ${MoneyUtils.format(balanceAmount, balanceCurrency)}"
-                balanceAmount < 0   -> "Record payment of ${MoneyUtils.format(-balanceAmount, balanceCurrency)}"
-                else                -> "Record payment"
-            }
+            // ── Record button ─────────────────────────────────────────────────
             FsPrimaryButton(
-                text      = buttonLabel,
+                text      = "Record a payment",
                 onClick   = {
                     confirmAndSettle {
                         if (amount.isBlank()) viewModel.settleAll()
@@ -264,173 +357,25 @@ fun SettleUpScreen(
     }
 }
 
-// ── Direction Header ──────────────────────────────────────────────────────────
-
-/**
- * Shows who is paying whom:
- *   balance > 0 → Friend → You   (they owe you, they pay you)
- *   balance < 0 → You → Friend   (you owe them, you pay them)
- *   balance = 0 → All settled up
- */
 @Composable
-private fun DirectionHeader(
-    otherUserName   : String,
-    otherUserId     : String,
-    balanceAmount   : Double,
-    balanceCurrency : String,
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier            = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg),
-    ) {
-        when {
-            balanceAmount > 0 -> {
-                // They owe you → they pay you: Friend ──▶ You
-                PaymentDirectionRow(
-                    fromName   = otherUserName.ifBlank { "Friend" },
-                    fromUserId = otherUserId,
-                    toName     = "You",
-                    toUserId   = "",
-                    amount     = balanceAmount,
-                    currency   = balanceCurrency,
-                    color      = Green400,
-                    subtitle   = "${otherUserName.ifBlank { "They" }} owe you this amount",
-                )
-            }
-            balanceAmount < 0 -> {
-                // You owe them → you pay them: You ──▶ Friend
-                PaymentDirectionRow(
-                    fromName   = "You",
-                    fromUserId = "",
-                    toName     = otherUserName.ifBlank { "Friend" },
-                    toUserId   = otherUserId,
-                    amount     = -balanceAmount,
-                    currency   = balanceCurrency,
-                    color      = Negative,
-                    subtitle   = "You owe this amount",
-                )
-            }
-            otherUserName.isNotBlank() -> {
-                // All settled up — no payment needed
-                Text(text = "💸", fontSize = 48.sp)
-                Spacer(modifier = Modifier.height(Spacing.md))
-                Text(
-                    text       = "All settled up!",
-                    fontFamily = SyneFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize   = 22.sp,
-                    color      = Green400,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text     = "You and $otherUserName have no outstanding balance",
-                    fontSize = 14.sp,
-                    color    = TextSecondary,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            else -> {
-                // Loading / unknown
-                Text(text = "💸", fontSize = 48.sp)
-                Spacer(modifier = Modifier.height(Spacing.md))
-                Text(
-                    text       = "Record a payment",
-                    fontFamily = SyneFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize   = 22.sp,
-                    color      = TextPrimary,
-                )
-            }
+private fun PersonAvatar(name: String, userId: String, size: androidx.compose.ui.unit.Dp) {
+    if (userId.isNotBlank()) {
+        FsAvatar(name = name, userId = userId, size = size)
+    } else {
+        // "You" — no userId, show initial circle
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(Surface2),
+        ) {
+            Text(
+                text       = name.firstOrNull()?.uppercase() ?: "Y",
+                fontSize   = (size.value * 0.38f).sp,
+                color      = TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
-}
-
-@Composable
-private fun PaymentDirectionRow(
-    fromName   : String,
-    fromUserId : String,
-    toName     : String,
-    toUserId   : String,
-    amount     : Double,
-    currency   : String,
-    color      : androidx.compose.ui.graphics.Color,
-    subtitle   : String,
-) {
-    // Amount chip
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier         = Modifier
-            .clip(RoundedCornerShape(Radius.full))
-            .background(color.copy(alpha = 0.15f))
-            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-    ) {
-        Text(
-            text       = MoneyUtils.format(amount, currency),
-            fontSize   = 26.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color      = color,
-        )
-    }
-
-    Spacer(modifier = Modifier.height(Spacing.lg))
-
-    // From → To row
-    Row(
-        verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier              = Modifier.fillMaxWidth(),
-    ) {
-        // From
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (fromUserId.isNotBlank()) {
-                FsAvatar(name = fromName, userId = fromUserId, size = ComponentSize.avatarMd)
-            } else {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier         = Modifier
-                        .size(ComponentSize.avatarMd)
-                        .clip(CircleShape)
-                        .background(Surface2),
-                ) {
-                    Text("You", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
-                }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = fromName, fontSize = 12.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
-        }
-
-        Spacer(modifier = Modifier.width(Spacing.lg))
-
-        // Arrow
-        Icon(
-            imageVector        = Icons.Filled.ArrowForward,
-            contentDescription = "pays",
-            tint               = color,
-            modifier           = Modifier.size(22.dp),
-        )
-
-        Spacer(modifier = Modifier.width(Spacing.lg))
-
-        // To
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (toUserId.isNotBlank()) {
-                FsAvatar(name = toName, userId = toUserId, size = ComponentSize.avatarMd)
-            } else {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier         = Modifier
-                        .size(ComponentSize.avatarMd)
-                        .clip(CircleShape)
-                        .background(Surface2),
-                ) {
-                    Text("You", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
-                }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = toName, fontSize = 12.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
-        }
-    }
-
-    Spacer(modifier = Modifier.height(Spacing.md))
-    Text(text = subtitle, fontSize = 13.sp, color = TextTertiary, textAlign = TextAlign.Center)
 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -119,7 +120,6 @@ fun AddExpenseScreen(
 
     var showGroupSheet    by remember { mutableStateOf(false) }
     var showPayerSheet    by remember { mutableStateOf(false) }
-    var showSplitSheet     by remember { mutableStateOf(false) }
     var showSplitTypeSheet by remember { mutableStateOf(false) }
     var showCategorySheet by remember { mutableStateOf(false) }
     var showDatePicker    by remember { mutableStateOf(false) }
@@ -234,7 +234,7 @@ fun AddExpenseScreen(
             ) {
                 Icon(Icons.Outlined.Edit, null, tint = TextTertiary, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(Spacing.md))
-                androidx.compose.foundation.text.BasicTextField(
+                BasicTextField(
                     value         = description,
                     onValueChange = { viewModel.onDescriptionChanged(it) },
                     textStyle     = TextStyle(fontSize = 16.sp, color = TextPrimary),
@@ -279,7 +279,7 @@ fun AddExpenseScreen(
                     amount.length <= 8 -> 28.sp
                     else               -> 22.sp
                 }
-                androidx.compose.foundation.text.BasicTextField(
+                BasicTextField(
                     value         = amount,
                     onValueChange = { new ->
                         val regex = Regex("^\\d*(\\.\\d{0,2})?$")
@@ -344,12 +344,30 @@ fun AddExpenseScreen(
             HorizontalDivider(color = Surface3, thickness = 0.5.dp,
                 modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm))
 
-            // ── Equal split member toggles ────────────────────────────────────
-            // Only shown for EQUAL split — lets user uncheck members not in this split
-            if (splitType == SplitType.EQUAL && members.isNotEmpty()) {
+            // ── Split member rows — shown for ALL split types inline ───────────
+            if (members.isNotEmpty()) {
+
+                // Running sum for non-EQUAL types — shown below rows
+                val totalDouble = amountDouble
+                val currentSum = when (splitType) {
+                    SplitType.EQUAL -> null   // equal handles itself
+                    else -> members
+                        .filter { !equalExcluded.contains(it.userId) }
+                        .sumOf { splitData[it.userId] ?: 0.0 }
+                }
+                val sumIsValid = when (splitType) {
+                    SplitType.EQUAL      -> null
+                    SplitType.UNEQUAL    -> currentSum != null && Math.abs(currentSum - totalDouble) < 0.01
+                    SplitType.PERCENTAGE -> currentSum != null && Math.abs(currentSum - 100.0) < 0.01
+                    SplitType.SHARES     -> members
+                        .filter { !equalExcluded.contains(it.userId) }
+                        .all { (splitData[it.userId] ?: 0.0) > 0 }
+                }
+
                 members.forEach { member ->
                     val isIncluded = !equalExcluded.contains(member.userId)
                     val name = if (member.userId == viewModel.currentUserId) "You" else member.fullName
+
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
@@ -365,15 +383,100 @@ fun AddExpenseScreen(
                             color    = if (isIncluded) TextPrimary else TextTertiary,
                             modifier = Modifier.weight(1f),
                         )
+
                         if (isIncluded) {
-                            Text(
-                                text       = MoneyUtils.format(splitData[member.userId] ?: 0.0, currency),
-                                fontSize   = 13.sp,
-                                color      = Green400,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.md))
+                            when (splitType) {
+                                SplitType.EQUAL -> {
+                                    // Read-only calculated amount
+                                    Text(
+                                        text       = MoneyUtils.format(splitData[member.userId] ?: 0.0, currency),
+                                        fontSize   = 13.sp,
+                                        color      = Green400,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Spacer(modifier = Modifier.width(Spacing.md))
+                                }
+                                SplitType.UNEQUAL -> {
+                                    // Editable dollar amount
+                                    val raw = (splitData[member.userId] ?: 0.0)
+                                    val display = if (raw > 0) raw.toBigDecimal().stripTrailingZeros().toPlainString() else ""
+                                    Text("$", fontSize = 13.sp, color = TextSecondary)
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    BasicTextField(
+                                        value         = display,
+                                        onValueChange = { new ->
+                                            if (new.isEmpty() || new.matches(Regex("^\\d*(\\.\\d{0,2})?$")))
+                                                viewModel.onSplitChanged(member.userId, new.toDoubleOrNull() ?: 0.0)
+                                        },
+                                        textStyle     = TextStyle(
+                                            fontSize   = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color      = TextPrimary,
+                                            textAlign  = TextAlign.End,
+                                        ),
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Decimal,
+                                            imeAction    = ImeAction.Next,
+                                        ),
+                                        singleLine = true,
+                                        modifier   = Modifier.width(80.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(Spacing.md))
+                                }
+                                SplitType.PERCENTAGE -> {
+                                    val raw = (splitData[member.userId] ?: 0.0)
+                                    val display = if (raw > 0) raw.toBigDecimal().stripTrailingZeros().toPlainString() else ""
+                                    BasicTextField(
+                                        value         = display,
+                                        onValueChange = { new ->
+                                            if (new.isEmpty() || new.matches(Regex("^\\d*(\\.\\d{0,2})?$")))
+                                                viewModel.onSplitChanged(member.userId, new.toDoubleOrNull() ?: 0.0)
+                                        },
+                                        textStyle     = TextStyle(
+                                            fontSize   = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color      = TextPrimary,
+                                            textAlign  = TextAlign.End,
+                                        ),
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Decimal,
+                                            imeAction    = ImeAction.Next,
+                                        ),
+                                        singleLine = true,
+                                        modifier   = Modifier.width(60.dp),
+                                    )
+                                    Text(" %", fontSize = 13.sp, color = TextSecondary)
+                                    Spacer(modifier = Modifier.width(Spacing.md))
+                                }
+                                SplitType.SHARES -> {
+                                    val raw = (splitData[member.userId] ?: 0.0)
+                                    val display = if (raw > 0) raw.toInt().toString() else ""
+                                    BasicTextField(
+                                        value         = display,
+                                        onValueChange = { new ->
+                                            if (new.isEmpty() || new.matches(Regex("^\\d+$")))
+                                                viewModel.onSplitChanged(member.userId, new.toDoubleOrNull() ?: 0.0)
+                                        },
+                                        textStyle     = TextStyle(
+                                            fontSize   = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color      = TextPrimary,
+                                            textAlign  = TextAlign.End,
+                                        ),
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Number,
+                                            imeAction    = ImeAction.Next,
+                                        ),
+                                        singleLine = true,
+                                        modifier   = Modifier.width(50.dp),
+                                    )
+                                    Text(" shares", fontSize = 13.sp, color = TextSecondary)
+                                    Spacer(modifier = Modifier.width(Spacing.md))
+                                }
+                            }
                         }
+
+                        // Checkbox (EQUAL) or just excluded indicator (others)
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier         = Modifier
@@ -392,6 +495,27 @@ fun AddExpenseScreen(
                         modifier  = Modifier.padding(start = Spacing.lg + 32.dp + Spacing.md),
                     )
                 }
+
+                // Sum indicator for non-EQUAL types
+                if (splitType != SplitType.EQUAL && currentSum != null) {
+                    val sumLabel = when (splitType) {
+                        SplitType.UNEQUAL    ->
+                            "${MoneyUtils.format(currentSum, currency)} of ${MoneyUtils.format(totalDouble, currency)}"
+                        SplitType.PERCENTAGE ->
+                            "${currentSum.toBigDecimal().stripTrailingZeros().toPlainString()}% of 100%"
+                        SplitType.SHARES     -> "Tap members to include/exclude"
+                        else -> ""
+                    }
+                    Text(
+                        text     = sumLabel,
+                        fontSize = 12.sp,
+                        color    = if (sumIsValid == true) Green400 else TextTertiary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(Spacing.sm))
             }
 
@@ -543,17 +667,9 @@ fun AddExpenseScreen(
             onSelect  = { type ->
                 viewModel.onSplitTypeChanged(type)
                 showSplitTypeSheet = false
-                if (type != SplitType.EQUAL) showSplitSheet = true
             },
             onDismiss = { showSplitTypeSheet = false },
         )
-    }
-
-    if (showSplitSheet && splitType != SplitType.EQUAL) {
-        SplitBottomSheet(splitType = splitType, members = members, splitData = splitData,
-            total = amountDouble, currentUserId = viewModel.currentUserId,
-            onConfirm = { newData -> viewModel.onSplitDataConfirmed(newData); showSplitSheet = false },
-            onDismiss = { showSplitSheet = false })
     }
 
     if (showCategorySheet) {
@@ -773,7 +889,7 @@ private fun PayerBottomSheet(
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(name, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                         Text("$", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(end = 4.dp))
-                        androidx.compose.foundation.text.BasicTextField(
+                        BasicTextField(
                             value         = amtState.value,
                             onValueChange = { new ->
                                 if (new.isEmpty() || new.matches(Regex("^[0-9]*(\\.[0-9]{0,2})?$"))) amtState.value = new
@@ -942,7 +1058,7 @@ private fun SplitBottomSheet(
                                 modifier = Modifier.padding(end = 4.dp))
                         }
                         // Amount field — full width feel, left aligned
-                        androidx.compose.foundation.text.BasicTextField(
+                        BasicTextField(
                             value         = valueState.value,
                             onValueChange = { new ->
                                 val regex = if (splitType == SplitType.SHARES) Regex("^\\d*$")

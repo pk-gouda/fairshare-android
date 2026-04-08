@@ -93,7 +93,7 @@ fun FriendDetailScreen(
     onNavigateToSettings   : () -> Unit,
     onNavigateToExpense    : (String) -> Unit,
     onNavigateToAddExpense  : () -> Unit,
-    onNavigateToSettle     : (String) -> Unit,
+    onNavigateToSettle     : (friendId: String, groupId: String?, payerId: String?) -> Unit,
     onNavigateToSearch     : () -> Unit,
     onNavigateToSettlement : (String) -> Unit = {},
     viewModel              : FriendDetailViewModel = hiltViewModel(),
@@ -106,6 +106,19 @@ fun FriendDetailScreen(
     val expensesState by viewModel.expensesState.collectAsState()
     val settlements   by viewModel.settlements.collectAsState()
     val actionState   by viewModel.actionState.collectAsState()
+
+    // ── Settle up sheet state ─────────────────────────────────────────────────
+    var showBalanceSheet by remember { mutableStateOf(false) }
+    var showPayerSheet   by remember { mutableStateOf(false) }
+
+    // Non-group balance = net - sum of group balances
+    val groupBalanceSum   = groupBalances.filter { it.groupId != null }.sumOf { it.amount }
+    val nonGroupBalance   = netBalance - groupBalanceSum
+
+    val handleSettle: () -> Unit = {
+        if (netBalance != 0.0 || groupBalances.isNotEmpty()) showBalanceSheet = true
+        else showPayerSheet = true  // fully settled up: ask who paid
+    }
     val snackbarHost  = remember { SnackbarHostState() }
     val lazyListState = rememberLazyListState()
 
@@ -185,7 +198,7 @@ fun FriendDetailScreen(
                                 currency      = currency,
                                 groupBalances = groupBalances,
                                 friendName    = friendName,
-                                onSettle      = { onNavigateToSettle(viewModel.friendId) },
+                                onSettle      = handleSettle,
                                 modifier      = Modifier.padding(
                                     horizontal = Spacing.lg,
                                     vertical   = Spacing.md,
@@ -196,7 +209,7 @@ fun FriendDetailScreen(
                         // ── Action Pills ──────────────────────────────────────
                         item {
                             FriendActionPills(
-                                onSettleUp = { onNavigateToSettle(viewModel.friendId) },
+                                onSettleUp = handleSettle,
                                 modifier   = Modifier.padding(
                                     start  = Spacing.lg,
                                     end    = Spacing.lg,
@@ -370,6 +383,218 @@ fun FriendDetailScreen(
                             modifier           = Modifier.size(20.dp),
                         )
                     }
+                }
+            }
+        }
+    }
+
+    // ── Sheet 1: Balance selection (Splitwise-style) ──────────────────────────
+    if (showBalanceSheet) {
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { showBalanceSheet = false },
+            containerColor   = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                // Title
+                Text(
+                    text       = "Select a balance to settle with ${friendName.ifBlank { "friend" }}",
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+
+                // Settle all balances
+                val totalOwed = Math.abs(netBalance)
+                if (totalOwed > 0) {
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showBalanceSheet = false
+                                onNavigateToSettle(viewModel.friendId, null, null)
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FsAvatar(name = friendName, userId = viewModel.friendId,
+                            size = ComponentSize.avatarMd)
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text("Settle all balances", fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium, color = TextPrimary,
+                            modifier = Modifier.weight(1f))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text     = if (netBalance > 0) "you are owed" else "you owe",
+                                fontSize = 11.sp, color = TextTertiary,
+                            )
+                            Text(
+                                text       = MoneyUtils.format(totalOwed, currency),
+                                fontSize   = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color      = if (netBalance > 0) Green400 else Negative,
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                }
+
+                // Per-group balances
+                val groupsWithBalance = groupBalances.filter { it.groupId != null && it.amount != 0.0 }
+                if (groupsWithBalance.isNotEmpty()) {
+                    Text(
+                        text     = "Or, settle a specific group balance",
+                        fontSize = 12.sp, color = TextSecondary,
+                        modifier = Modifier.padding(
+                            start  = Spacing.lg,
+                            end    = Spacing.lg,
+                            top    = Spacing.md,
+                            bottom = Spacing.sm,
+                        ),
+                    )
+                    groupsWithBalance.forEach { balance ->
+                        Row(
+                            modifier          = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showBalanceSheet = false
+                                    onNavigateToSettle(viewModel.friendId, balance.groupId, null)
+                                }
+                                .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // Group icon placeholder
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(ComponentSize.avatarMd)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                                    .background(Surface4),
+                            ) {
+                                Text(
+                                    text     = balance.groupName?.firstOrNull()?.uppercase() ?: "G",
+                                    fontSize = 18.sp, color = TextPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(Spacing.md))
+                            Text(
+                                text       = balance.groupName ?: "Group",
+                                fontSize   = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color      = TextPrimary,
+                                modifier   = Modifier.weight(1f),
+                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text     = if (balance.amount > 0) "you are owed" else "you owe",
+                                    fontSize = 11.sp, color = TextTertiary,
+                                )
+                                Text(
+                                    text       = MoneyUtils.format(Math.abs(balance.amount), balance.currency),
+                                    fontSize   = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color      = if (balance.amount > 0) Green400 else Negative,
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                    }
+                }
+
+                // Non-group balance row
+                if (Math.abs(nonGroupBalance) > 0.01) {
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showBalanceSheet = false
+                                onNavigateToSettle(viewModel.friendId, null, null)
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(ComponentSize.avatarMd)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                                .background(Surface4),
+                        ) {
+                            Text("📋", fontSize = 18.sp)
+                        }
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text("Non-group expenses", fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium, color = TextPrimary,
+                            modifier = Modifier.weight(1f))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text     = if (nonGroupBalance > 0) "you are owed" else "you owe",
+                                fontSize = 11.sp, color = TextTertiary,
+                            )
+                            Text(
+                                text       = MoneyUtils.format(Math.abs(nonGroupBalance), currency),
+                                fontSize   = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color      = if (nonGroupBalance > 0) Green400 else Negative,
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                }
+
+                // More options
+                Row(
+                    modifier          = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showBalanceSheet = false
+                            showPayerSheet   = true
+                        }
+                        .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("More options", fontSize = 15.sp, color = TextSecondary,
+                        fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+
+    // ── Sheet 2: Payer selection (for "More options" or fully settled up) ─────
+    if (showPayerSheet) {
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { showPayerSheet = false },
+            containerColor   = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text       = "Who paid?",
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                val meId = viewModel.currentUserId ?: ""
+                listOf(meId to "You", viewModel.friendId to friendName).forEach { (userId, name) ->
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showPayerSheet = false
+                                onNavigateToSettle(viewModel.friendId, null, userId)
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FsAvatar(name = name, userId = userId, size = ComponentSize.avatarMd)
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                            color = TextPrimary, modifier = Modifier.weight(1f))
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                 }
             }
         }

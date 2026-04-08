@@ -14,6 +14,7 @@ import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.repository.SettlementRepository
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.settlement.GetSettlementHistoryUseCase
+import com.prathik.fairshare.data.local.EncryptedTokenStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,9 +32,11 @@ class FriendDetailViewModel @Inject constructor(
     private val balanceRepository: BalanceRepository,
     private val getSettlementHistoryUseCase: GetSettlementHistoryUseCase,
     private val settlementRepository: SettlementRepository,
+    private val tokenStore: EncryptedTokenStore,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
+    val currentUserId: String? = tokenStore.getUserId()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
