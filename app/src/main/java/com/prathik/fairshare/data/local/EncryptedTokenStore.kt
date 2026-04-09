@@ -114,6 +114,7 @@ class EncryptedTokenStore @Inject constructor(
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_USER_ID)
             .remove(KEY_FULL_NAME)
+            .remove(KEY_PREFERRED_CURRENCY) // Bug fix: clear on logout so next user starts fresh
             .commit()
     }
 }

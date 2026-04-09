@@ -56,13 +56,6 @@ interface SettlementRepository {
     suspend fun cancelSettlement(settlementId: String): ApiResult<Settlement>
 
     /**
-     * Fetches the breakdown of what is owed between the current user
-     * and another user, split by group and non-group expenses.
-     * Used by the Settle Up screen to show per-group amounts.
-     */
-    suspend fun getBreakdown(otherUserId: String): ApiResult<Map<String, Any>>
-
-    /**
      * Deletes a completed settlement and reverses its balance changes.
      * Returns [ApiResult.Forbidden] if user is not involved.
      * Returns [ApiResult.Conflict] if a participant has left the group.

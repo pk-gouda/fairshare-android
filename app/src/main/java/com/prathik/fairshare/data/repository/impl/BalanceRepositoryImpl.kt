@@ -10,9 +10,9 @@ import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.repository.BalanceRepository
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,9 +31,7 @@ class BalanceRepositoryImpl @Inject constructor(
             val cached = balanceDao.getByUserId(userId)
             if (cached.isNotEmpty()) {
                 // Refresh in background
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    refreshBalances(userId)
-                }
+                CoroutineScope(Dispatchers.IO).launch { refreshBalances(userId) }
                 return ApiResult.Success(cached.map { it.toDomain() })
             }
         }
@@ -48,13 +46,13 @@ class BalanceRepositoryImpl @Inject constructor(
             balanceDao.deleteByUserId(userId)
             balanceDao.insertAll(result.data.map { response ->
                 BalanceEntity(
-                    userId = response.userId,
-                    otherUserId = response.otherUserId,
+                    userId        = response.userId,
+                    otherUserId   = response.otherUserId,
                     otherUserName = response.otherUserName,
-                    amount = response.amount,
-                    currency = response.currency,
-                    groupId = response.groupId ?: "",
-                    groupName = response.groupName,
+                    amount        = response.amount,
+                    currency      = response.currency,
+                    groupId       = response.groupId ?: "",
+                    groupName     = response.groupName,
                 )
             })
         }
@@ -65,24 +63,27 @@ class BalanceRepositoryImpl @Inject constructor(
         safeApiCall { balanceService.getBreakdownWithUser(otherUserId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
-    override suspend fun getBalanceWithUser(otherUserId: String): ApiResult<Map<String, Any>> =
+    /**
+     * Always hits the network — returns UserBalance records (net balance, not per-group).
+     * Used by SettleUpViewModel for non-group settlements to guarantee a fresh balance
+     * and avoid serving the Room-cached result from getAllBalances().
+     */
+    override suspend fun getNetBalanceWithUser(otherUserId: String): ApiResult<List<Balance>> =
         safeApiCall { balanceService.getBalanceWithUser(otherUserId) }
-            .mapSuccess { list ->
-                mapOf("balances" to list.map { it.toDomain() })
-            }
+            .mapSuccess { list -> list.map { it.toDomain() } }
 
     override suspend fun getBalanceSummary(): ApiResult<Map<String, Any>> =
         safeApiCall { balanceService.getBalanceSummary() }
             .mapSuccess { it }
 
     private fun BalanceEntity.toDomain() = Balance(
-        userId = userId,
-        otherUserId = otherUserId,
-        otherUserName = otherUserName,
-        amount = amount,
-        currency = currency,
-        groupId = groupId.ifEmpty { null },
-        groupName = groupName,
+        userId            = userId,
+        otherUserId       = otherUserId,
+        otherUserName     = otherUserName,
+        amount            = amount,
+        currency          = currency,
+        groupId           = groupId.ifEmpty { null },
+        groupName         = groupName,
         groupLastActivity = groupLastActivity,
     )
 }

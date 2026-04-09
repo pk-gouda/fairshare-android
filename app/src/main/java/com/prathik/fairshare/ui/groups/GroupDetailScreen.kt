@@ -298,9 +298,7 @@ fun GroupDetailScreen(
                                     // Build unified timeline regardless of expense count
                                     val timeline = buildList {
                                         expenses.expenses.forEach { add(TimelineItem.ExpenseItem(it)) }
-                                        // Settlements intentionally excluded from group timeline.
-                                        // Friend-level payments that touch a group should not
-                                        // appear here — they are visible in the friend's timeline.
+                                        settlements.forEach { add(TimelineItem.SettlementItem(it)) }
                                     }.sortedByDescending { it.date }
 
                                     if (timeline.isEmpty()) {

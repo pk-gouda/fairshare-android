@@ -3,7 +3,6 @@ package com.prathik.fairshare.data.network.api
 import com.prathik.fairshare.data.model.request.SettleRequest
 import com.prathik.fairshare.data.model.request.UpdateSettlementRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
-import com.prathik.fairshare.data.model.response.BalanceResponse
 import com.prathik.fairshare.data.model.response.SettlementResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -13,9 +12,6 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 
 interface SettlementApiService {
-
-    @GET("api/settlements/breakdown/{otherUserId}")
-    suspend fun getBreakdown(@Path("otherUserId") otherUserId: String): ApiResponse<List<BalanceResponse>>
 
     @POST("api/settlements")
     suspend fun settle(@Body request: SettleRequest): ApiResponse<List<SettlementResponse>>

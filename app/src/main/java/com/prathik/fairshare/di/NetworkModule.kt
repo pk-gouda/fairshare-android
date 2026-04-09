@@ -84,8 +84,8 @@ object NetworkModule {
             .addInterceptor(tokenRefreshInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)   // 2 min — import can take 48s+ for large CSVs
+            .writeTimeout(60, TimeUnit.SECONDS)   // 1 min — large CSV body upload
             .build()
     }
 

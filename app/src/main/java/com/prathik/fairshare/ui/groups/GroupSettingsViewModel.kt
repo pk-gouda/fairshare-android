@@ -86,22 +86,22 @@ class GroupSettingsViewModel @Inject constructor(
     }
 
     fun loadData() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            // Load group + members in parallel
-            val groupResult   = getGroupUseCase(groupId)
-            val membersResult = getMembersUseCase(groupId)
+        viewModelScope.launch { loadDataInternal() }
+    }
 
-            if (groupResult is ApiResult.Success) {
-                _group.value = groupResult.data
-                _editName.value = groupResult.data.name
-                _simplifyDebts.value = groupResult.data.simplifyDebts
-            }
-            if (membersResult is ApiResult.Success) {
-                _members.value = membersResult.data
-            }
-            _isLoading.value = false
+    private suspend fun loadDataInternal() {
+        _isLoading.value = true
+        val groupResult   = getGroupUseCase(groupId)
+        val membersResult = getMembersUseCase(groupId)
+        if (groupResult is ApiResult.Success) {
+            _group.value = groupResult.data
+            _editName.value = groupResult.data.name
+            _simplifyDebts.value = groupResult.data.simplifyDebts
         }
+        if (membersResult is ApiResult.Success) {
+            _members.value = membersResult.data
+        }
+        _isLoading.value = false
     }
 
     fun onNameChanged(value: String) { _editName.value = value }
@@ -198,9 +198,11 @@ class GroupSettingsViewModel @Inject constructor(
             _claimState.value = ClaimActionState.Loading
             when (importRepository.claimIdentity(groupId, placeholderUserId)) {
                 is ApiResult.Success -> {
-                    loadData()
+                    loadDataInternal()  // await refresh before emitting success
                     _claimState.value = ClaimActionState.Success("You've claimed this identity. Balances updated.")
                 }
+                is ApiResult.Conflict -> _claimState.value =
+                    ClaimActionState.Error("This identity has already been claimed.")
                 else -> _claimState.value = ClaimActionState.Error("Failed to claim identity.")
             }
         }
@@ -211,8 +213,13 @@ class GroupSettingsViewModel @Inject constructor(
             _claimState.value = ClaimActionState.Loading
             when (importRepository.assignPlaceholder(groupId, placeholderUserId, friendUserId)) {
                 is ApiResult.Success -> {
-                    loadData()
+                    loadDataInternal()  // await refresh before emitting success
                     _claimState.value = ClaimActionState.Success("Member linked successfully.")
+                }
+                is ApiResult.Conflict -> {
+                    // Member already assigned — refresh silently and treat as success
+                    loadDataInternal()
+                    _claimState.value = ClaimActionState.Success("Member already linked.")
                 }
                 else -> _claimState.value = ClaimActionState.Error("Failed to assign member.")
             }

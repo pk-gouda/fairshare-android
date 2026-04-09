@@ -12,7 +12,6 @@ import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.repository.SettlementRepository
-import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.settlement.GetSettlementHistoryUseCase
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,7 +27,6 @@ class FriendDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val friendRepository: FriendRepository,
     private val expenseRepository: ExpenseRepository,
-    private val getAllBalancesUseCase: GetAllBalancesUseCase,
     private val balanceRepository: BalanceRepository,
     private val getSettlementHistoryUseCase: GetSettlementHistoryUseCase,
     private val settlementRepository: SettlementRepository,
@@ -81,7 +79,7 @@ class FriendDetailViewModel @Inject constructor(
 
             val friendsDeferred  = async { friendRepository.getFriends() }
             val sentDeferred     = async { friendRepository.getSentRequests() }
-            val balancesDeferred = async { getAllBalancesUseCase() }
+            val balancesDeferred = async { balanceRepository.getNetBalanceWithUser(friendId) }
             val breakdownDeferred = async { balanceRepository.getBreakdownWithUser(friendId) }
             val directDeferred      = async { expenseRepository.getDirectExpensesWithFriend(friendId) }
             val settlementsDeferred = async { getSettlementHistoryUseCase(friendId) }
@@ -106,12 +104,14 @@ class FriendDetailViewModel @Inject constructor(
                 }
             }
 
-            // Net balance (global, across all groups + direct)
+            // Net balance — always fresh from network, never cached.
+            // Using getNetBalanceWithUser instead of getAllBalancesUseCase because
+            // getAllBalances() serves the Room cache; after a settlement the cached
+            // value can be stale until the background refresh completes.
             when (val result = balancesDeferred.await()) {
                 is ApiResult.Success -> {
-                    val friendBalances = result.data.filter { it.otherUserId == friendId }
-                    _netBalance.value = friendBalances.sumOf { it.amount }
-                    _currency.value   = friendBalances.firstOrNull()?.currency ?: "USD"
+                    _netBalance.value = result.data.sumOf { it.amount }
+                    _currency.value   = result.data.firstOrNull()?.currency ?: "USD"
                 }
                 else -> Unit
             }
@@ -142,12 +142,11 @@ class FriendDetailViewModel @Inject constructor(
 
     fun refreshExpenses() {
         viewModelScope.launch {
-            // Refresh net balance
-            when (val result = getAllBalancesUseCase()) {
+            // Refresh net balance — always fresh from network (no cache)
+            when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
                 is ApiResult.Success -> {
-                    val friendBalances = result.data.filter { it.otherUserId == friendId }
-                    _netBalance.value = friendBalances.sumOf { it.amount }
-                    _currency.value   = friendBalances.firstOrNull()?.currency ?: "USD"
+                    _netBalance.value = result.data.sumOf { it.amount }
+                    _currency.value   = result.data.firstOrNull()?.currency ?: "USD"
                 }
                 else -> Unit
             }

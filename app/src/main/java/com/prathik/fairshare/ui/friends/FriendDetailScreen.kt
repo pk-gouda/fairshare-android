@@ -194,12 +194,13 @@ fun FriendDetailScreen(
                         // ── Balance Card ──────────────────────────────────────
                         item {
                             FriendBalanceCard(
-                                netBalance    = netBalance,
-                                currency      = currency,
-                                groupBalances = groupBalances,
-                                friendName    = friendName,
-                                onSettle      = handleSettle,
-                                modifier      = Modifier.padding(
+                                netBalance      = netBalance,
+                                currency        = currency,
+                                groupBalances   = groupBalances,
+                                nonGroupBalance = nonGroupBalance,
+                                friendName      = friendName,
+                                onSettle        = handleSettle,
+                                modifier        = Modifier.padding(
                                     horizontal = Spacing.lg,
                                     vertical   = Spacing.md,
                                 ),
@@ -889,12 +890,13 @@ private fun FriendCoverPhoto(
 
 @Composable
 private fun FriendBalanceCard(
-    netBalance   : Double,
-    currency     : String,
-    groupBalances: List<Balance>,
-    friendName   : String,
-    onSettle     : () -> Unit,
-    modifier     : Modifier = Modifier,
+    netBalance      : Double,
+    currency        : String,
+    groupBalances   : List<Balance>,
+    nonGroupBalance : Double,
+    friendName      : String,
+    onSettle        : () -> Unit,
+    modifier        : Modifier = Modifier,
 ) {
     val balanceColor = when {
         netBalance > 0 -> Green400
@@ -927,38 +929,73 @@ private fun FriendBalanceCard(
             )
         }
 
-        // Per-group breakdown — show whenever there are non-zero individual balances
-        val nonZeroBalances = groupBalances.filter { it.amount != 0.0 }
-        if (nonZeroBalances.isNotEmpty()) {
+        // Per-group and non-group breakdown
+        val nonZeroBalances  = groupBalances.filter { it.amount != 0.0 }
+        val showNonGroup     = Math.abs(nonGroupBalance) > 0.01
+        val showBreakdown    = nonZeroBalances.isNotEmpty() || showNonGroup
+
+        if (showBreakdown) {
             Spacer(modifier = Modifier.height(Spacing.sm))
             HorizontalDivider(color = Surface4, thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(Spacing.sm))
 
+            // Per-group rows
             nonZeroBalances.forEach { balance ->
-                val label = balance.groupName ?: "Non-group"
+                val label = balance.groupName ?: "Group"
                 val color = if (balance.amount > 0) Green400 else Negative
-                val text = if (balance.amount > 0)
+                val text  = if (balance.amount > 0)
                     "owes you ${MoneyUtils.format(balance.amount, balance.currency)}"
                 else
                     "you owe ${MoneyUtils.format(-balance.amount, balance.currency)}"
 
                 Row(
-                    modifier = Modifier
+                    modifier              = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = label,
+                        text     = "in \"$label\"",
                         fontSize = 12.sp,
-                        color = TextSecondary,
+                        color    = TextSecondary,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = text,
+                        text       = text,
+                        fontSize   = 12.sp,
+                        color      = color,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+
+            // Non-group row — appears after a partial settle-all that doesn't
+            // clear group balances. E.g. "you owe $1.00 in non-group expenses"
+            if (showNonGroup) {
+                val color = if (nonGroupBalance > 0) Green400 else Negative
+                val text  = if (nonGroupBalance > 0)
+                    "owes you ${MoneyUtils.format(nonGroupBalance, currency)}"
+                else
+                    "you owe ${MoneyUtils.format(-nonGroupBalance, currency)}"
+
+                Row(
+                    modifier              = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text     = "in non-group expenses",
                         fontSize = 12.sp,
-                        color = color,
+                        color    = TextSecondary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text       = text,
+                        fontSize   = 12.sp,
+                        color      = color,
                         fontWeight = FontWeight.Medium,
                     )
                 }

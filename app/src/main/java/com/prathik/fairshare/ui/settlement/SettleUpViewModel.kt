@@ -8,7 +8,6 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.SettleType
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.FriendRepository
-import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.settlement.SettleUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,19 +18,17 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettleUpViewModel @Inject constructor(
-    private val settleUseCase       : SettleUseCase,
-    private val getAllBalancesUseCase: GetAllBalancesUseCase,
-    private val balanceRepository   : BalanceRepository,
-    private val friendRepository    : FriendRepository,
-    private val tokenStore          : EncryptedTokenStore,
-    savedStateHandle                : SavedStateHandle,
+    private val settleUseCase    : SettleUseCase,
+    private val balanceRepository: BalanceRepository,
+    private val friendRepository : FriendRepository,
+    private val tokenStore       : EncryptedTokenStore,
+    savedStateHandle             : SavedStateHandle,
 ) : ViewModel() {
 
-    val otherUserId   : String  = savedStateHandle.get<String>("otherUserId") ?: ""
-    val groupId       : String? = savedStateHandle.get<String>("groupId")?.takeIf { it.isNotBlank() }
+    val otherUserId    : String  = savedStateHandle.get<String>("otherUserId") ?: ""
+    val groupId        : String? = savedStateHandle.get<String>("groupId")?.takeIf { it.isNotBlank() }
     val overridePayerId: String? = savedStateHandle.get<String>("payerId")?.takeIf { it.isNotBlank() }
-    val currency      : String  = tokenStore.getPreferredCurrency()
-    val currentUserId : String? = tokenStore.getUserId()
+    val currentUserId  : String? = tokenStore.getUserId()
 
     private val _notes = MutableStateFlow("")
     val notes: StateFlow<String> = _notes.asStateFlow()
@@ -45,7 +42,6 @@ class SettleUpViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<SettleUpUiState>(SettleUpUiState.Idle)
     val uiState: StateFlow<SettleUpUiState> = _uiState.asStateFlow()
 
-    // Direction info — who owes whom and how much
     private val _otherUserName = MutableStateFlow("")
     val otherUserName: StateFlow<String> = _otherUserName.asStateFlow()
 
@@ -53,7 +49,7 @@ class SettleUpViewModel @Inject constructor(
     private val _balanceAmount = MutableStateFlow(0.0)
     val balanceAmount: StateFlow<Double> = _balanceAmount.asStateFlow()
 
-    private val _balanceCurrency = MutableStateFlow("USD")
+    private val _balanceCurrency = MutableStateFlow(tokenStore.getPreferredCurrency())
     val balanceCurrency: StateFlow<String> = _balanceCurrency.asStateFlow()
 
     init {
@@ -62,35 +58,40 @@ class SettleUpViewModel @Inject constructor(
 
     /**
      * Fetches the current balance with [otherUserId] to determine payment direction
-     * and pre-fill the "Settle everything" amount label.
+     * and pre-fill the settle amount.
+     *
+     * Group settle → breakdown endpoint (per-group GroupBalance, filtered to this group).
+     * Non-group settle → getNetBalanceWithUser — always a fresh network call.
+     *   Why not getAllBalances()? It serves the Room cache and refreshes in the background.
+     *   If an expense was just added, the settle screen would show the stale old balance
+     *   until the background refresh completes. getNetBalanceWithUser always hits the network.
      */
     private fun loadBalance() {
         viewModelScope.launch {
             if (groupId != null) {
-                // Scoped settle: use breakdown to get the exact balance for this group
                 when (val result = balanceRepository.getBreakdownWithUser(otherUserId)) {
                     is ApiResult.Success -> {
                         val scoped = result.data.filter { it.groupId == groupId }
                         _balanceAmount.value   = scoped.sumOf { it.amount }
-                        _balanceCurrency.value = scoped.firstOrNull()?.currency ?: currency
+                        _balanceCurrency.value = scoped.firstOrNull()?.currency
+                            ?: tokenStore.getPreferredCurrency()
                         val name = scoped.firstOrNull()?.otherUserName
                         if (!name.isNullOrBlank()) _otherUserName.value = name
                         else loadNameFromFriends()
                     }
-                    else -> Unit
+                    else -> loadNameFromFriends()
                 }
             } else {
-                // Full net settle: use UserBalance (net across all contexts)
-                when (val result = getAllBalancesUseCase()) {
+                when (val result = balanceRepository.getNetBalanceWithUser(otherUserId)) {
                     is ApiResult.Success -> {
-                        val relevant = result.data.filter { it.otherUserId == otherUserId }
-                        _balanceAmount.value   = relevant.sumOf { it.amount }
-                        _balanceCurrency.value = relevant.firstOrNull()?.currency ?: currency
-                        val name = relevant.firstOrNull()?.otherUserName
+                        _balanceAmount.value   = result.data.sumOf { it.amount }
+                        _balanceCurrency.value = result.data.firstOrNull()?.currency
+                            ?: tokenStore.getPreferredCurrency()
+                        val name = result.data.firstOrNull()?.otherUserName
                         if (!name.isNullOrBlank()) _otherUserName.value = name
                         else loadNameFromFriends()
                     }
-                    else -> Unit
+                    else -> loadNameFromFriends()
                 }
             }
         }
@@ -127,10 +128,16 @@ class SettleUpViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = SettleUpUiState.Loading
 
-            // Direction: use overridePayerId if set (from "More options" flow),
-            // otherwise derive from balance sign.
             val payerId = overridePayerId
                 ?: if (_balanceAmount.value > 0) otherUserId else null
+
+            // Bug fix: use _balanceCurrency.value, NOT tokenStore.getPreferredCurrency().
+            // For PARTIAL type, the BE records the settlement in this currency and applies
+            // the balance delta in that exact currency. Sending the user's preferred currency
+            // (e.g. USD) when the actual balance is EUR creates a USD settlement that can never
+            // be matched — the EUR balance stays unfixed and a phantom USD debt appears on the
+            // other side.
+            val currency = _balanceCurrency.value
 
             when (val result = settleUseCase(
                 otherUserId   = otherUserId,

@@ -106,7 +106,11 @@ fun SettleUpScreen(
 
     fun confirmAndSettle(settleAction: () -> Unit) {
         val amt = amount.toDoubleOrNull() ?: 0.0
-        val needsBiometric = amt >= 50.0 || amount.isBlank()
+        // When amount is blank the user is settling the full balance (defaultAmount).
+        // Use the actual balance for the threshold — otherwise every settle-all
+        // triggers biometric even for a $0.50 balance.
+        val effectiveAmount = if (amount.isBlank()) defaultAmount else amt
+        val needsBiometric = effectiveAmount >= 50.0
         if (needsBiometric && activity != null && biometricHelper.canAuthenticate()) {
             scope.launch {
                 val label = if (amount.isBlank()) "the full balance" else "$${"%.2f".format(amt)}"
