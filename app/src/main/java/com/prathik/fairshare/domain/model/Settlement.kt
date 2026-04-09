@@ -22,4 +22,10 @@ data class Settlement(
     val settlementDate: String,
     val completedAt: String?,
     val createdAt: String,
+    // Settlement type: ALL, GROUP, NON_GROUP, PARTIAL
+    val settleType: String?,
+    // True when the full balance in scope was cleared (drives "fully settled" UI)
+    val isFullSettle: Boolean,
+    // JSON snapshot of per-group balances — only non-null for ALL+isFullSettle
+    val groupBalanceSnapshot: String?,
 ) : Parcelable

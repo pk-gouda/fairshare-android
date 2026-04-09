@@ -710,6 +710,9 @@ fun MainShell(
                     onNavigateToSettlement = { settlementId ->
                         shellNavController.navigate(Screen.SettlementDetail.route(settlementId))
                     },
+                    onNavigateToGroup = { groupId ->
+                        shellNavController.navigate(Screen.GroupDetail.route(groupId))
+                    },
                 )
             }
 

@@ -128,7 +128,11 @@ class FriendDetailViewModel @Inject constructor(
 
             // Settlement history with this friend
             when (val result = settlementsDeferred.await()) {
-                is ApiResult.Success -> _settlements.value = result.data
+                is ApiResult.Success -> {
+                    // Group settlements belong in the group timeline only.
+                    // Show only non-group (direct) settlements in the friend detail screen.
+                    _settlements.value = result.data.filter { it.groupId == null }
+                }
                 else -> Unit
             }
 
@@ -167,7 +171,9 @@ class FriendDetailViewModel @Inject constructor(
 
             // Refresh settlement history
             when (val result = getSettlementHistoryUseCase(friendId)) {
-                is ApiResult.Success -> _settlements.value = result.data
+                is ApiResult.Success -> {
+                    _settlements.value = result.data.filter { it.groupId == null }
+                }
                 else -> Unit
             }
         }

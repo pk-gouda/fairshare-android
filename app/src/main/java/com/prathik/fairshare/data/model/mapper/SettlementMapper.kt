@@ -6,28 +6,28 @@ import com.prathik.fairshare.domain.model.SettlementStatus
 
 /**
  * Maps SettlementResponse DTO to Settlement domain model.
- *
- * status is stored as String in the DTO.
- * Safe conversion with fallback: unknown status → PENDING.
  */
 fun SettlementResponse.toDomain(): Settlement = Settlement(
-    id             = id,
-    payerId        = payerId,
-    payerName      = payerName,
-    receiverId     = receiverId,
-    receiverName   = receiverName,
-    amount         = amount,
-    currency       = currency,
-    groupId        = groupId,
-    groupName      = groupName,
-    status         = status.toSettlementStatusSafe(),
-    notes          = notes,
-    paymentMethod  = paymentMethod,
-    recordedById   = recordedById,
-    recordedByName = recordedByName,
-    settlementDate = settlementDate,
-    completedAt    = completedAt,
-    createdAt      = createdAt,
+    id                   = id,
+    payerId              = payerId,
+    payerName            = payerName,
+    receiverId           = receiverId,
+    receiverName         = receiverName,
+    amount               = amount,
+    currency             = currency,
+    groupId              = groupId,
+    groupName            = groupName,
+    status               = status.toSettlementStatusSafe(),
+    notes                = notes,
+    paymentMethod        = paymentMethod,
+    recordedById         = recordedById,
+    recordedByName       = recordedByName,
+    settlementDate       = settlementDate,
+    completedAt          = completedAt,
+    createdAt            = createdAt,
+    settleType           = settleType,
+    isFullSettle         = isFullSettle,
+    groupBalanceSnapshot = groupBalanceSnapshot,
 )
 
 private fun String.toSettlementStatusSafe(): SettlementStatus =

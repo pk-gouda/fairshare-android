@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -59,16 +60,17 @@ import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
 import com.prathik.fairshare.util.MoneyUtils
+import org.json.JSONArray
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettlementDetailScreen(
-    onBack        : () -> Unit,
+    onBack          : () -> Unit,
     onNavigateToEdit: (String) -> Unit,
-    onDeleted     : () -> Unit,
-    viewModel     : SettlementDetailViewModel = hiltViewModel(),
+    onDeleted       : () -> Unit,
+    viewModel       : SettlementDetailViewModel = hiltViewModel(),
 ) {
     val state        by viewModel.state.collectAsState()
     val actionState  by viewModel.actionState.collectAsState()
@@ -89,15 +91,18 @@ fun SettlementDetailScreen(
     val settlement = (state as? SettlementDetailUiState.Success)?.settlement
     val canEdit = settlement != null && viewModel.isRecordedByMe(settlement)
 
+    // "Fully settled" records are informational snapshots — not editable/deletable
+    val isFullySettled = settlement?.isFullSettle == true
+
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
         topBar = {
             FsTopBar(
-                title   = "Payment",
+                title   = if (isFullySettled) "Settled up" else "Payment",
                 onBack  = onBack,
                 actions = {
-                    if (canEdit) {
+                    if (canEdit && !isFullySettled) {
                         FsIconButton(
                             icon               = Icons.Filled.Edit,
                             contentDescription = "Edit",
@@ -122,7 +127,11 @@ fun SettlementDetailScreen(
                 is SettlementDetailUiState.Deleted ->
                     FsErrorScreen(message = "This settlement no longer exists.")
                 is SettlementDetailUiState.Success ->
-                    SettlementDetailContent(settlement = s.settlement)
+                    if (s.settlement.isFullSettle && s.settlement.settleType == "ALL") {
+                        FullySettledContent(settlement = s.settlement)
+                    } else {
+                        SettlementDetailContent(settlement = s.settlement)
+                    }
             }
         }
     }
@@ -144,6 +153,222 @@ fun SettlementDetailScreen(
         )
     }
 }
+
+// ── "Fully settled up in all groups" detail screen ────────────────────────────
+
+@Composable
+private fun FullySettledContent(settlement: Settlement) {
+    val displayDate = remember(settlement.settlementDate) {
+        try {
+            val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            dt.format(DateTimeFormatter.ofPattern("MMMM d, yyyy"))
+        } catch (e: Exception) { settlement.settlementDate }
+    }
+
+    // Parse group balance snapshot JSON
+    // Format: [{"groupId":"...","groupName":"...","amount":4.06,"direction":"owed_you","currency":"USD"},...]
+    data class GroupSnapshotEntry(
+        val groupName: String,
+        val amount: Double,
+        val direction: String, // "owed_you" or "you_owed"
+        val currency: String,
+    )
+
+    val groupEntries = remember(settlement.groupBalanceSnapshot) {
+        val list = mutableListOf<GroupSnapshotEntry>()
+        try {
+            val arr = JSONArray(settlement.groupBalanceSnapshot ?: "[]")
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(GroupSnapshotEntry(
+                    groupName = obj.optString("groupName", "Group"),
+                    amount    = obj.optDouble("amount", 0.0),
+                    direction = obj.optString("direction", "you_owed"),
+                    currency  = obj.optString("currency", "USD"),
+                ))
+            }
+        } catch (e: Exception) { /* ignore parse errors */ }
+        list
+    }
+
+    // Net direction summary
+    val otherPersonName = settlement.payerName.takeIf {
+        it != settlement.recordedByName
+    } ?: settlement.receiverName
+
+    // Total across all groups for the summary line
+    val totalOwedToRecorder = groupEntries.filter { it.direction == "owed_you" }.sumOf { it.amount }
+    val totalOwedByRecorder = groupEntries.filter { it.direction == "you_owed" }.sumOf { it.amount }
+    val net = totalOwedToRecorder - totalOwedByRecorder
+    val summaryLine = when {
+        net > 0 -> "${settlement.receiverName} owed ${settlement.payerName} ${MoneyUtils.format(net, settlement.currency)} in shared groups"
+        net < 0 -> "${settlement.payerName} owed ${settlement.receiverName} ${MoneyUtils.format(-net, settlement.currency)} in shared groups"
+        else    -> "Balances were equal across shared groups"
+    }
+
+    Column(
+        modifier            = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = Spacing.xxxl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(modifier = Modifier.height(Spacing.xl))
+
+        // Scales icon
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(Radius.xl))
+                .background(Green400.copy(alpha = 0.12f)),
+        ) { Text("⚖️", fontSize = 32.sp) }
+
+        Spacer(modifier = Modifier.height(Spacing.lg))
+
+        Text(
+            text       = "You fully settled up in all groups",
+            fontSize   = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color      = TextPrimary,
+            textAlign  = TextAlign.Center,
+            modifier   = Modifier.padding(horizontal = Spacing.lg),
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.sm))
+
+        // "with [avatar] [name]" pill
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier          = Modifier
+                .clip(RoundedCornerShape(Radius.full))
+                .background(Surface2)
+                .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+        ) {
+            Text("with", fontSize = 14.sp, color = TextSecondary)
+            Spacer(modifier = Modifier.width(Spacing.sm))
+            FsAvatar(
+                name   = otherPersonName,
+                userId = if (settlement.payerName == settlement.recordedByName)
+                    settlement.receiverId else settlement.payerId,
+                size   = 24.dp,
+            )
+            Spacer(modifier = Modifier.width(Spacing.sm))
+            Text(otherPersonName, fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+        }
+
+        Spacer(modifier = Modifier.height(Spacing.sm))
+
+        Text(
+            text     = "Added on $displayDate",
+            fontSize = 13.sp,
+            color    = TextTertiary,
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.xl))
+
+        // Info box
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg)
+                .clip(RoundedCornerShape(Radius.xl))
+                .background(Surface2)
+                .padding(Spacing.md),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(Green400.copy(alpha = 0.15f)),
+            ) {
+                Text("ⓘ", fontSize = 14.sp, color = Green400)
+            }
+            Spacer(modifier = Modifier.width(Spacing.sm))
+            Text(
+                text     = "When you settled up on $displayDate, FairShare automatically cleared your group balances, as shown below.",
+                fontSize = 13.sp,
+                color    = TextSecondary,
+            )
+        }
+
+        if (groupEntries.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(Spacing.xl))
+
+            Text(
+                text     = summaryLine,
+                fontSize = 13.sp,
+                color    = TextSecondary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg),
+            )
+
+            Spacer(modifier = Modifier.height(Spacing.md))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .clip(RoundedCornerShape(Radius.xl))
+                    .background(Surface2),
+            ) {
+                groupEntries.forEachIndexed { index, entry ->
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Group initial box
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(groupColor(entry.groupName)),
+                        ) {
+                            Text(
+                                text       = entry.groupName.firstOrNull()?.uppercaseChar()?.toString() ?: "G",
+                                fontSize   = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color      = Color.White,
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(Spacing.md))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(entry.groupName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                            val subtitle = if (entry.direction == "owed_you")
+                                "${otherPersonName} owed You ${MoneyUtils.format(entry.amount, entry.currency)}"
+                            else
+                                "You owed ${otherPersonName} ${MoneyUtils.format(entry.amount, entry.currency)}"
+                            Text(subtitle, fontSize = 12.sp,
+                                color = if (entry.direction == "owed_you") Green400 else Negative)
+                        }
+                    }
+                    if (index < groupEntries.lastIndex) {
+                        HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                            modifier = Modifier.padding(horizontal = Spacing.lg))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun groupColor(name: String): Color {
+    val colors = listOf(
+        Color(0xFF1A2A3A), Color(0xFF1A3A1A), Color(0xFF2A1A0A),
+        Color(0xFF1A1A3A), Color(0xFF2A1A2A),
+    )
+    return colors[(name.hashCode() and 0x7fffffff) % colors.size]
+}
+
+// ── Standard payment detail screen ───────────────────────────────────────────
 
 @Composable
 private fun SettlementDetailContent(settlement: Settlement) {
@@ -174,7 +399,6 @@ private fun SettlementDetailContent(settlement: Settlement) {
 
         Spacer(modifier = Modifier.height(Spacing.lg))
 
-        // Payer → Receiver
         Text(
             text       = "${settlement.payerName} paid ${settlement.receiverName}",
             fontSize   = 18.sp,
@@ -186,7 +410,6 @@ private fun SettlementDetailContent(settlement: Settlement) {
 
         Spacer(modifier = Modifier.height(Spacing.sm))
 
-        // Amount
         Text(
             text       = MoneyUtils.format(settlement.amount, settlement.currency),
             fontSize   = 38.sp,
@@ -196,7 +419,6 @@ private fun SettlementDetailContent(settlement: Settlement) {
 
         Spacer(modifier = Modifier.height(Spacing.sm))
 
-        // Avatars row
         Row(verticalAlignment = Alignment.CenterVertically) {
             FsAvatar(name = settlement.payerName, userId = settlement.payerId, size = ComponentSize.avatarLg)
             Spacer(modifier = Modifier.width(Spacing.lg))
@@ -222,7 +444,6 @@ private fun SettlementDetailContent(settlement: Settlement) {
         HorizontalDivider(color = Surface3)
         Spacer(modifier = Modifier.height(Spacing.lg))
 
-        // Meta info card
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -230,7 +451,7 @@ private fun SettlementDetailContent(settlement: Settlement) {
                 .clip(RoundedCornerShape(Radius.xl))
                 .background(Surface2),
         ) {
-            MetaRow(label = "Date",          value = displayDate)
+            MetaRow(label = "Date",           value = displayDate)
             HorizontalDivider(color = Surface3, thickness = 0.5.dp,
                 modifier = Modifier.padding(horizontal = Spacing.lg))
             MetaRow(label = "Payment method", value = settlement.paymentMethod ?: "Not specified")
@@ -251,9 +472,8 @@ private fun SettlementDetailContent(settlement: Settlement) {
 
         Spacer(modifier = Modifier.height(Spacing.xl))
 
-        // Disclaimer
         Text(
-            text      = "This payment was recorded using the \"record a payment\" feature. No money has been moved.",
+            text      = "This payment was added using the \"record a payment\" feature. No money has been moved.",
             fontSize  = 12.sp,
             color     = TextTertiary,
             textAlign = TextAlign.Center,

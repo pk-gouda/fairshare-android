@@ -370,11 +370,19 @@ fun GroupDetailScreen(
                                                         expense = item.expense,
                                                         onClick = { onNavigateToExpense(item.expense.id) },
                                                     )
-                                                    is TimelineItem.SettlementItem -> SettlementRow(
-                                                        settlement = item.settlement,
-                                                        onClick    = { onNavigateToSettlement(item.settlement.id) },
-                                                        onDelete   = { viewModel.deleteSettlement(item.settlement.id) },
-                                                    )
+                                                    is TimelineItem.SettlementItem ->
+                                                        if (item.settlement.isFullSettle) {
+                                                            GroupFullySettledRow(
+                                                                settlement = item.settlement,
+                                                                onClick    = { onNavigateToSettlement(item.settlement.id) },
+                                                            )
+                                                        } else {
+                                                            SettlementRow(
+                                                                settlement = item.settlement,
+                                                                onClick    = { onNavigateToSettlement(item.settlement.id) },
+                                                                onDelete   = { viewModel.deleteSettlement(item.settlement.id) },
+                                                            )
+                                                        }
                                                 }
                                             }
                                         }
@@ -1051,6 +1059,71 @@ private fun ExpenseRow(
         modifier = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
     )
 }
+
+// ── Group Fully Settled Row ───────────────────────────────────────────────────
+
+/**
+ * Scales icon row shown in the group timeline for isFullSettle settlements.
+ * Shows "[Name] fully settled up with [OtherName]" — no amount.
+ * Tapping navigates to the "fully settled up" detail screen.
+ */
+@Composable
+private fun GroupFullySettledRow(settlement: com.prathik.fairshare.domain.model.Settlement, onClick: () -> Unit) {
+    val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
+        try {
+            val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
+        } catch (e: Exception) { "—" to "—" }
+    }
+
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.lg, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Date column
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier            = Modifier.width(30.dp),
+        ) {
+            Text(monthAbbr, fontSize = 10.sp, color = TextTertiary, textAlign = TextAlign.Center)
+            Text(dayNum, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = TextSecondary, textAlign = TextAlign.Center)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(Radius.md))
+                .background(Green400.copy(alpha = 0.12f)),
+        ) {
+            Text("⚖️", fontSize = 18.sp)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.md))
+
+        Text(
+            text       = "${settlement.payerName} fully settled up with ${settlement.receiverName}",
+            fontSize   = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color      = Green400,
+            maxLines   = 1,
+            overflow   = TextOverflow.Ellipsis,
+        )
+    }
+
+    HorizontalDivider(
+        color     = Surface3,
+        thickness = 0.5.dp,
+        modifier  = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
+    )
+}
+
 
 // ── Settlement Row ────────────────────────────────────────────────────────────
 

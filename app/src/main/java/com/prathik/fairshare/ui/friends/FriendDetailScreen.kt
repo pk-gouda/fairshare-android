@@ -96,6 +96,7 @@ fun FriendDetailScreen(
     onNavigateToSettle     : (friendId: String, groupId: String?, payerId: String?) -> Unit,
     onNavigateToSearch     : () -> Unit,
     onNavigateToSettlement : (String) -> Unit = {},
+    onNavigateToGroup      : (String) -> Unit = {},
     viewModel              : FriendDetailViewModel = hiltViewModel(),
 ) {
     val isLoading     by viewModel.isLoading.collectAsState()
@@ -236,13 +237,20 @@ fun FriendDetailScreen(
                             is FriendExpensesState.Success -> {
                                 // Build unified timeline
                                 val allItems = buildList<FriendTimelineItem> {
-                                    groupBalances.filter { it.amount != 0.0 }.forEach { balance ->
+                                    // Show ALL group balances including settled (amount == 0)
+                                    // so the group row stays visible with "settled up" label
+                                    groupBalances.forEach { balance ->
                                         add(FriendTimelineItem.GroupBalanceItem(balance))
                                     }
                                     state.expenses.forEach { expense ->
                                         add(FriendTimelineItem.DirectExpenseItem(expense))
                                     }
                                     settlements.forEach { settlement ->
+                                        // For ALL+isFullSettle settlements, add a separate
+                                        // scales icon row in addition to the payment row
+                                        if (settlement.isFullSettle && settlement.settleType == "ALL") {
+                                            add(FriendTimelineItem.FullySettledItem(settlement))
+                                        }
                                         add(FriendTimelineItem.SettlementItem(settlement))
                                     }
                                 }.sortedByDescending { it.sortDate }
@@ -280,11 +288,17 @@ fun FriendDetailScreen(
                                                 is FriendTimelineItem.GroupBalanceItem  -> "gb_${it.balance.groupId}"
                                                 is FriendTimelineItem.DirectExpenseItem -> "ex_${it.expense.id}"
                                                 is FriendTimelineItem.SettlementItem    -> "st_${it.settlement.id}"
+                                                is FriendTimelineItem.FullySettledItem  -> "fs_${it.settlement.id}"
                                             }},
                                         ) { item ->
                                             when (item) {
                                                 is FriendTimelineItem.GroupBalanceItem ->
-                                                    GroupBalanceRow(balance = item.balance)
+                                                    GroupBalanceRow(
+                                                        balance = item.balance,
+                                                        onClick = { gId ->
+                                                            if (gId != null) onNavigateToGroup(gId)
+                                                        },
+                                                    )
                                                 is FriendTimelineItem.DirectExpenseItem ->
                                                     FriendExpenseRow(
                                                         expense = item.expense,
@@ -295,6 +309,11 @@ fun FriendDetailScreen(
                                                         settlement = item.settlement,
                                                         onClick    = { onNavigateToSettlement(item.settlement.id) },
                                                         onDelete   = { viewModel.deleteSettlement(item.settlement.id) },
+                                                    )
+                                                is FriendTimelineItem.FullySettledItem ->
+                                                    FriendFullySettledRow(
+                                                        settlement = item.settlement,
+                                                        onClick    = { onNavigateToSettlement(item.settlement.id) },
                                                     )
                                             }
                                         }
@@ -611,6 +630,9 @@ sealed class FriendTimelineItem(val sortDate: String) {
         FriendTimelineItem(expense.expenseDate)
     data class SettlementItem(val settlement: Settlement) :
         FriendTimelineItem(settlement.settlementDate)
+    /** Scales icon row shown for ALL+isFullSettle settlements, separate from the payment row. */
+    data class FullySettledItem(val settlement: Settlement) :
+        FriendTimelineItem(settlement.settlementDate)
 }
 
 // ── Friend Settlement Row ─────────────────────────────────────────────────────
@@ -720,6 +742,73 @@ private fun FriendSettlementRow(settlement: Settlement, onClick: () -> Unit, onD
     )
 }
 
+// ── Friend Fully Settled Row ──────────────────────────────────────────────────
+
+/**
+ * Scales icon row shown in the friend timeline for ALL+isFullSettle settlements.
+ * Displayed alongside (above) the regular payment row.
+ * Tapping navigates to the "fully settled up" detail screen.
+ */
+@Composable
+private fun FriendFullySettledRow(settlement: Settlement, onClick: () -> Unit) {
+    val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
+        try {
+            val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
+        } catch (e: Exception) { "—" to "—" }
+    }
+
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.lg, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Date column
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier            = Modifier.width(30.dp),
+        ) {
+            Text(monthAbbr, fontSize = 10.sp, color = TextTertiary, textAlign = TextAlign.Center)
+            Text(dayNum, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = TextSecondary, textAlign = TextAlign.Center)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.sm))
+
+        // Scales icon box
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(Radius.md))
+                .background(Green400.copy(alpha = 0.12f)),
+        ) {
+            Text("⚖️", fontSize = 18.sp)
+        }
+
+        Spacer(modifier = Modifier.width(Spacing.md))
+
+        Text(
+            text       = "You fully settled up in all groups",
+            fontSize   = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color      = Green400,
+            maxLines   = 1,
+            overflow   = TextOverflow.Ellipsis,
+            modifier   = Modifier.weight(1f),
+        )
+    }
+
+    HorizontalDivider(
+        color     = Surface3,
+        thickness = 0.5.dp,
+        modifier  = Modifier.padding(start = Spacing.lg + 30.dp + Spacing.sm),
+    )
+}
+
+
 // ── Group Balance Row ─────────────────────────────────────────────────────────
 
 /**
@@ -730,11 +819,20 @@ private fun FriendSettlementRow(settlement: Settlement, onClick: () -> Unit, onD
  *   [Day]                       in group              $XX.XX
  */
 @Composable
-private fun GroupBalanceRow(balance: Balance) {
-    val isOwed = balance.amount > 0
-    val balanceColor = if (isOwed) Green400 else Negative
-    val balanceLabel = if (isOwed) "you lent" else "you owe"
-    val displayAmount = MoneyUtils.format(Math.abs(balance.amount), balance.currency)
+private fun GroupBalanceRow(balance: Balance, onClick: (String?) -> Unit = {}) {
+    val isOwed    = balance.amount > 0
+    val isSettled = balance.amount == 0.0
+    val balanceColor = when {
+        isSettled -> TextTertiary
+        isOwed    -> Green400
+        else      -> Negative
+    }
+    val balanceLabel = when {
+        isSettled -> "settled up"
+        isOwed    -> "you lent"
+        else      -> "you owe"
+    }
+    val displayAmount = if (isSettled) "" else MoneyUtils.format(Math.abs(balance.amount), balance.currency)
 
     val (monthAbbr, dayNum) = remember(balance.groupLastActivity) {
         if (balance.groupLastActivity.isNullOrBlank()) {
@@ -767,6 +865,7 @@ private fun GroupBalanceRow(balance: Balance) {
     Row(
         modifier          = Modifier
             .fillMaxWidth()
+            .clickable { onClick(balance.groupId) }
             .padding(horizontal = Spacing.lg, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -814,10 +913,14 @@ private fun GroupBalanceRow(balance: Balance) {
 
         Spacer(modifier = Modifier.width(Spacing.sm))
 
-        // Balance direction + amount
+        // Balance direction + amount (or "settled up")
         Column(horizontalAlignment = Alignment.End) {
-            Text(text = balanceLabel, fontSize = 10.sp, color = TextTertiary)
-            Text(text = displayAmount, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = balanceColor)
+            if (isSettled) {
+                Text(text = "settled up", fontSize = 12.sp, color = TextTertiary)
+            } else {
+                Text(text = balanceLabel, fontSize = 10.sp, color = TextTertiary)
+                Text(text = displayAmount, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = balanceColor)
+            }
         }
     }
 
