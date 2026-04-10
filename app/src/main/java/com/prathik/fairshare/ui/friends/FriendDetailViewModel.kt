@@ -11,6 +11,7 @@ import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.repository.FriendRepository
+import com.prathik.fairshare.domain.repository.ImportRepository
 import com.prathik.fairshare.domain.repository.SettlementRepository
 import com.prathik.fairshare.domain.usecase.settlement.GetSettlementHistoryUseCase
 import com.prathik.fairshare.data.local.EncryptedTokenStore
@@ -31,6 +32,7 @@ class FriendDetailViewModel @Inject constructor(
     private val getSettlementHistoryUseCase: GetSettlementHistoryUseCase,
     private val settlementRepository: SettlementRepository,
     private val tokenStore: EncryptedTokenStore,
+    private val importRepository: ImportRepository,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
@@ -44,6 +46,9 @@ class FriendDetailViewModel @Inject constructor(
 
     private val _friendStatus = MutableStateFlow<String?>(null)
     val friendStatus: StateFlow<String?> = _friendStatus.asStateFlow()
+
+    private val _friends = MutableStateFlow<List<com.prathik.fairshare.domain.model.Friend>>(emptyList())
+    val friends: StateFlow<List<com.prathik.fairshare.domain.model.Friend>> = _friends.asStateFlow()
 
     private val _netBalance = MutableStateFlow(0.0)
     val netBalance: StateFlow<Double> = _netBalance.asStateFlow()
@@ -86,6 +91,8 @@ class FriendDetailViewModel @Inject constructor(
 
             // Resolve friend
             val allFriends = (friendsDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
+            // Expose friends list for the "link placeholder" sheet
+            _friends.value = allFriends.filter { !it.isPlaceholder }
             val found = allFriends.find { it.id == friendId }
 
             if (found != null) {
@@ -193,6 +200,21 @@ class FriendDetailViewModel @Inject constructor(
                     _actionState.value = FriendDetailActionState.Error("No internet connection.")
                 else ->
                     _actionState.value = FriendDetailActionState.Error("Failed to delete settlement.")
+            }
+        }
+    }
+
+    fun assignFriendPlaceholder(placeholderUserId: String, friendUserId: String) {
+        viewModelScope.launch {
+            when (importRepository.assignFriendPlaceholder(placeholderUserId, friendUserId)) {
+                is ApiResult.Success -> {
+                    _actionState.value = FriendDetailActionState.Success("Friend linked successfully")
+                    refreshExpenses()
+                }
+                is ApiResult.NetworkError ->
+                    _actionState.value = FriendDetailActionState.Error("No internet connection.")
+                else ->
+                    _actionState.value = FriendDetailActionState.Error("Failed to link friend.")
             }
         }
     }

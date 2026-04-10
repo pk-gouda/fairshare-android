@@ -47,4 +47,9 @@ interface ImportApiService {
         @Path("groupId") groupId: String,
         @Body request: UnclaimIdentityRequest,
     ): ApiResponse<ImportActionResponse>
+
+    @POST("api/import/friend/assign")
+    suspend fun assignFriendPlaceholder(
+        @Body request: AssignPlaceholderRequest,
+    ): ApiResponse<ImportActionResponse>
 }

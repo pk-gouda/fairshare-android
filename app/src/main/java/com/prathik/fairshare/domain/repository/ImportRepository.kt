@@ -40,7 +40,7 @@ interface ImportRepository {
      *
      * Returns import stats.
      */
-    suspend fun importFriend(csvContent: String): ApiResult<Map<String, Any>>
+    suspend fun importFriend(csvContent: String, importerCsvName: String? = null): ApiResult<Map<String, Any>>
 
     /**
      * Fetches all PLACEHOLDER members in a group that haven't been
@@ -86,4 +86,6 @@ interface ImportRepository {
         groupId: String,
         placeholderUserId: String,
     ): ApiResult<Map<String, Any>>
+
+    suspend fun assignFriendPlaceholder(placeholderUserId: String, friendUserId: String): ApiResult<Map<String, Any>>
 }

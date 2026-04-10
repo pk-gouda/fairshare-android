@@ -35,6 +35,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -107,9 +109,11 @@ fun FriendDetailScreen(
     val expensesState by viewModel.expensesState.collectAsState()
     val settlements   by viewModel.settlements.collectAsState()
     val actionState   by viewModel.actionState.collectAsState()
+    val friendStatus  by viewModel.friendStatus.collectAsState()
 
     // ── Settle up sheet state ─────────────────────────────────────────────────
     var showBalanceSheet by remember { mutableStateOf(false) }
+    var showLinkSheet    by remember { mutableStateOf(false) }
     var showPayerSheet   by remember { mutableStateOf(false) }
 
     // Non-group balance = net - sum of group balances
@@ -206,6 +210,21 @@ fun FriendDetailScreen(
                                     vertical   = Spacing.md,
                                 ),
                             )
+                        }
+
+                        // ── Placeholder link banner ───────────────────────────
+                        if (friendStatus == "placeholder") {
+                            item {
+                                PlaceholderLinkBanner(
+                                    friendName = friendName,
+                                    onLink     = { showLinkSheet = true },
+                                    modifier   = Modifier.padding(
+                                        start  = Spacing.lg,
+                                        end    = Spacing.lg,
+                                        bottom = Spacing.sm,
+                                    ),
+                                )
+                            }
                         }
 
                         // ── Action Pills ──────────────────────────────────────
@@ -409,6 +428,20 @@ fun FriendDetailScreen(
     }
 
     // ── Sheet 1: Balance selection (Splitwise-style) ──────────────────────────
+    // Link sheet for placeholder friends
+    val friendsList by viewModel.friends.collectAsState()
+    if (showLinkSheet && friendStatus == "placeholder") {
+        FriendLinkSheet(
+            friendName = friendName,
+            friends    = friendsList,
+            onLink     = { friendId ->
+                showLinkSheet = false
+                viewModel.assignFriendPlaceholder(viewModel.friendId, friendId)
+            },
+            onDismiss  = { showLinkSheet = false },
+        )
+    }
+
     if (showBalanceSheet) {
         androidx.compose.material3.ModalBottomSheet(
             onDismissRequest = { showBalanceSheet = false },
@@ -623,6 +656,70 @@ fun FriendDetailScreen(
 
 // ── Timeline data model ───────────────────────────────────────────────────────
 
+// ── Link Friend Sheet (shown when tapping PlaceholderLinkBanner) ──────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FriendLinkSheet(
+    friendName  : String,
+    friends     : List<com.prathik.fairshare.domain.model.Friend>,
+    onLink      : (friendId: String) -> Unit,
+    onDismiss   : () -> Unit,
+) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor   = Surface2,
+    ) {
+        Column(modifier = Modifier.padding(bottom = 32.dp)) {
+            Text(
+                text       = "Who is $friendName on FairShare?",
+                fontSize   = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = TextPrimary,
+                modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+            )
+            Text(
+                text     = "Link their expenses to a real account.",
+                fontSize = 13.sp,
+                color    = TextSecondary,
+                modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
+            )
+            HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+            if (friends.isEmpty()) {
+                Text("No FairShare friends found.", fontSize = 14.sp, color = TextTertiary,
+                    modifier = Modifier.padding(Spacing.lg))
+            } else {
+                friends.forEach { friend ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onLink(friend.id) }
+                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FsAvatar(name = friend.fullName, userId = friend.id,
+                            size = ComponentSize.avatarMd)
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(friend.fullName, fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium, color = TextPrimary)
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = Spacing.lg, vertical = 16.dp),
+            ) {
+                Text("Cancel", fontSize = 14.sp, color = TextTertiary)
+            }
+        }
+    }
+}
+
+
 sealed class FriendTimelineItem(val sortDate: String) {
     data class GroupBalanceItem(val balance: Balance) :
         FriendTimelineItem(balance.groupLastActivity ?: "")
@@ -741,6 +838,43 @@ private fun FriendSettlementRow(settlement: Settlement, onClick: () -> Unit, onD
         modifier  = Modifier.padding(start = Spacing.lg + 30.dp + Spacing.sm),
     )
 }
+
+// ── Placeholder Link Banner ───────────────────────────────────────────────────
+
+@Composable
+private fun PlaceholderLinkBanner(
+    friendName: String,
+    onLink    : () -> Unit,
+    modifier  : Modifier = Modifier,
+) {
+    Row(
+        modifier          = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.xl))
+            .background(Surface2)
+            .clickable(onClick = onLink)
+            .padding(horizontal = Spacing.md, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("🔗", fontSize = 20.sp)
+        Spacer(modifier = Modifier.width(Spacing.sm))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text       = "Link $friendName to a FairShare friend",
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color      = TextPrimary,
+            )
+            Text(
+                text     = "Tap to connect this placeholder to a real account",
+                fontSize = 12.sp,
+                color    = TextSecondary,
+            )
+        }
+        Text("→", fontSize = 16.sp, color = Green400, fontWeight = FontWeight.SemiBold)
+    }
+}
+
 
 // ── Friend Fully Settled Row ──────────────────────────────────────────────────
 

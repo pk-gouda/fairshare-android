@@ -36,10 +36,10 @@ class ImportRepositoryImpl @Inject constructor(
             )
         }.mapSuccess { it?.toMap() ?: emptyMap() }
 
-    override suspend fun importFriend(csvContent: String): ApiResult<Map<String, Any>> =
+    override suspend fun importFriend(csvContent: String, importerCsvName: String?): ApiResult<Map<String, Any>> =
         safeApiCall {
             importService.importFriend(
-                ImportRequest(type = "FRIEND", csvContent = csvContent)
+                ImportRequest(type = "FRIEND", csvContent = csvContent, importerCsvName = importerCsvName)
             )
         }.mapSuccess { it?.toMap() ?: emptyMap() }
 
@@ -86,6 +86,18 @@ class ImportRepositoryImpl @Inject constructor(
                 )
             )
         }.mapSuccess { emptyMap() }
+    override suspend fun assignFriendPlaceholder(
+        placeholderUserId: String,
+        friendUserId: String,
+    ): ApiResult<Map<String, Any>> =
+        safeApiCall {
+            importService.assignFriendPlaceholder(
+                AssignPlaceholderRequest(
+                    placeholderUserId = placeholderUserId,
+                    friendUserId      = friendUserId,
+                )
+            )
+        }.mapSuccess { emptyMap() }
 }
 
 // Extension to convert ImportResponse → Map<String, Any> (keeps domain layer unchanged)
@@ -98,7 +110,13 @@ private fun ImportResponse.toMap(): Map<String, Any> = buildMap {
     put("settlementsCreated", settlementsCreated)
     put("rowsSkipped",        rowsSkipped)
     put("totalRows",          totalRows)
-    put("members",            members)
+    put("members", members.map { entry ->
+        mapOf(
+            "csvName"           to entry.csvName,
+            "placeholderUserId" to entry.placeholderUserId,
+            "status"            to entry.status,
+        )
+    })
     put("removedNames",       removedNames)
     put("warnings",           warnings)
 }

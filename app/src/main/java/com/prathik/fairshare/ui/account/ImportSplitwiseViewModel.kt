@@ -59,6 +59,8 @@ class ImportSplitwiseViewModel @Inject constructor(
 
     fun clearCsvNames() { _csvMemberNames.value = emptyList() }
 
+    fun myDisplayName(): String = tokenStore.getFullName() ?: tokenStore.getUserId() ?: ""
+
     private fun loadFriends() {
         viewModelScope.launch {
             when (val result = friendRepository.getFriends()) {
@@ -108,17 +110,22 @@ class ImportSplitwiseViewModel @Inject constructor(
         }
     }
 
-    fun importFriend(csvContent: String) {
+    fun importFriend(csvContent: String, importerCsvName: String? = null) {
         viewModelScope.launch {
             _uiState.value = ImportUiState.Loading("Importing expenses…")
-            when (val result = importRepository.importFriend(csvContent)) {
+            when (val result = importRepository.importFriend(csvContent, importerCsvName)) {
                 is ApiResult.Success -> {
                     val data = result.data
                     val expensesCreated = (data["expensesCreated"] as? Int) ?: 0
                     val settlementsCreated = (data["settlementsCreated"] as? Int) ?: 0
+                    @Suppress("UNCHECKED_CAST")
+                    val members = data["members"] as? List<Map<String, String>> ?: emptyList()
+                    val unclaimed = members.firstOrNull { it["status"] == "UNCLAIMED" }
                     _uiState.value = ImportUiState.FriendSuccess(
-                        expensesCreated    = expensesCreated,
-                        settlementsCreated = settlementsCreated,
+                        expensesCreated        = expensesCreated,
+                        settlementsCreated     = settlementsCreated,
+                        otherPlaceholderUserId = unclaimed?.get("placeholderUserId"),
+                        otherCsvName           = unclaimed?.get("csvName"),
                     )
                 }
                 is ApiResult.ValidationError -> _uiState.value =
@@ -127,6 +134,16 @@ class ImportSplitwiseViewModel @Inject constructor(
                     ImportUiState.Error("No internet connection. Please try again.")
                 else -> _uiState.value =
                     ImportUiState.Error("Import failed. Please check the CSV and try again.")
+            }
+        }
+    }
+
+    fun assignFriendPlaceholder(placeholderUserId: String, friendUserId: String) {
+        viewModelScope.launch {
+            _claimState.value = ClaimState.Loading
+            when (importRepository.assignFriendPlaceholder(placeholderUserId, friendUserId)) {
+                is ApiResult.Success -> _claimState.value = ClaimState.Done
+                else -> _claimState.value = ClaimState.Error("Failed to link friend.")
             }
         }
     }
@@ -179,8 +196,10 @@ sealed class ImportUiState {
         val unclaimedMembers  : List<GroupMember>,
     ) : ImportUiState()
     data class FriendSuccess(
-        val expensesCreated   : Int,
-        val settlementsCreated: Int,
+        val expensesCreated       : Int,
+        val settlementsCreated    : Int,
+        val otherPlaceholderUserId: String? = null,
+        val otherCsvName          : String? = null,
     ) : ImportUiState()
     data class Error(val message: String) : ImportUiState()
 }

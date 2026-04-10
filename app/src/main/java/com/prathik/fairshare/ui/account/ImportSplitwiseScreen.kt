@@ -87,8 +87,13 @@ fun ImportSplitwiseScreen(
     var importType          by remember { mutableStateOf<ImportType?>(null) }
     var groupName           by remember { mutableStateOf("") }
     var showGroupNameDialog by remember { mutableStateOf(false) }
-    var showWhoAreYouDialog by remember { mutableStateOf(false) }
-    var pendingCsv          by remember { mutableStateOf<String?>(null) }
+    var showWhoAreYouDialog       by remember { mutableStateOf(false) }
+    var showFriendWhoAreYouDialog by remember { mutableStateOf(false) }
+    var pendingCsv                by remember { mutableStateOf<String?>(null) }
+    var pendingFriendCsv          by remember { mutableStateOf<String?>(null) }
+    var showLinkFriendSheet       by remember { mutableStateOf(false) }
+    var linkPlaceholderUserId     by remember { mutableStateOf<String?>(null) }
+    var linkCsvName               by remember { mutableStateOf<String?>(null) }
     val csvMemberNames      by viewModel.csvMemberNames.collectAsState()
 
     // Assign sheet
@@ -119,8 +124,13 @@ fun ImportSplitwiseScreen(
             val csv = try {
                 context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()?.replace("\r\n", "\n")?.replace("\r", "\n")
             } catch (e: Exception) { null }
-            if (csv != null) viewModel.importFriend(csv)
-            else viewModel.setError("Could not read CSV file. Try a different file manager app.")
+            if (csv != null) {
+                pendingFriendCsv = csv
+                viewModel.parseCsvNames(csv)
+                showFriendWhoAreYouDialog = true
+            } else {
+                viewModel.setError("Could not read CSV file. Try a different file manager app.")
+            }
         }
     }
 
@@ -266,6 +276,167 @@ fun ImportSplitwiseScreen(
                     Text("None of these is me — skip",
                         fontSize = 14.sp,
                         color = com.prathik.fairshare.ui.theme.TextTertiary)
+                }
+            }
+        }
+    }
+
+    // Friend "Which one is you?" sheet
+    if (showFriendWhoAreYouDialog && csvMemberNames.isNotEmpty()) {
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = {
+                showFriendWhoAreYouDialog = false
+                viewModel.clearCsvNames()
+                pendingFriendCsv = null
+            },
+            sheetState     = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                // Header
+                val myName = viewModel.myDisplayName()
+                Row(
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text       = "Which one is you?",
+                        fontSize   = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = TextPrimary,
+                        modifier   = Modifier.weight(1f),
+                    )
+                }
+                if (myName.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("You are signed in as ", fontSize = 13.sp, color = com.prathik.fairshare.ui.theme.TextSecondary)
+                        Text(myName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Green400)
+                    }
+                }
+                Text(
+                    text     = "Tap your name from the CSV so your expenses appear correctly.",
+                    fontSize = 13.sp,
+                    color    = com.prathik.fairshare.ui.theme.TextSecondary,
+                    modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
+                )
+                androidx.compose.material3.HorizontalDivider(
+                    color = com.prathik.fairshare.ui.theme.Surface4, thickness = 0.5.dp)
+
+                csvMemberNames.forEach { name ->
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showFriendWhoAreYouDialog = false
+                                viewModel.clearCsvNames()
+                                pendingFriendCsv?.let { viewModel.importFriend(it, name) }
+                                pendingFriendCsv = null
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(ComponentSize.avatarMd)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(com.prathik.fairshare.ui.theme.Surface4),
+                        ) {
+                            Text(
+                                name.firstOrNull()?.uppercase() ?: "?",
+                                fontSize   = 16.sp,
+                                color      = TextPrimary,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                    }
+                    androidx.compose.material3.HorizontalDivider(
+                        color = com.prathik.fairshare.ui.theme.Surface4, thickness = 0.5.dp)
+                }
+
+                // Skip option
+                Row(
+                    modifier          = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showFriendWhoAreYouDialog = false
+                            viewModel.clearCsvNames()
+                            pendingFriendCsv?.let { viewModel.importFriend(it, null) }
+                            pendingFriendCsv = null
+                        }
+                        .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                ) {
+                    Text("None of these is me — skip", fontSize = 14.sp,
+                        color = com.prathik.fairshare.ui.theme.TextTertiary)
+                }
+            }
+        }
+    }
+
+    // ── Link friend placeholder sheet ─────────────────────────────────────────
+    if (showLinkFriendSheet && !linkPlaceholderUserId.isNullOrBlank()) {
+        ModalBottomSheet(
+            onDismissRequest = { showLinkFriendSheet = false },
+            sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor   = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text       = "Who is ${linkCsvName ?: "this person"} on FairShare?",
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                Text(
+                    text     = "Link their expenses to a FairShare friend, or keep as placeholder.",
+                    fontSize = 13.sp,
+                    color    = TextSecondary,
+                    modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
+                )
+                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                if (friends.isEmpty()) {
+                    Text(
+                        text     = "No FairShare friends found.",
+                        fontSize = 14.sp,
+                        color    = TextTertiary,
+                        modifier = Modifier.padding(Spacing.lg),
+                    )
+                } else {
+                    friends.forEach { friend ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    linkPlaceholderUserId?.let { pid ->
+                                        viewModel.assignFriendPlaceholder(pid, friend.id)
+                                    }
+                                    showLinkFriendSheet = false
+                                }
+                                .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            FsAvatar(name = friend.fullName, userId = friend.id,
+                                size = ComponentSize.avatarMd)
+                            Spacer(modifier = Modifier.width(Spacing.md))
+                            Text(friend.fullName, fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium, color = TextPrimary)
+                        }
+                        HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showLinkFriendSheet = false }
+                        .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                ) {
+                    Text("Keep as placeholder for now", fontSize = 14.sp, color = TextTertiary)
                 }
             }
         }
@@ -627,6 +798,51 @@ fun ImportSplitwiseScreen(
                                 Modifier.weight(1f))
                             StatCard("Payments", state.settlementsCreated.toString(),
                                 Modifier.weight(1f))
+                        }
+
+                        if (!state.otherPlaceholderUserId.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(Spacing.xl))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(Radius.xl))
+                                    .background(Surface2)
+                                    .clickable {
+                                        linkPlaceholderUserId = state.otherPlaceholderUserId
+                                        linkCsvName = state.otherCsvName
+                                        showLinkFriendSheet = true
+                                    }
+                                    .padding(Spacing.md),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier         = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Surface3),
+                                ) {
+                                    Text(
+                                        state.otherCsvName?.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                                        fontSize = 16.sp, color = TextPrimary,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(Spacing.md))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        state.otherCsvName ?: "Other person",
+                                        fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                        color = TextPrimary,
+                                    )
+                                    Text(
+                                        "Tap to link to a FairShare friend",
+                                        fontSize = 12.sp, color = TextSecondary,
+                                    )
+                                }
+                                Text("Link →", fontSize = 13.sp, color = Green400,
+                                    fontWeight = FontWeight.SemiBold)
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(Spacing.xxxl))
