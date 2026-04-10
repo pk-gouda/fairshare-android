@@ -1,6 +1,11 @@
 package com.prathik.fairshare.data.repository.impl
 
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.local.BalanceDao
+import com.prathik.fairshare.data.local.ExpenseDao
+import com.prathik.fairshare.data.local.GroupDao
+import com.prathik.fairshare.data.local.InvitedFriendDao
+import com.prathik.fairshare.data.local.PendingActionDao
 import com.prathik.fairshare.data.local.UserDao
 import com.prathik.fairshare.data.local.UserEntity
 import com.prathik.fairshare.data.model.mapper.toDomain
@@ -23,6 +28,11 @@ class AuthRepositoryImpl @Inject constructor(
     private val authService: AuthApiService,
     private val tokenStore: EncryptedTokenStore,
     private val userDao: UserDao,
+    private val groupDao: GroupDao,
+    private val expenseDao: ExpenseDao,
+    private val balanceDao: BalanceDao,
+    private val invitedFriendDao: InvitedFriendDao,
+    private val pendingActionDao: PendingActionDao,
 ) : AuthRepository {
 
     override suspend fun login(email: String, password: String): ApiResult<User> {
@@ -114,9 +124,15 @@ class AuthRepositoryImpl @Inject constructor(
         return try {
             safeApiCall { authService.logout(mapOf("refreshToken" to refreshToken)) }
         } finally {
-            // Always clear tokens locally even if server call fails
+            // Always clear ALL local caches on logout so a subsequent user
+            // on the same device never sees the previous user's data.
             tokenStore.clearTokens()
             userDao.deleteAll()
+            groupDao.deleteAll()
+            expenseDao.deleteAll()
+            balanceDao.deleteAll()
+            invitedFriendDao.deleteAll()
+            pendingActionDao.deleteAll()
         }
     }
 

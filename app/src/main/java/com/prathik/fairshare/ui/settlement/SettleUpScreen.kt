@@ -342,6 +342,10 @@ fun SettleUpScreen(
             Spacer(modifier = Modifier.height(Spacing.xxxl))
 
             // ── Record button ─────────────────────────────────────────────────
+            // Disabled when balance is already 0 and the user hasn't typed a custom
+            // amount — settling a zero balance would create a phantom ₹0 record.
+            val enteredAmount = amount.toDoubleOrNull() ?: 0.0
+            val canSettle = defaultAmount > 0 || enteredAmount > 0
             FsPrimaryButton(
                 text      = "Record a payment",
                 onClick   = {
@@ -350,6 +354,7 @@ fun SettleUpScreen(
                         else viewModel.settlePartial()
                     }
                 },
+                enabled   = canSettle,
                 modifier  = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Spacing.lg),

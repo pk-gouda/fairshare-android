@@ -273,8 +273,15 @@ class EditExpenseViewModel @Inject constructor(
                 val totalCents = Math.round(total * 100)
                 val shareCents = totalCents / members.size
                 val remainder = totalCents - (shareCents * members.size)
+
+                // Same fair hash strategy as AddExpense — description + amount
+                // determines who gets the remainder cent for this specific expense.
+                val remainderIndex = if (remainder > 0)
+                    Math.abs((_description.value + total.toString()).hashCode()) % members.size
+                else -1
+
                 _splitData.value = members.mapIndexed { index, member ->
-                    val amount = if (index == 0) (shareCents + remainder) / 100.0
+                    val amount = if (index == remainderIndex) (shareCents + remainder) / 100.0
                     else shareCents / 100.0
                     member.userId to amount
                 }.toMap()

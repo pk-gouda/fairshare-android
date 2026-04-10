@@ -411,11 +411,21 @@ class AddExpenseViewModel @Inject constructor(
             SplitType.EQUAL -> {
                 val included = members.filter { !_equalExcluded.value.contains(it.userId) }
                 if (included.isEmpty()) return
+
                 val totalCents = Math.round(total * 100)
                 val shareCents = totalCents / included.size
                 val remainder = totalCents - (shareCents * included.size)
+
+                // Distribute the remainder cent fairly — not always to the payer or index 0.
+                // Hash the description + amount to pick a deterministic but seemingly random
+                // member. This spreads the extra cent across different people over many expenses
+                // while staying stable if the same expense is re-rendered or edited.
+                val remainderIndex = if (remainder > 0)
+                    Math.abs((_description.value + total.toString()).hashCode()) % included.size
+                else -1
+
                 _splitData.value = included.mapIndexed { index, member ->
-                    val amount = if (index == 0) (shareCents + remainder) / 100.0
+                    val amount = if (index == remainderIndex) (shareCents + remainder) / 100.0
                     else shareCents / 100.0
                     member.userId to amount
                 }.toMap()

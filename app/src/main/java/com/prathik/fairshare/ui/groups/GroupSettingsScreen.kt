@@ -532,37 +532,23 @@ fun GroupSettingsScreen(
                 )
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
 
-                // "That's me"
-                Row(
-                    modifier          = Modifier
-                        .fillMaxWidth()
-                        .clickable { showAssignSheet = null; viewModel.claimMember(member.userId) }
-                        .padding(horizontal = Spacing.lg, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier         = Modifier
-                            .size(ComponentSize.avatarMd)
-                            .clip(CircleShape)
-                            .background(Green400.copy(alpha = 0.15f)),
-                    ) { Text("👤", fontSize = 18.sp) }
-                    Spacer(modifier = Modifier.width(Spacing.md))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("That's me", fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium, color = Green400)
-                        Text("Claim this as your identity", fontSize = 12.sp, color = TextTertiary)
-                    }
-                }
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+
 
                 // Friends list
-                if (friends.isNotEmpty()) {
+                // Exclude friends who are already real (non-placeholder) members
+                // of this group — assigning a placeholder to them would duplicate them.
+                val realMemberUserIds = members
+                    .filter { !it.email.startsWith("placeholder+") }
+                    .map { it.userId }
+                    .toSet()
+                val assignableFriends = friends.filter { it.id !in realMemberUserIds }
+
+                if (assignableFriends.isNotEmpty()) {
                     Text("Or assign to a friend:",
                         fontSize = 12.sp, color = TextTertiary,
                         modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg,
                             top = Spacing.md, bottom = Spacing.sm))
-                    friends.forEach { friend ->
+                    assignableFriends.forEach { friend ->
                         Row(
                             modifier          = Modifier
                                 .fillMaxWidth()
