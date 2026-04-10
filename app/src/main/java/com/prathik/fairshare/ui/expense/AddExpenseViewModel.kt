@@ -123,6 +123,11 @@ class AddExpenseViewModel @Inject constructor(
         recalculateSplits()
     }
 
+    // The pointer value used when computing the EQUAL split preview.
+    // Sent to the backend so offline-created expenses produce the same
+    // distribution when they sync, regardless of pointer drift.
+    private var _pointerAtCreation: Int? = null
+
     // ── Transfer tab state ────────────────────────────────────────────────────
     // fromUserId defaults to current user
     private val _transferFromId = MutableStateFlow(currentUserId)
@@ -414,18 +419,24 @@ class AddExpenseViewModel @Inject constructor(
 
                 val totalCents = Math.round(total * 100)
                 val shareCents = totalCents / included.size
-                val remainder = totalCents - (shareCents * included.size)
+                val remainderCents = totalCents - (shareCents * included.size)
 
-                // Distribute the remainder cent fairly — not always to the payer or index 0.
-                // Hash the description + amount to pick a deterministic but seemingly random
-                // member. This spreads the extra cent across different people over many expenses
-                // while staying stable if the same expense is re-rendered or edited.
-                val remainderIndex = if (remainder > 0)
-                    Math.abs((_description.value + total.toString()).hashCode()) % included.size
-                else -1
+                // Use group.lastRemainderIndex as the rotation start so the preview
+                // matches what the backend will save. The backend uses joinedAt ASC order
+                // and the member list from the API is already in that order.
+                // For non-group expenses, start at 0 (sequential, consistent with backend).
+                val pointer = _groups.value
+                    .find { it.id == _selectedGroupId.value }
+                    ?.lastRemainderIndex ?: 0
+                val startIndex = if (remainderCents > 0 && included.isNotEmpty())
+                    pointer % included.size else 0
+                _pointerAtCreation = pointer  // captured for offline sync
 
-                _splitData.value = included.mapIndexed { index, member ->
-                    val amount = if (index == remainderIndex) (shareCents + remainder) / 100.0
+                // Rotate list from startIndex — first `remainderCents` members get +1 cent
+                val rotated = included.drop(startIndex) + included.take(startIndex)
+
+                _splitData.value = rotated.mapIndexed { index, member ->
+                    val amount = if (index < remainderCents) (shareCents + 1) / 100.0
                     else shareCents / 100.0
                     member.userId to amount
                 }.toMap()
@@ -526,8 +537,9 @@ class AddExpenseViewModel @Inject constructor(
                 notes = _notes.value.ifBlank { null },
                 expenseDate = _expenseDate.value,
                 payerData = _payerData.value,
-                splitData = _splitData.value,
-                receiptId = scannedReceiptId,
+                splitData        = _splitData.value,
+                receiptId        = scannedReceiptId,
+                remainderPointer = _pointerAtCreation,
             )) {
                 is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
                 is ApiResult.NetworkError -> _uiState.value =

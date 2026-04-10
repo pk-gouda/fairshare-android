@@ -20,4 +20,5 @@ data class GroupResponse(
     @SerialName("isArchived")       val isArchived: Boolean,
     @SerialName("memberCount")      val memberCount: Int,
     @SerialName("createdAt")        val createdAt: String,
+    @SerialName("lastRemainderIndex") val lastRemainderIndex: Int = 0,
 )

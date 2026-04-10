@@ -69,6 +69,7 @@ import com.prathik.fairshare.ui.account.AccountViewModel
 import com.prathik.fairshare.ui.account.ChangePasswordScreen
 import com.prathik.fairshare.ui.account.EditProfileScreen
 import com.prathik.fairshare.ui.groups.CreateGroupScreen
+import com.prathik.fairshare.ui.groups.JoinGroupScreen
 import com.prathik.fairshare.ui.groups.AddMemberScreen
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
@@ -486,7 +487,17 @@ fun MainShell(
                         defaultValue = null
                     }
                 )
-            ) { PlaceholderScreen("Join Group") }
+            ) {
+                JoinGroupScreen(
+                    onBack    = { shellNavController.popBackStack() },
+                    onSuccess = {
+                        // Navigate to Groups tab — the new group appears via auto-refresh
+                        shellNavController.navigate(Screen.Groups.route) {
+                            popUpTo(Screen.Groups.route) { inclusive = true }
+                        }
+                    },
+                )
+            }
 
             composable(
                 route = Screen.RecurringExpenses.route,

@@ -18,7 +18,8 @@ data class CreateExpenseRequest(
     @SerialName("payerData")      val payerData: Map<String, Double>? = null,
     @SerialName("splitData")      val splitData: Map<String, Double>? = null,
     @SerialName("idempotencyKey") val idempotencyKey: String? = null,
-    @SerialName("receiptId")      val receiptId: String? = null,
+    @SerialName("receiptId")       val receiptId: String? = null,
+    @SerialName("remainderPointer") val remainderPointer: Int? = null,
 )
 
 @Serializable

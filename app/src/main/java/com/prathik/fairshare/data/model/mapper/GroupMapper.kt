@@ -28,7 +28,8 @@ fun GroupResponse.toDomain(): Group = Group(
     lastActivityDate = lastActivityDate,
     tripStartDate    = tripStartDate,
     tripEndDate      = tripEndDate,
-    createdAt        = createdAt,
+    createdAt           = createdAt,
+    lastRemainderIndex  = lastRemainderIndex,
 )
 
 fun GroupMemberResponse.toDomain(): GroupMember = GroupMember(

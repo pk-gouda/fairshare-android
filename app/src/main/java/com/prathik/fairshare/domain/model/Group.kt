@@ -20,4 +20,5 @@ data class Group(
     val tripStartDate: String?,
     val tripEndDate: String?,
     val createdAt: String,
+    val lastRemainderIndex: Int = 0,
 ) : Parcelable

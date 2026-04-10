@@ -42,6 +42,7 @@ interface ExpenseRepository {
         payerData: Map<String, Double>?,
         splitData: Map<String, Double>?,
         receiptId: String?,
+        remainderPointer: Int? = null,
     ): ApiResult<Expense>
 
     /**

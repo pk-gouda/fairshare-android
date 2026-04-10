@@ -12,6 +12,7 @@ import com.prathik.fairshare.domain.model.SplitType
 import com.prathik.fairshare.domain.usecase.expense.GetExpenseUseCase
 import com.prathik.fairshare.domain.usecase.expense.UpdateExpenseUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
+import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +39,7 @@ class EditExpenseViewModel @Inject constructor(
     private val getExpenseUseCase: GetExpenseUseCase,
     private val updateExpenseUseCase: UpdateExpenseUseCase,
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
+    private val getGroupUseCase: GetGroupUseCase,
     private val tokenStore: EncryptedTokenStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -64,6 +66,10 @@ class EditExpenseViewModel @Inject constructor(
 
     private val _groupName = MutableStateFlow<String?>(null)
     val groupName: StateFlow<String?> = _groupName.asStateFlow()
+
+    // Round-robin pointer from group — used to show correct preview distribution
+    private val _lastRemainderIndex = MutableStateFlow(0)
+    val lastRemainderIndex: StateFlow<Int> = _lastRemainderIndex.asStateFlow()
 
     private val _splitType = MutableStateFlow(SplitType.EQUAL)
     val splitType: StateFlow<SplitType> = _splitType.asStateFlow()
@@ -272,16 +278,16 @@ class EditExpenseViewModel @Inject constructor(
             SplitType.EQUAL -> {
                 val totalCents = Math.round(total * 100)
                 val shareCents = totalCents / members.size
-                val remainder = totalCents - (shareCents * members.size)
+                val remainderCents = totalCents - (shareCents * members.size)
 
-                // Same fair hash strategy as AddExpense — description + amount
-                // determines who gets the remainder cent for this specific expense.
-                val remainderIndex = if (remainder > 0)
-                    Math.abs((_description.value + total.toString()).hashCode()) % members.size
-                else -1
+                val pointer = _lastRemainderIndex.value
+                val startIndex = if (remainderCents > 0 && members.isNotEmpty())
+                    pointer % members.size else 0
 
-                _splitData.value = members.mapIndexed { index, member ->
-                    val amount = if (index == remainderIndex) (shareCents + remainder) / 100.0
+                val rotated = members.drop(startIndex) + members.take(startIndex)
+
+                _splitData.value = rotated.mapIndexed { index, member ->
+                    val amount = if (index < remainderCents) (shareCents + 1) / 100.0
                     else shareCents / 100.0
                     member.userId to amount
                 }.toMap()

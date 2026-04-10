@@ -29,6 +29,7 @@ class CreateExpenseUseCase @Inject constructor(
         payerData: Map<String, Double>?,
         splitData: Map<String, Double>?,
         receiptId: String?,
+        remainderPointer: Int? = null,
     ): ApiResult<Expense> {
         if (description.isBlank()) {
             return ApiResult.ValidationError("Description cannot be empty")
@@ -52,8 +53,9 @@ class CreateExpenseUseCase @Inject constructor(
             notes       = notes?.trim(),
             expenseDate = expenseDate,
             payerData   = payerData,
-            splitData   = splitData,
-            receiptId   = receiptId,
+            splitData        = splitData,
+            receiptId        = receiptId,
+            remainderPointer = remainderPointer,
         )
     }
 }
