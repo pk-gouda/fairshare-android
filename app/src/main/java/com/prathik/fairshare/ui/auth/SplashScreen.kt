@@ -47,7 +47,7 @@ fun SplashScreen(
         initialValue = 0f,
         targetValue  = 1f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(1800, easing = LinearEasing),
+            animation  = tween(1200, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "ring1",
@@ -56,7 +56,7 @@ fun SplashScreen(
         initialValue = 0f,
         targetValue  = 1f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(1800, delayMillis = 600, easing = LinearEasing),
+            animation  = tween(1200, delayMillis = 400, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "ring2",
@@ -65,14 +65,14 @@ fun SplashScreen(
         initialValue = 0f,
         targetValue  = 1f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(1800, delayMillis = 1200, easing = LinearEasing),
+            animation  = tween(1200, delayMillis = 800, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "ring3",
     )
 
     LaunchedEffect(Unit) {
-        delay(1800L)
+        delay(1200L)
         if (viewModel.isLoggedIn()) {
             onNavigateToGroups()
         } else {

@@ -319,7 +319,13 @@ fun MainShell(
                     onNavigateToCreateGroup = {
                         shellNavController.navigate(Screen.CreateGroup.route)
                     },
-                    onNavigateToAddExpense = {                              // ← ADD THIS
+                    onNavigateToJoinGroup = {
+                        shellNavController.navigate(Screen.JoinGroup.route())
+                    },
+                    onNavigateToImport = {
+                        shellNavController.navigate(Screen.ImportSplitwise.route)
+                    },
+                    onNavigateToAddExpense = {
                         shellNavController.navigate(Screen.AddExpense.route())
                     },
                 )

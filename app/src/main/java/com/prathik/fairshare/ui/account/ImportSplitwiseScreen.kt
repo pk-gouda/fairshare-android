@@ -95,6 +95,7 @@ fun ImportSplitwiseScreen(
     var linkPlaceholderUserId     by remember { mutableStateOf<String?>(null) }
     var linkCsvName               by remember { mutableStateOf<String?>(null) }
     val csvMemberNames      by viewModel.csvMemberNames.collectAsState()
+    var csvMismatch         by remember { mutableStateOf<CsvMismatch?>(null) }
 
     // Assign sheet
     var showAssignSheet by remember { mutableStateOf(false) }
@@ -111,7 +112,26 @@ fun ImportSplitwiseScreen(
             if (csv != null) {
                 pendingCsv = csv
                 viewModel.parseCsvNames(csv)
-                showGroupNameDialog = true
+                val personCount = viewModel.csvMemberNames.value.size
+                if (personCount in 1..2) {
+                    csvMismatch = CsvMismatch(
+                        title       = "This looks like a friend CSV",
+                        message     = "This file only has $personCount ${if (personCount == 1) "person" else "people"} — it looks like a direct friend export, not a group. Did you mean to import friend expenses instead?",
+                        switchLabel = "Import as friend expenses",
+                        onSwitch    = {
+                            csvMismatch = null
+                            pendingFriendCsv = csv
+                            pendingCsv = null
+                            showFriendWhoAreYouDialog = true
+                        },
+                        onContinue  = {
+                            csvMismatch = null
+                            showGroupNameDialog = true
+                        },
+                    )
+                } else {
+                    showGroupNameDialog = true
+                }
             } else {
                 viewModel.setError("Could not read CSV file. Try a different file manager app.")
             }
@@ -127,11 +147,56 @@ fun ImportSplitwiseScreen(
             if (csv != null) {
                 pendingFriendCsv = csv
                 viewModel.parseCsvNames(csv)
-                showFriendWhoAreYouDialog = true
+                val personCount = viewModel.csvMemberNames.value.size
+                if (personCount >= 3) {
+                    csvMismatch = CsvMismatch(
+                        title       = "This looks like a group CSV",
+                        message     = "This file has $personCount people — it looks like a group export. Friend imports only support 2-person exports and will produce incorrect results with this file.",
+                        switchLabel = "Import as a group instead",
+                        onSwitch    = {
+                            csvMismatch = null
+                            pendingCsv = csv
+                            pendingFriendCsv = null
+                            showGroupNameDialog = true
+                        },
+                        onContinue  = { csvMismatch = null },
+                        isHardBlock = true,
+                    )
+                } else {
+                    showFriendWhoAreYouDialog = true
+                }
             } else {
                 viewModel.setError("Could not read CSV file. Try a different file manager app.")
             }
         }
+    }
+
+    // ── CSV type mismatch dialog ──────────────────────────────────────────────
+    csvMismatch?.let { mismatch ->
+        AlertDialog(
+            onDismissRequest = { csvMismatch = null },
+            title = { Text(mismatch.title) },
+            text  = { Text(mismatch.message, fontSize = 14.sp, color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = mismatch.onSwitch) {
+                    Text(mismatch.switchLabel, color = Green400)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = if (mismatch.isHardBlock) {
+                        { csvMismatch = null; pendingFriendCsv = null; viewModel.clearCsvNames() }
+                    } else {
+                        mismatch.onContinue
+                    }
+                ) {
+                    Text(
+                        text  = if (mismatch.isHardBlock) "Cancel" else "Continue anyway",
+                        color = TextSecondary,
+                    )
+                }
+            },
+        )
     }
 
     LaunchedEffect(claimState) {
@@ -939,3 +1004,12 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 }
 
 private enum class ImportType { GROUP, FRIEND }
+/** Describes a detected mismatch between the chosen import type and the CSV content. */
+private data class CsvMismatch(
+    val title      : String,
+    val message    : String,
+    val switchLabel: String,
+    val onSwitch   : () -> Unit,
+    val onContinue : () -> Unit,
+    val isHardBlock: Boolean = false,  // if true, no "Continue anyway" option is shown
+)

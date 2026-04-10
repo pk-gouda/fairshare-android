@@ -18,21 +18,28 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.GroupAdd
+import androidx.compose.material.icons.outlined.GroupWork
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,8 +73,10 @@ import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
 import com.prathik.fairshare.ui.theme.Surface3
+import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
+import com.prathik.fairshare.ui.theme.TextTertiary
 import com.prathik.fairshare.ui.theme.TileCoupleEnd
 import com.prathik.fairshare.ui.theme.TileCoupleStart
 import com.prathik.fairshare.ui.theme.TileEventEnd
@@ -90,10 +99,15 @@ import com.prathik.fairshare.util.MoneyUtils
  * Shows:
  * - Net balance hero section (how much you're owed overall)
  * - Vertical list of groups with balance status (settled up, owes you, you owe, no expenses)
- * - "Create a group" button at bottom of grid (always visible)
+ * - "Create a group" button at bottom of list (always visible)
  * - FAB → Add Expense (quick add)
- * - Top bar GroupAdd icon → Create Group
- * - Empty state CTA → Create Group
+ * - Top bar GroupAdd icon → Add Group sheet
+ * - Empty state CTA → Add Group sheet
+ *
+ * Add Group bottom sheet offers 3 paths:
+ *   1. Create a new group  → onNavigateToCreateGroup
+ *   2. Join with invite code → onNavigateToJoinGroup
+ *   3. Import from Splitwise → onNavigateToImport
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,20 +115,107 @@ fun GroupsHomeScreen(
     onNavigateToGroup: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToCreateGroup: () -> Unit,
+    onNavigateToJoinGroup: () -> Unit,
+    onNavigateToImport: () -> Unit,
     onNavigateToAddExpense: () -> Unit,
     viewModel: GroupsViewModel = hiltViewModel(),
 ) {
-    val groupsState    by viewModel.groupsState.collectAsState()
-    val balanceSummary by viewModel.balanceSummary.collectAsState()
+    val groupsState     by viewModel.groupsState.collectAsState()
+    val balanceSummary  by viewModel.balanceSummary.collectAsState()
     val groupBalanceMap by viewModel.groupBalanceMap.collectAsState()
-    val searchQuery    by viewModel.searchQuery.collectAsState()
+    val searchQuery     by viewModel.searchQuery.collectAsState()
     val isLoading = groupsState is GroupsUiState.Loading
+
+    var showAddGroupSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Refresh every time this screen becomes RESUMED (e.g. back from CreateGroup/GroupDetail)
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.loadData()
+        }
+    }
+
+    // ── Add Group bottom sheet ─────────────────────────────────────────────────
+    if (showAddGroupSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddGroupSheet = false },
+            sheetState = sheetState,
+            containerColor = Surface2,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = Spacing.xxxl),
+            ) {
+                Text(
+                    text = "Add a group",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Choose how you want to connect",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                )
+                Spacer(modifier = Modifier.height(Spacing.lg))
+
+                // Option 1 — Create a new group
+                GroupSheetOption(
+                    icon = Icons.Outlined.GroupWork,
+                    iconBg = Green400,
+                    title = "Create a new group",
+                    subtitle = "Start fresh with a name and members",
+                    onClick = {
+                        showAddGroupSheet = false
+                        onNavigateToCreateGroup()
+                    },
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+
+                // Option 2 — Join with invite code
+                GroupSheetOption(
+                    icon = Icons.Outlined.Link,
+                    iconBg = Color(0xFF4A6FE8),
+                    title = "Join with invite code",
+                    subtitle = "Enter a code shared by a friend",
+                    onClick = {
+                        showAddGroupSheet = false
+                        onNavigateToJoinGroup()
+                    },
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+
+                // Option 3 — Import from Splitwise
+                GroupSheetOption(
+                    icon = Icons.Outlined.FileUpload,
+                    iconBg = Color(0xFFE8A84F),
+                    title = "Import from Splitwise",
+                    subtitle = "Upload a CSV to migrate a group",
+                    onClick = {
+                        showAddGroupSheet = false
+                        onNavigateToImport()
+                    },
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.lg))
+
+                // Cancel
+                TextButton(
+                    onClick = { showAddGroupSheet = false },
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                ) {
+                    Text(
+                        text = "Cancel",
+                        fontSize = 15.sp,
+                        color = TextSecondary,
+                    )
+                }
+            }
         }
     }
 
@@ -164,11 +265,11 @@ fun GroupsHomeScreen(
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    // Add group icon button
+                    // Add group icon button → opens sheet
                     FsIconButton(
                         icon = Icons.Outlined.GroupAdd,
-                        contentDescription = "Create group",
-                        onClick = onNavigateToCreateGroup,
+                        contentDescription = "Add group",
+                        onClick = { showAddGroupSheet = true },
                     )
                 }
             }
@@ -213,8 +314,8 @@ fun GroupsHomeScreen(
                         FsEmptyState(
                             title = "No groups yet",
                             subtitle = "Create a group to start splitting expenses with friends",
-                            ctaText = "Create a group",
-                            onCta = onNavigateToCreateGroup,
+                            ctaText = "Add a group",
+                            onCta = { showAddGroupSheet = true },
                         )
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
@@ -237,9 +338,9 @@ fun GroupsHomeScreen(
                                     key = { it.id },
                                 ) { group ->
                                     GroupRow(
-                                        group     = group,
-                                        balance   = groupBalanceMap[group.id],
-                                        onClick   = { onNavigateToGroup(group.id) },
+                                        group   = group,
+                                        balance = groupBalanceMap[group.id],
+                                        onClick = { onNavigateToGroup(group.id) },
                                     )
                                     HorizontalDivider(
                                         color     = Surface3,
@@ -250,8 +351,8 @@ fun GroupsHomeScreen(
 
                                 item {
                                     FsSecondaryButton(
-                                        text    = "+ Create a group",
-                                        onClick = onNavigateToCreateGroup,
+                                        text    = "+ Add a group",
+                                        onClick = { showAddGroupSheet = true },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = Spacing.lg, vertical = Spacing.md),
@@ -264,6 +365,58 @@ fun GroupsHomeScreen(
                 }
             }
         }
+    }
+}
+
+// ── Add Group Sheet Option ────────────────────────────────────────────────────
+
+@Composable
+private fun GroupSheetOption(
+    icon: ImageVector,
+    iconBg: Color,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.xl))
+            .background(Surface0)
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.md, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Colored icon box
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(iconBg.copy(alpha = 0.15f)),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconBg,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+            )
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = TextTertiary,
+            )
+        }
+        Text(text = "›", fontSize = 20.sp, color = TextTertiary)
     }
 }
 
@@ -415,23 +568,23 @@ private fun GroupRow(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 private fun groupTypeGradient(type: GroupType): List<Color> = when (type) {
-    GroupType.HOME -> listOf(TileHomeStart, TileHomeEnd)
-    GroupType.TRIP -> listOf(TileTripStart, TileTripEnd)
-    GroupType.COUPLE -> listOf(TileCoupleStart, TileCoupleEnd)
-    GroupType.OFFICE -> listOf(TileOfficeStart, TileOfficeEnd)
-    GroupType.FRIENDS -> listOf(TileFriendsStart, TileFriendsEnd)
-    GroupType.EVENT -> listOf(TileEventStart, TileEventEnd)
+    GroupType.HOME      -> listOf(TileHomeStart, TileHomeEnd)
+    GroupType.TRIP      -> listOf(TileTripStart, TileTripEnd)
+    GroupType.COUPLE    -> listOf(TileCoupleStart, TileCoupleEnd)
+    GroupType.OFFICE    -> listOf(TileOfficeStart, TileOfficeEnd)
+    GroupType.FRIENDS   -> listOf(TileFriendsStart, TileFriendsEnd)
+    GroupType.EVENT     -> listOf(TileEventStart, TileEventEnd)
     GroupType.APARTMENT -> listOf(TileFriendsStart, TileFriendsEnd)
-    GroupType.OTHER -> listOf(TileOtherStart, TileOtherEnd)
+    GroupType.OTHER     -> listOf(TileOtherStart, TileOtherEnd)
 }
 
 private fun groupTypeEmoji(type: GroupType): String = when (type) {
-    GroupType.HOME -> "🏠"
-    GroupType.TRIP -> "✈️"
-    GroupType.COUPLE -> "💑"
-    GroupType.OFFICE -> "💼"
-    GroupType.FRIENDS -> "👫"
-    GroupType.EVENT -> "🎉"
+    GroupType.HOME      -> "🏠"
+    GroupType.TRIP      -> "✈️"
+    GroupType.COUPLE    -> "💑"
+    GroupType.OFFICE    -> "💼"
+    GroupType.FRIENDS   -> "👫"
+    GroupType.EVENT     -> "🎉"
     GroupType.APARTMENT -> "🏢"
-    GroupType.OTHER -> "💰"
+    GroupType.OTHER     -> "💰"
 }
