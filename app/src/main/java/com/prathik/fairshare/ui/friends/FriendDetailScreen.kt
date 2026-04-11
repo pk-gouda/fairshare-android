@@ -99,6 +99,7 @@ fun FriendDetailScreen(
     onNavigateToSearch     : () -> Unit,
     onNavigateToSettlement : (String) -> Unit = {},
     onNavigateToGroup      : (String) -> Unit = {},
+    onNavigateToAnalytics  : () -> Unit = {},
     viewModel              : FriendDetailViewModel = hiltViewModel(),
 ) {
     val isLoading     by viewModel.isLoading.collectAsState()
@@ -1245,8 +1246,9 @@ private fun FriendBalanceCard(
 
 @Composable
 private fun FriendActionPills(
-    onSettleUp: () -> Unit,
-    modifier  : Modifier = Modifier,
+    onSettleUp           : () -> Unit,
+    onNavigateToAnalytics: () -> Unit = {},
+    modifier             : Modifier = Modifier,
 ) {
     Row(
         modifier              = modifier
@@ -1266,17 +1268,16 @@ private fun FriendActionPills(
             Text(text = "Settle up", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Surface0)
         }
 
-        // Info pills
-        listOf("Balances", "Charts").forEach { label ->
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier         = Modifier
-                    .clip(RoundedCornerShape(Radius.full))
-                    .background(Surface2)
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-            ) {
-                Text(text = label, fontSize = 12.sp, color = TextSecondary)
-            }
+        // Charts pill
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .clip(RoundedCornerShape(Radius.full))
+                .background(Surface2)
+                .clickable { onNavigateToAnalytics() }
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        ) {
+            Text(text = "Charts", fontSize = 12.sp, color = TextSecondary)
         }
     }
 }

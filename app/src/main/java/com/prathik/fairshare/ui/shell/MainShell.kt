@@ -73,6 +73,13 @@ import com.prathik.fairshare.ui.groups.JoinGroupScreen
 import com.prathik.fairshare.ui.groups.AddMemberScreen
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
+import com.prathik.fairshare.ui.groups.GroupMembersScreen
+import com.prathik.fairshare.ui.groups.RemindersScreen
+import com.prathik.fairshare.ui.groups.CreateReminderScreen
+import com.prathik.fairshare.ui.groups.RecurringExpensesScreen
+import com.prathik.fairshare.ui.groups.GroupAnalyticsScreen
+import com.prathik.fairshare.ui.groups.FriendAnalyticsScreen
+import com.prathik.fairshare.ui.groups.MyAnalyticsScreen
 import com.prathik.fairshare.ui.navigation.Screen
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Surface0
@@ -408,6 +415,9 @@ fun MainShell(
                     onNavigateToBalances = {
                         shellNavController.navigate(Screen.GroupBalances.route(groupId))
                     },
+                    onNavigateToAnalytics = {
+                        shellNavController.navigate(Screen.GroupAnalytics.route(groupId))
+                    },
                 )
             }
             composable(
@@ -416,11 +426,23 @@ fun MainShell(
             ) {
                 GroupSettingsScreen(
                     onBack = { shellNavController.popBackStack() },
-                    onNavigateToAddMember = { groupId ->
-                        shellNavController.navigate(Screen.AddMember.route(groupId))
+                    onNavigateToAddMember = { gId ->
+                        shellNavController.navigate(Screen.AddMember.route(gId))
                     },
                     onGroupDeleted = {
                         shellNavController.popBackStack(Screen.Groups.route, false)
+                    },
+                    onNavigateToMembers = { gId ->
+                        shellNavController.navigate(Screen.GroupMembers.route(gId))
+                    },
+                    onNavigateToAnalytics = { gId ->
+                        shellNavController.navigate(Screen.GroupAnalytics.route(gId))
+                    },
+                    onNavigateToRecurring = { gId ->
+                        shellNavController.navigate(Screen.RecurringExpenses.route(gId))
+                    },
+                    onNavigateToReminders = { gId ->
+                        shellNavController.navigate(Screen.Reminders.route(gId))
                     },
                 )
             }
@@ -428,7 +450,9 @@ fun MainShell(
             composable(
                 route = Screen.GroupMembers.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Group Members") }
+            ) {
+                GroupMembersScreen(onBack = { shellNavController.popBackStack() })
+            }
 
             composable(
                 route = Screen.AddMember.route,
@@ -465,7 +489,9 @@ fun MainShell(
             composable(
                 route = Screen.GroupAnalytics.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Group Analytics") }
+            ) {
+                GroupAnalyticsScreen(onBack = { shellNavController.popBackStack() })
+            }
 
             composable(Screen.CreateGroup.route) {
                 CreateGroupScreen(
@@ -502,17 +528,35 @@ fun MainShell(
             composable(
                 route = Screen.RecurringExpenses.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Recurring Expenses") }
+            ) {
+                RecurringExpensesScreen(
+                    onBack              = { shellNavController.popBackStack() },
+                    onNavigateToExpense = { expenseId ->
+                        shellNavController.navigate(Screen.ExpenseDetail.route(expenseId))
+                    },
+                )
+            }
 
             composable(
                 route = Screen.Reminders.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Reminders") }
+            ) { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
+                RemindersScreen(
+                    onBack             = { shellNavController.popBackStack() },
+                    onNavigateToCreate = { shellNavController.navigate(Screen.CreateReminder.route(groupId)) },
+                )
+            }
 
             composable(
                 route = Screen.CreateReminder.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Create Reminder") }
+            ) {
+                CreateReminderScreen(
+                    onBack    = { shellNavController.popBackStack() },
+                    onCreated = { shellNavController.popBackStack() },
+                )
+            }
 
             // ── Expense screens ───────────────────────────────────────────────
             composable(
@@ -730,6 +774,9 @@ fun MainShell(
                     onNavigateToGroup = { groupId ->
                         shellNavController.navigate(Screen.GroupDetail.route(groupId))
                     },
+                    onNavigateToAnalytics = {
+                        shellNavController.navigate(Screen.FriendAnalytics.route(friendId))
+                    },
                 )
             }
 
@@ -748,7 +795,9 @@ fun MainShell(
             composable(
                 route = Screen.FriendAnalytics.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Friend Analytics") }
+            ) {
+                FriendAnalyticsScreen(onBack = { shellNavController.popBackStack() })
+            }
 
             composable(Screen.AddFriend.route) {
                 AddFriendScreen(
@@ -794,7 +843,7 @@ fun MainShell(
                 )
             }
             composable(Screen.MyAnalytics.route) {
-                PlaceholderScreen("My Analytics")
+                MyAnalyticsScreen(onBack = { shellNavController.popBackStack() })
             }
             composable(Screen.ImportSplitwise.route) {
                 com.prathik.fairshare.ui.account.ImportSplitwiseScreen(

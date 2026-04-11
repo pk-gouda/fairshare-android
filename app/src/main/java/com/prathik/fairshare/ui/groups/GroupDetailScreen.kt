@@ -129,8 +129,9 @@ fun GroupDetailScreen(
     onNavigateToAddMember: (String) -> Unit,
     onNavigateToSettle: (otherUserId: String, payerId: String?) -> Unit,
     onNavigateToSettlement: (String) -> Unit = {},
-    onNavigateToBalances: () -> Unit = {},
-    viewModel: GroupDetailViewModel = hiltViewModel(),
+    onNavigateToBalances : () -> Unit = {},
+    onNavigateToAnalytics: () -> Unit = {},
+    viewModel            : GroupDetailViewModel = hiltViewModel(),
 ) {
     val groupState by viewModel.groupState.collectAsState()
     val expensesState by viewModel.expensesState.collectAsState()
@@ -268,8 +269,9 @@ fun GroupDetailScreen(
                             // ── Action pills row ──────────────────────────────────
                             item {
                                 ActionPillsRow(
-                                    onSettleUp       = handleSettleUp,
-                                    onNavigateToBalances = onNavigateToBalances,
+                                    onSettleUp            = handleSettleUp,
+                                    onNavigateToBalances  = onNavigateToBalances,
+                                    onNavigateToAnalytics = onNavigateToAnalytics,
                                     modifier = Modifier.padding(
                                         start = Spacing.lg,
                                         end = Spacing.lg,
@@ -847,9 +849,10 @@ private fun BalanceCard(
 
 @Composable
 private fun ActionPillsRow(
-    onSettleUp          : () -> Unit,
-    onNavigateToBalances: () -> Unit = {},
-    modifier            : Modifier = Modifier,
+    onSettleUp            : () -> Unit,
+    onNavigateToBalances  : () -> Unit = {},
+    onNavigateToAnalytics : () -> Unit = {},
+    modifier              : Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
@@ -890,22 +893,16 @@ private fun ActionPillsRow(
             )
         }
 
-        // Info pills — placeholder for now
-        listOf("Charts", "Totals").forEach { label ->
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Radius.full))
-                    .background(Surface2)
-                    .clickable { /* TODO */ }
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-            ) {
-                Text(
-                    text = label,
-                    fontSize = 12.sp,
-                    color = TextSecondary,
-                )
-            }
+        // Charts pill
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .clip(RoundedCornerShape(Radius.full))
+                .background(Surface2)
+                .clickable { onNavigateToAnalytics() }
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        ) {
+            Text(text = "Charts", fontSize = 12.sp, color = TextSecondary)
         }
 
         // Export — muted placeholder

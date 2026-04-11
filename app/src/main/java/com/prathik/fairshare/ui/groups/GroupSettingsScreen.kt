@@ -90,9 +90,13 @@ import androidx.lifecycle.repeatOnLifecycle
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupSettingsScreen(
-    onBack              : () -> Unit,
+    onBack               : () -> Unit,
     onNavigateToAddMember: (String) -> Unit,
-    onGroupDeleted      : () -> Unit,
+    onGroupDeleted       : () -> Unit,
+    onNavigateToMembers  : (String) -> Unit = {},
+    onNavigateToAnalytics: (String) -> Unit = {},
+    onNavigateToRecurring: (String) -> Unit = {},
+    onNavigateToReminders: (String) -> Unit = {},
     viewModel           : GroupSettingsViewModel = hiltViewModel(),
 ) {
     val group             by viewModel.group.collectAsState()
@@ -420,11 +424,11 @@ fun GroupSettingsScreen(
             // ── Tools ─────────────────────────────────────────────────────────
             SectionLabel("TOOLS")
             SettingsCard {
-                NavRow(label = "Spending analytics", onClick = { /* TODO Day 17 */ })
+                NavRow(label = "Spending analytics", onClick = { onNavigateToAnalytics(viewModel.groupId) })
                 HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                NavRow(label = "Recurring expenses", badge = null, onClick = { /* TODO Day 18 */ })
+                NavRow(label = "Recurring expenses", badge = null, onClick = { onNavigateToRecurring(viewModel.groupId) })
                 HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                NavRow(label = "Reminders", onClick = { /* TODO Day 18 */ })
+                NavRow(label = "Reminders", onClick = { onNavigateToReminders(viewModel.groupId) })
             }
 
             Spacer(modifier = Modifier.height(Spacing.md))

@@ -28,6 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +80,13 @@ fun SettlementDetailScreen(
     val snackbarHost = remember { SnackbarHostState() }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.load()
+        }
+    }
+
     LaunchedEffect(actionState) {
         when (val s = actionState) {
             is SettlementDetailActionState.Deleted -> { onDeleted(); viewModel.resetActionState() }
@@ -88,11 +98,22 @@ fun SettlementDetailScreen(
         }
     }
 
-    val settlement = (state as? SettlementDetailUiState.Success)?.settlement
-    val canEdit = settlement != null && viewModel.isRecordedByMe(settlement)
-
-    // "Fully settled" records are informational snapshots — not editable/deletable
+    val settlement     = (state as? SettlementDetailUiState.Success)?.settlement
     val isFullySettled = settlement?.isFullSettle == true
+
+    // Edit: either payer or receiver can edit, including fully-settled records
+    val canEdit = settlement != null && (
+            viewModel.isRecordedByMe(settlement) ||
+                    settlement.payerId == viewModel.currentUserId ||
+                    settlement.receiverId == viewModel.currentUserId
+            )
+
+    // Delete: either payer or receiver can delete
+    val canDelete = settlement != null && (
+            viewModel.isRecordedByMe(settlement) ||
+                    settlement.payerId == viewModel.currentUserId ||
+                    settlement.receiverId == viewModel.currentUserId
+            )
 
     Scaffold(
         containerColor = Surface0,
@@ -102,12 +123,14 @@ fun SettlementDetailScreen(
                 title   = if (isFullySettled) "Settled up" else "Payment",
                 onBack  = onBack,
                 actions = {
-                    if (canEdit && !isFullySettled) {
+                    if (canEdit) {
                         FsIconButton(
                             icon               = Icons.Filled.Edit,
                             contentDescription = "Edit",
                             onClick            = { onNavigateToEdit(viewModel.settlementId) },
                         )
+                    }
+                    if (canDelete) {
                         FsIconButton(
                             icon               = Icons.Filled.Delete,
                             contentDescription = "Delete",
