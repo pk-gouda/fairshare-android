@@ -1,9 +1,10 @@
 package com.prathik.fairshare.ui.groups
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,11 +18,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,7 +32,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -54,7 +55,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +67,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material.icons.outlined.Settings
+import coil.compose.AsyncImage
+import com.prathik.fairshare.R
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
@@ -73,7 +80,6 @@ import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsIconButton
 import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSecondaryButton
@@ -90,56 +96,90 @@ import com.prathik.fairshare.ui.theme.TextDisabled
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
-import com.prathik.fairshare.ui.theme.TileCoupleEnd
-import com.prathik.fairshare.ui.theme.TileCoupleStart
-import com.prathik.fairshare.ui.theme.TileEventEnd
-import com.prathik.fairshare.ui.theme.TileEventStart
-import com.prathik.fairshare.ui.theme.TileFriendsEnd
-import com.prathik.fairshare.ui.theme.TileFriendsStart
-import com.prathik.fairshare.ui.theme.TileHomeEnd
-import com.prathik.fairshare.ui.theme.TileHomeStart
-import com.prathik.fairshare.ui.theme.TileOfficeEnd
-import com.prathik.fairshare.ui.theme.TileOfficeStart
-import com.prathik.fairshare.ui.theme.TileOtherEnd
-import com.prathik.fairshare.ui.theme.TileOtherStart
-import com.prathik.fairshare.ui.theme.TileTripEnd
-import com.prathik.fairshare.ui.theme.TileTripStart
 import com.prathik.fairshare.util.MoneyUtils
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-/**
- * Group Detail Screen — redesigned.
- *
- * Layout:
- * - Top bar: back + group name + search + settings (round icon)
- * - Balance card: "You are owed $X overall" + per-person breakdown with avatars
- * - Action pills row: Settle up (green) · Balances · Charts · Totals · Export
- * - Expense list grouped by month with date column + emoji icon + description + amount
- * - FAB: add expense
- */
-@OptIn(ExperimentalMaterial3Api::class)
+// ── Group UI State — drives ring, sticky bar, action bar, empty state ─────────
+
+enum class GroupUiState {
+    SOLO,        // 1 member — no expenses possible, add friends
+    NEW_GROUP,   // 2+ members, 0 expenses — ready to split
+    ACTIVE_DEBT, // has expenses, netBalance != 0
+    ALL_SETTLED, // has expenses, netBalance == 0
+}
+
+
+// ── Cover image pool — 24 bundled drawable resources ─────────────────────────
+// Images are bucketed by group type so the cover feels intentional.
+// Within each bucket, the group ID hash picks a specific image —
+// so two HOME groups will always get different covers, but both look like home photos.
+//
+// Bucket layout (indices into DEFAULT_COVERS):
+//   HOME / APARTMENT : 0–3   (interior/home photos)
+//   TRIP             : 10–14 (travel/nature)
+//   OFFICE           : 15–18 (urban/work)
+//   FRIENDS / COUPLE : 4–9   (abstract/gradient — versatile)
+//   EVENT            : 19–21 (food/celebration)
+//   OTHER            : 22–23 (minimal/texture)
+
+private val DEFAULT_COVERS: List<Int> = listOf(
+    R.drawable.cover_01, R.drawable.cover_02, R.drawable.cover_03, R.drawable.cover_04, // 0–3  home
+    R.drawable.cover_05, R.drawable.cover_06, R.drawable.cover_07, R.drawable.cover_08, // 4–7  abstract
+    R.drawable.cover_09, R.drawable.cover_10, R.drawable.cover_11, R.drawable.cover_12, // 8–11 abstract/travel
+    R.drawable.cover_13, R.drawable.cover_14, R.drawable.cover_15, R.drawable.cover_16, // 12–15 travel/urban
+    R.drawable.cover_17, R.drawable.cover_18, R.drawable.cover_19, R.drawable.cover_20, // 16–19 urban/food
+    R.drawable.cover_21, R.drawable.cover_22, R.drawable.cover_23, R.drawable.cover_24, // 20–23 food/minimal
+)
+
+private fun groupTypeIndices(type: GroupType): IntRange = when (type) {
+    GroupType.HOME      -> 0..3
+    GroupType.APARTMENT -> 0..3
+    GroupType.TRIP      -> 11..14
+    GroupType.OFFICE    -> 15..18
+    GroupType.FRIENDS   -> 4..10
+    GroupType.COUPLE    -> 4..10
+    GroupType.EVENT     -> 19..22
+    GroupType.OTHER     -> 22..23
+}
+
+/** Returns a drawable resource ID — type-biased so it looks right, ID-hashed so each group is unique. */
+private fun groupCoverRes(group: Group): Int {
+    if (!group.groupImage.isNullOrBlank()) return -1 // handled separately
+    var hash = 0
+    for (ch in group.id) {
+        hash = ((hash shl 5) - hash) + ch.code
+        hash = hash and hash
+    }
+    val range = groupTypeIndices(group.type)
+    val indexInRange = Math.abs(hash) % range.count()
+    return DEFAULT_COVERS[range.first + indexInRange]
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun GroupDetailScreen(
-    onBack: () -> Unit,
-    onNavigateToSettings: (String) -> Unit,
-    onNavigateToSearch: (String) -> Unit = {},
-    onNavigateToExpense: (String) -> Unit,
+    onBack                : () -> Unit,
+    onNavigateToSettings  : (String) -> Unit,
+    onNavigateToSearch    : (String) -> Unit = {},
+    onNavigateToExpense   : (String) -> Unit,
     onNavigateToAddExpense: (String) -> Unit,
-    onNavigateToAddMember: (String) -> Unit,
-    onNavigateToSettle: (otherUserId: String, payerId: String?) -> Unit,
+    onNavigateToAddMember : (String) -> Unit,
+    onNavigateToSettle    : (otherUserId: String, payerId: String?) -> Unit,
     onNavigateToSettlement: (String) -> Unit = {},
-    onNavigateToBalances : () -> Unit = {},
-    onNavigateToAnalytics: () -> Unit = {},
-    viewModel            : GroupDetailViewModel = hiltViewModel(),
+    onNavigateToBalances  : () -> Unit = {},
+    onNavigateToAnalytics : () -> Unit = {},
+    viewModel             : GroupDetailViewModel = hiltViewModel(),
 ) {
-    val groupState by viewModel.groupState.collectAsState()
-    val expensesState by viewModel.expensesState.collectAsState()
-    val settlements by viewModel.settlements.collectAsState()
-    val balances by viewModel.balances.collectAsState()
-    val yourBalance by viewModel.yourBalance.collectAsState()
+    val groupState           by viewModel.groupState.collectAsState()
+    val expensesState        by viewModel.expensesState.collectAsState()
+    val settlements          by viewModel.settlements.collectAsState()
+    val balances             by viewModel.balances.collectAsState()
+    val yourBalance          by viewModel.yourBalance.collectAsState()
     val settlementActionState by viewModel.settlementActionState.collectAsState()
-    val members by viewModel.members.collectAsState()
+    val members              by viewModel.members.collectAsState()
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -158,42 +198,31 @@ fun GroupDetailScreen(
         }
     }
 
-    val groupName = (groupState as? GroupDetailUiState.Success)?.group?.name ?: "Group"
-    val groupType = (groupState as? GroupDetailUiState.Success)?.group?.type ?: GroupType.OTHER
-
-    // ── Settle up sheet state ─────────────────────────────────────────────────
-    // Step 1: always show person list (even 1 person) + "More options"
+    // Settle up sheet state
     var showSettleSheet    by remember { mutableStateOf(false) }
-    // Step 2 (More options): select payer from all group members
     var showPayerSheet     by remember { mutableStateOf(false) }
-    // Step 3: select recipient (payer faded), then navigate
     var showRecipientSheet by remember { mutableStateOf(false) }
     var selectedPayerId    by remember { mutableStateOf<String?>(null) }
     var selectedPayerName  by remember { mutableStateOf("") }
 
     val handleSettleUp: () -> Unit = {
         if (balances.isNotEmpty()) showSettleSheet = true
-        // if all settled up: nothing to do (button should be disabled/hidden upstream)
     }
 
-    // Cover height in px — used to detect when cover scrolls away
-    val coverHeightDp = 220
-    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val groupName = (groupState as? GroupDetailUiState.Success)?.group?.name ?: ""
+    val groupType = (groupState as? GroupDetailUiState.Success)?.group?.type ?: GroupType.OTHER
+    val topBarColor = coverTopColor(groupType)
+    val lazyListState = rememberLazyListState()
 
-    // Show top bar name only once the cover (220dp) has scrolled past
+    // Show compact group name in top bar once cover scrolls away
     val showTopBarName by remember {
         derivedStateOf {
-            val firstVisible = lazyListState.firstVisibleItemIndex
-            val offset = lazyListState.firstVisibleItemScrollOffset
-            // Cover is item 0 — once it's scrolled past OR offset is large enough
-            firstVisible > 0 || offset > 400
+            lazyListState.firstVisibleItemIndex > 0 ||
+                    lazyListState.firstVisibleItemScrollOffset > 300
         }
     }
 
-    // Top gradient color per group type — used for top bar background
-    val topBarColor = coverTopColor(groupType)
-
-    // Auto-refresh expenses every time screen resumes
+    // Auto-refresh on resume
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -202,102 +231,112 @@ fun GroupDetailScreen(
     }
 
     Scaffold(
-        containerColor = Surface0,
+        containerColor      = Surface0,
         contentWindowInsets = WindowInsets(0),
-        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
+        snackbarHost        = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { onNavigateToAddExpense(viewModel.groupId) },
+                onClick        = { onNavigateToAddExpense(viewModel.groupId) },
                 containerColor = Green400,
-                contentColor = Surface0,
-                shape = RoundedCornerShape(Radius.lg),
+                contentColor   = Surface0,
+                shape          = RoundedCornerShape(16.dp), // rounded-2xl per spec
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = "Add expense",
-                    modifier = Modifier.size(24.dp),
-                )
+                Icon(Icons.Filled.Add, contentDescription = "Add expense", modifier = Modifier.size(24.dp))
             }
         },
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             PullToRefreshBox(
                 isRefreshing = isLoading,
-                onRefresh = { viewModel.loadData() },
-                modifier = Modifier.fillMaxSize(),
+                onRefresh    = { viewModel.loadData() },
+                modifier     = Modifier.fillMaxSize(),
             ) {
                 when (val state = groupState) {
                     is GroupDetailUiState.Loading -> FsLoadingScreen()
-
-                    is GroupDetailUiState.Error -> FsErrorScreen(
-                        message = state.message,
+                    is GroupDetailUiState.Error   -> FsErrorScreen(
+                        message   = state.message,
                         isNetwork = state.isNetwork,
-                        onRetry = { viewModel.loadData() },
+                        onRetry   = { viewModel.loadData() },
                     )
-
                     is GroupDetailUiState.Success -> {
+                        val group = state.group
+
+                        // Derive group state
+                        val hasActivity = (expensesState is ExpensesUiState.Success &&
+                                (expensesState as ExpensesUiState.Success).expenses.isNotEmpty()) ||
+                                settlements.isNotEmpty()
+
+                        val groupUiState: GroupUiState = when {
+                            group.memberCount <= 1                   -> GroupUiState.SOLO
+                            !hasActivity                             -> GroupUiState.NEW_GROUP
+                            yourBalance == 0.0                       -> GroupUiState.ALL_SETTLED
+                            else                                     -> GroupUiState.ACTIVE_DEBT
+                        }
+
+                        // Progress % for ring
+                        val settledPct: Float = when (groupUiState) {
+                            GroupUiState.SOLO, GroupUiState.NEW_GROUP -> 0f
+                            GroupUiState.ALL_SETTLED                  -> 1f
+                            GroupUiState.ACTIVE_DEBT                  -> {
+                                val settled = settlements.sumOf { it.amount }
+                                val outstanding = Math.abs(yourBalance)
+                                if (settled + outstanding > 0)
+                                    (settled / (settled + outstanding)).toFloat().coerceIn(0f, 0.99f)
+                                else 0f
+                            }
+                        }
+
                         LazyColumn(
-                            state = lazyListState,
+                            state    = lazyListState,
                             modifier = Modifier.fillMaxSize(),
                         ) {
-
-                            // ── Cover photo ───────────────────────────────────────
+                            // ── Cover header ──────────────────────────────────
                             item {
-                                GroupCoverPhoto(
-                                    group = state.group,
+                                GroupCoverHeader(
+                                    group           = group,
+                                    settledPct      = settledPct,
+                                    groupUiState    = groupUiState,
+                                    yourBalance     = yourBalance,
+                                    onSettingsClick = { onNavigateToSettings(viewModel.groupId) },
+                                    onSearchClick   = { onNavigateToSearch(viewModel.groupId) },
                                 )
                             }
 
-                            // ── Balance card ──────────────────────────────────────
-                            item {
-                                BalanceCard(
-                                    yourBalance = yourBalance,
-                                    balances = balances,
-                                    currency = "USD",
-                                    onSettleUser = { otherUserId -> onNavigateToSettle(otherUserId, null) },
-                                    modifier = Modifier.padding(
-                                        horizontal = Spacing.lg,
-                                        vertical = Spacing.md,
-                                    ),
+                            // ── Sticky balance bar ────────────────────────────
+                            stickyHeader {
+                                StickyBalanceBar(
+                                    yourBalance  = yourBalance,
+                                    balances     = balances,
+                                    currency     = balances.firstOrNull()?.currency ?: "USD",
+                                    groupUiState = groupUiState,
                                 )
                             }
 
-                            // ── Action pills row ──────────────────────────────────
+                            // ── Action bar ────────────────────────────────────
                             item {
-                                ActionPillsRow(
+                                ActionBar(
                                     onSettleUp            = handleSettleUp,
                                     onNavigateToBalances  = onNavigateToBalances,
                                     onNavigateToAnalytics = onNavigateToAnalytics,
-                                    modifier = Modifier.padding(
-                                        start = Spacing.lg,
-                                        end = Spacing.lg,
-                                        bottom = Spacing.md,
-                                    ),
+                                    groupUiState          = groupUiState,
                                 )
                             }
 
-                            // ── Expenses ──────────────────────────────────────────
+                            // ── Timeline ──────────────────────────────────────
                             when (val expenses = expensesState) {
                                 is ExpensesUiState.Loading -> {
                                     item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
                                 }
-
                                 is ExpensesUiState.Error -> {
                                     item {
                                         FsErrorScreen(
-                                            message = expenses.message,
+                                            message   = expenses.message,
                                             isNetwork = expenses.isNetwork,
-                                            onRetry = { viewModel.refreshExpenses() },
+                                            onRetry   = { viewModel.refreshExpenses() },
                                         )
                                     }
                                 }
-
                                 is ExpensesUiState.Success -> {
-                                    // Build unified timeline regardless of expense count
                                     val timeline = buildList {
                                         expenses.expenses.forEach { add(TimelineItem.ExpenseItem(it)) }
                                         settlements.forEach { add(TimelineItem.SettlementItem(it)) }
@@ -305,91 +344,89 @@ fun GroupDetailScreen(
 
                                     if (timeline.isEmpty()) {
                                         item {
-                                            if (state.group.memberCount <= 1) {
-                                                Column(
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(horizontal = Spacing.lg)
-                                                        .clip(RoundedCornerShape(Radius.xl))
-                                                        .background(Surface2)
-                                                        .padding(horizontal = Spacing.xl, vertical = Spacing.xxl),
-                                                ) {
-                                                    Text(
-                                                        text = "You're the only one here!",
-                                                        fontSize = 16.sp,
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = TextPrimary,
-                                                        textAlign = TextAlign.Center,
-                                                    )
-                                                    Spacer(modifier = Modifier.height(Spacing.xl))
-                                                    FsPrimaryButton(
-                                                        text = "Add group members",
-                                                        onClick = { onNavigateToAddMember(viewModel.groupId) },
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                    )
-                                                    Spacer(modifier = Modifier.height(Spacing.md))
-                                                    FsSecondaryButton(
-                                                        text = "Share group link",
-                                                        onClick = { /* TODO: share invite code */ },
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                    )
-                                                }
-                                            } else {
-                                                FsEmptyState(
-                                                    title = "No expenses yet",
-                                                    subtitle = "Add the first expense to get started",
-                                                    modifier = Modifier.height(300.dp),
-                                                )
-                                            }
+                                            GroupEmptyState(
+                                                groupUiState   = groupUiState,
+                                                onAddMember    = { onNavigateToAddMember(viewModel.groupId) },
+                                                onAddExpense   = { onNavigateToAddExpense(viewModel.groupId) },
+                                            )
                                         }
                                     } else {
+                                        // Group by month for section headers
                                         val grouped = timeline.groupBy { it.date.toMonthHeader() }
 
-                                        grouped.forEach { (monthHeader, items) ->
-                                            item {
-                                                Text(
-                                                    text = monthHeader.uppercase(),
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = TextTertiary,
-                                                    letterSpacing = 1.sp,
-                                                    modifier = Modifier.padding(
-                                                        horizontal = Spacing.lg,
-                                                        vertical = Spacing.sm,
-                                                    ),
-                                                )
-                                            }
-                                            items(
-                                                items = items,
-                                                key = { when (it) {
-                                                    is TimelineItem.ExpenseItem -> "e_${it.expense.id}"
-                                                    is TimelineItem.SettlementItem -> "s_${it.settlement.id}"
-                                                }},
-                                            ) { item ->
-                                                when (item) {
-                                                    is TimelineItem.ExpenseItem -> ExpenseRow(
-                                                        expense = item.expense,
-                                                        onClick = { onNavigateToExpense(item.expense.id) },
+                                        grouped.forEach { (monthHeader, monthItems) ->
+                                            // Month sticky header
+                                            stickyHeader(key = "month_$monthHeader") {
+                                                Row(
+                                                    modifier          = Modifier
+                                                        .fillMaxWidth()
+                                                        .background(Color(0xFF0B0E13))
+                                                        .padding(
+                                                            horizontal = Spacing.lg,
+                                                            vertical   = 6.dp,
+                                                        ),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                                                ) {
+                                                    Text(
+                                                        text          = monthHeader.uppercase(),
+                                                        fontSize      = 12.sp,
+                                                        fontWeight    = FontWeight.SemiBold,
+                                                        color         = TextSecondary,
+                                                        letterSpacing = 0.5.sp,
                                                     )
-                                                    is TimelineItem.SettlementItem ->
-                                                        if (item.settlement.isFullSettle) {
-                                                            GroupFullySettledRow(
-                                                                settlement = item.settlement,
-                                                                onClick    = { onNavigateToSettlement(item.settlement.id) },
-                                                            )
-                                                        } else {
-                                                            SettlementRow(
-                                                                settlement = item.settlement,
-                                                                onClick    = { onNavigateToSettlement(item.settlement.id) },
-                                                                onDelete   = { viewModel.deleteSettlement(item.settlement.id) },
-                                                            )
+                                                    HorizontalDivider(
+                                                        color     = Surface4,
+                                                        thickness = 0.5.dp,
+                                                        modifier  = Modifier.weight(1f),
+                                                    )
+                                                }
+                                            }
+
+                                            // Group month items by day for date rail logic
+                                            val byDay = monthItems.groupBy { it.date.toDayKey() }
+
+                                            byDay.forEach { (_, dayItems) ->
+                                                items(
+                                                    items = dayItems,
+                                                    key = {
+                                                        when (it) {
+                                                            is TimelineItem.ExpenseItem    -> "e_${it.expense.id}"
+                                                            is TimelineItem.SettlementItem -> "s_${it.settlement.id}"
                                                         }
+                                                    },
+                                                ) { item ->
+                                                    // Show date rail only on first item of the day
+                                                    val isFirstOfDay = item == dayItems.first()
+
+                                                    when (item) {
+                                                        is TimelineItem.ExpenseItem ->
+                                                            ExpenseRow(
+                                                                expense      = item.expense,
+                                                                showDateRail = isFirstOfDay,
+                                                                onClick      = { onNavigateToExpense(item.expense.id) },
+                                                            )
+                                                        is TimelineItem.SettlementItem ->
+                                                            if (item.settlement.isFullSettle) {
+                                                                GroupFullySettledRow(
+                                                                    settlement   = item.settlement,
+                                                                    showDateRail = isFirstOfDay,
+                                                                    onClick      = { onNavigateToSettlement(item.settlement.id) },
+                                                                )
+                                                            } else {
+                                                                SettlementRow(
+                                                                    settlement   = item.settlement,
+                                                                    showDateRail = isFirstOfDay,
+                                                                    onClick      = { onNavigateToSettlement(item.settlement.id) },
+                                                                    onDelete     = { viewModel.deleteSettlement(item.settlement.id) },
+                                                                )
+                                                            }
+                                                    }
                                                 }
                                             }
                                         }
 
-                                        item { Spacer(modifier = Modifier.height(80.dp)) }
+                                        item { Spacer(Modifier.height(80.dp)) }
                                     }
                                 }
                             }
@@ -407,35 +444,35 @@ fun GroupDetailScreen(
                     .offset(y = (-20).dp)
                     .padding(horizontal = Spacing.lg, vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment     = Alignment.CenterVertically,
             ) {
                 // Back
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier
+                    modifier         = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
                         .clickable { onBack() },
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp),
+                        tint               = Color.White,
+                        modifier           = Modifier.size(20.dp),
                     )
                 }
 
-                // Group name — only visible once cover name scrolls away
+                // Group name — only visible once cover scrolls away
                 if (showTopBarName) {
                     Text(
-                        text = groupName,
-                        fontSize = 17.sp,
+                        text       = groupName,
+                        fontSize   = 17.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
+                        color      = Color.White,
+                        maxLines   = 1,
+                        overflow   = TextOverflow.Ellipsis,
+                        modifier   = Modifier
                             .weight(1f)
                             .padding(horizontal = Spacing.md),
                     )
@@ -447,154 +484,105 @@ fun GroupDetailScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier
+                        modifier         = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
                             .clickable { onNavigateToSearch(viewModel.groupId) },
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.Search,
+                            imageVector        = Icons.Outlined.Search,
                             contentDescription = "Search",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp),
+                            tint               = Color.White,
+                            modifier           = Modifier.size(20.dp),
                         )
                     }
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier
+                        modifier         = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(if (showTopBarName) Color(0x66000000) else Color(0x55000000))
                             .clickable { onNavigateToSettings(viewModel.groupId) },
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.Settings,
+                            imageVector        = Icons.Outlined.Settings,
                             contentDescription = "Settings",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp),
+                            tint               = Color.White,
+                            modifier           = Modifier.size(20.dp),
                         )
                     }
                 }
             }
-        } // end outer Box
+        }
     }
 
-    // ── Settle Up — Balance Picker Sheet ──────────────────────────────────────
-    // ── Sheet 1: Who are you settling with? ──────────────────────────────────
+    // ── Settle Up sheets (unchanged logic) ───────────────────────────────────
     if (showSettleSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSettleSheet = false },
-            containerColor   = Surface2,
-        ) {
+        ModalBottomSheet(onDismissRequest = { showSettleSheet = false }, containerColor = Surface2) {
             Column(modifier = Modifier.padding(bottom = 32.dp)) {
-                Text(
-                    text       = "Settle up",
-                    fontSize   = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = TextPrimary,
-                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                )
+                Text("Settle up", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md))
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
-
-                // One row per person you have a balance with
                 balances.filter { it.amount != 0.0 }.forEach { balance ->
                     val isOwed = balance.amount > 0
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                showSettleSheet = false
-                                onNavigateToSettle(balance.otherUserId, null)
-                            }
+                            .clickable { showSettleSheet = false; onNavigateToSettle(balance.otherUserId, null) }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = balance.otherUserName, userId = balance.otherUserId,
-                            size = ComponentSize.avatarMd)
-                        Spacer(modifier = Modifier.width(Spacing.md))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(balance.otherUserName, fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium, color = TextPrimary)
+                        FsAvatar(name = balance.otherUserName, userId = balance.otherUserId, size = ComponentSize.avatarMd)
+                        Spacer(Modifier.width(Spacing.md))
+                        Column(Modifier.weight(1f)) {
+                            Text(balance.otherUserName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
                             Text(
                                 text     = if (isOwed) "owes you ${MoneyUtils.format(balance.amount, balance.currency)}"
                                 else "you owe ${MoneyUtils.format(-balance.amount, balance.currency)}",
                                 fontSize = 12.sp, color = TextSecondary,
                             )
                         }
-                        Icon(
-                            imageVector        = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                            contentDescription = null,
-                            tint               = TextTertiary,
-                            modifier           = Modifier.size(14.dp),
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = TextTertiary, modifier = Modifier.size(14.dp))
                     }
                     HorizontalDivider(color = Surface3, thickness = 0.5.dp,
                         modifier = Modifier.padding(start = Spacing.lg + ComponentSize.avatarMd + Spacing.md))
                 }
-
-                // More options — custom payer/recipient
                 Row(
                     modifier          = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            showSettleSheet = false
-                            showPayerSheet  = true
-                        }
+                        .clickable { showSettleSheet = false; showPayerSheet = true }
                         .padding(horizontal = Spacing.lg, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(ComponentSize.avatarMd)
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(Surface3),
-                    ) {
+                    Box(contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(ComponentSize.avatarMd).clip(CircleShape).background(Surface3)) {
                         Text("⋯", fontSize = 18.sp, color = TextSecondary)
                     }
-                    Spacer(modifier = Modifier.width(Spacing.md))
-                    Text("More options", fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium, color = TextSecondary)
+                    Spacer(Modifier.width(Spacing.md))
+                    Text("More options", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
                 }
             }
         }
     }
 
-    // ── Sheet 2: Select payer ─────────────────────────────────────────────────
     if (showPayerSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showPayerSheet = false },
-            containerColor   = Surface2,
-        ) {
+        ModalBottomSheet(onDismissRequest = { showPayerSheet = false }, containerColor = Surface2) {
             Column(modifier = Modifier.padding(bottom = 32.dp)) {
-                Text(
-                    text       = "Who paid?",
-                    fontSize   = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = TextPrimary,
-                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                )
+                Text("Who paid?", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md))
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                 members.forEach { member ->
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                selectedPayerId   = member.userId
-                                selectedPayerName = member.fullName
-                                showPayerSheet    = false
-                                showRecipientSheet = true
-                            }
+                            .clickable { selectedPayerId = member.userId; selectedPayerName = member.fullName; showPayerSheet = false; showRecipientSheet = true }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId,
-                            size = ComponentSize.avatarMd)
-                        Spacer(modifier = Modifier.width(Spacing.md))
-                        Text(member.fullName, fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium, color = TextPrimary,
-                            modifier = Modifier.weight(1f))
+                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarMd)
+                        Spacer(Modifier.width(Spacing.md))
+                        Text(member.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.weight(1f))
                     }
                     HorizontalDivider(color = Surface3, thickness = 0.5.dp,
                         modifier = Modifier.padding(start = Spacing.lg + ComponentSize.avatarMd + Spacing.md))
@@ -603,42 +591,29 @@ fun GroupDetailScreen(
         }
     }
 
-    // ── Sheet 3: Select recipient (payer faded) ───────────────────────────────
     if (showRecipientSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showRecipientSheet = false },
-            containerColor   = Surface2,
-        ) {
+        ModalBottomSheet(onDismissRequest = { showRecipientSheet = false }, containerColor = Surface2) {
             Column(modifier = Modifier.padding(bottom = 32.dp)) {
-                Text(
-                    text       = "Who received?",
-                    fontSize   = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = TextPrimary,
-                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                )
+                Text("Who received?", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md))
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                 members.forEach { member ->
                     val isPayer = member.userId == selectedPayerId
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
-                            .then(
-                                if (!isPayer) Modifier.clickable {
-                                    showRecipientSheet = false
-                                    onNavigateToSettle(member.userId, selectedPayerId)
-                                } else Modifier
-                            )
+                            .then(if (!isPayer) Modifier.clickable {
+                                showRecipientSheet = false
+                                onNavigateToSettle(member.userId, selectedPayerId)
+                            } else Modifier)
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId,
-                            size = ComponentSize.avatarMd,
+                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarMd,
                             modifier = Modifier.alpha(if (isPayer) 0.35f else 1f))
-                        Spacer(modifier = Modifier.width(Spacing.md))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(member.fullName, fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium,
+                        Spacer(Modifier.width(Spacing.md))
+                        Column(Modifier.weight(1f)) {
+                            Text(member.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium,
                                 color = if (isPayer) TextTertiary else TextPrimary)
                             if (isPayer) Text("paying", fontSize = 12.sp, color = TextTertiary)
                         }
@@ -651,89 +626,195 @@ fun GroupDetailScreen(
     }
 }
 
-// ── Group Cover Photo ─────────────────────────────────────────────────────────
+// ── Cover Header — photo + ring + icon + title ────────────────────────────────
 
 @Composable
-private fun GroupCoverPhoto(
-    group: Group,
+private fun GroupCoverHeader(
+    group          : Group,
+    settledPct     : Float,
+    groupUiState   : GroupUiState = GroupUiState.NEW_GROUP,
+    yourBalance    : Double = 0.0,
+    onSettingsClick: () -> Unit,
+    onSearchClick  : () -> Unit,
 ) {
-    val colors = coverGradientColors(group.type)
+    val coverRes = remember(group.id, group.groupImage) {
+        if (!group.groupImage.isNullOrBlank()) null else groupCoverRes(group)
+    }
     val emoji = coverEmoji(group.type)
-    val style = coverEmojiStyle(group.type)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(220.dp)
-            .background(Brush.linearGradient(colors)),
+            .height(200.dp),
     ) {
-        // Large emoji — unique position per group type
-        Text(
-            text = emoji,
-            fontSize = style.fontSize.sp,
-            modifier = Modifier
-                .align(style.alignment)
-                .offset(x = style.offset.first.dp, y = style.offset.second.dp)
-                .graphicsLayer { },
-        )
+        // Cover photo — bundled drawable or custom upload
+        if (coverRes != null) {
+            androidx.compose.foundation.Image(
+                painter            = painterResource(id = coverRes),
+                contentDescription = null,
+                contentScale       = ContentScale.Crop,
+                modifier           = Modifier.fillMaxSize(),
+            )
+        } else {
+            AsyncImage(
+                model              = group.groupImage,
+                contentDescription = null,
+                contentScale       = ContentScale.Crop,
+                modifier           = Modifier.fillMaxSize(),
+            )
+        }
 
-        // Scrim at bottom for text legibility
+        // Dark gradient overlay — bottom-heavy
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(100.dp)
-                .align(Alignment.BottomCenter)
+                .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, Color(0xDD000000))
+                        0f   to Color(0x4D0B0E13),
+                        0.6f to Color(0xF20B0E13),
+                        1f   to Color(0xFF0B0E13),
                     )
-                ),
+                )
         )
 
-        // Bottom: group name + member avatars + type pill
+        // Content: centered icon + title + pills
         Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(horizontal = Spacing.lg, vertical = Spacing.lg),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier            = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = Spacing.md),
         ) {
-            Text(
-                text = group.name,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Color.White,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            // Progress ring + icon
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier.size(88.dp),
             ) {
-                Box(modifier = Modifier.width((group.memberCount.coerceAtMost(4) * 18 + 10).dp)) {
-                    repeat(group.memberCount.coerceAtMost(4)) { i ->
-                        Box(
-                            modifier = Modifier
-                                .offset(x = (i * 18).dp)
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .background(Color(0x55FFFFFF))
+                // Ring drawn with Canvas
+                Canvas(modifier = Modifier.size(88.dp)) {
+                    val stroke = 6f
+                    val radius = size.minDimension / 2f - stroke / 2f
+
+                    // Track — always drawn
+                    drawCircle(
+                        color  = Color.White.copy(alpha = 0.1f),
+                        radius = radius,
+                        style  = Stroke(width = stroke),
+                    )
+                    when (groupUiState) {
+                        GroupUiState.ALL_SETTLED -> {
+                            // Gold gradient full ring
+                            drawCircle(
+                                brush  = Brush.sweepGradient(listOf(Color(0xFFF59E0B), Color(0xFFFFD700), Color(0xFFFBBF24), Color(0xFFF59E0B))),
+                                radius = radius,
+                                style  = Stroke(width = stroke),
+                            )
+                        }
+                        GroupUiState.ACTIVE_DEBT -> {
+                            if (settledPct > 0f) {
+                                // Red arc when you owe, green arc when owed to you
+                                val arcColor = if (yourBalance < 0) Color(0xFFF87171) else Color(0xFF00C896)
+                                drawArc(
+                                    color      = arcColor,
+                                    startAngle = -90f,
+                                    sweepAngle = 360f * settledPct,
+                                    useCenter  = false,
+                                    style      = Stroke(width = stroke, cap = StrokeCap.Round),
+                                )
+                            }
+                        }
+                        else -> { /* SOLO/NEW_GROUP — gray track only, no arc */ }
+                    }
+                }
+
+                // Group icon — gold checkmark at ALL_SETTLED, emoji otherwise
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF232A34))
+                        .clickable { },
+                ) {
+                    if (groupUiState == GroupUiState.ALL_SETTLED) {
+                        Canvas(modifier = Modifier.size(28.dp)) {
+                            val w = size.width; val h = size.height
+                            drawPath(
+                                path = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(w * 0.15f, h * 0.52f)
+                                    lineTo(w * 0.40f, h * 0.75f)
+                                    lineTo(w * 0.85f, h * 0.25f)
+                                },
+                                brush = Brush.linearGradient(listOf(Color(0xFFF59E0B), Color(0xFFFBBF24))),
+                                style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round,
+                                    join = androidx.compose.ui.graphics.StrokeJoin.Round),
+                            )
+                        }
+                    } else {
+                        Text(text = emoji, fontSize = 26.sp)
+                    }
+                }
+
+                // Badge — only on active debt
+                if (groupUiState == GroupUiState.ACTIVE_DEBT && settledPct > 0f) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = 4.dp, y = 4.dp)
+                            .background(Color(0x99000000), RoundedCornerShape(Radius.full))
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text       = "${(settledPct * 100).toInt()}%",
+                            fontSize   = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color      = Color.White,
                         )
                     }
                 }
-                Text(
-                    text = "${group.memberCount} members",
-                    fontSize = 12.sp,
-                    color = Color(0xCCFFFFFF),
-                )
+            }
+
+            Spacer(Modifier.height(Spacing.sm))
+
+            // Group name
+            Text(
+                text       = group.name,
+                fontSize   = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color      = Color.White,
+            )
+
+            Spacer(Modifier.height(Spacing.sm))
+
+            // Members pill + type pill
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(Radius.full))
-                        .background(Color(0x44FFFFFF))
-                        .padding(horizontal = Spacing.sm, vertical = 3.dp),
+                        .background(Color(0x26FFFFFF))
+                        .clickable(onClick = onSettingsClick)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("👥", fontSize = 12.sp)
+                        Text("${group.memberCount} ${if (group.memberCount == 1) "member" else "members"}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Radius.full))
+                        .background(Color(0x26FFFFFF))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        text = group.type.name,
-                        fontSize = 11.sp,
-                        color = Color.White,
-                        fontWeight = FontWeight.Medium,
+                        text       = group.type.name,
+                        fontSize   = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = Color.White,
+                        letterSpacing = 0.5.sp,
                     )
                 }
             }
@@ -741,331 +822,251 @@ private fun GroupCoverPhoto(
     }
 }
 
-// ── Cover helpers ─────────────────────────────────────────────────────────────
-
-/** Returns the top/darkest color of the cover gradient — used for the fixed top bar background */
-private fun coverTopColor(type: GroupType): Color = when (type) {
-    GroupType.TRIP -> Color(0xFF0D2137)
-    GroupType.HOME -> Color(0xFF1A0D2E)
-    GroupType.OFFICE -> Color(0xFF1A1000)
-    GroupType.FRIENDS -> Color(0xFF0D1F0D)
-    GroupType.COUPLE -> Color(0xFF1F0D1A)
-    GroupType.EVENT -> Color(0xFF1A1000)
-    GroupType.APARTMENT -> Color(0xFF0D1A1F)
-    GroupType.OTHER -> Color(0xFF111112)
-}
-
-private fun coverGradientColors(type: GroupType): List<Color> = when (type) {
-    GroupType.TRIP -> listOf(Color(0xFF0D2137), Color(0xFF1A3A5C), Color(0xFF0D4A6B))
-    GroupType.HOME -> listOf(Color(0xFF1A0D2E), Color(0xFF2E1A4A), Color(0xFF3D1A5C))
-    GroupType.OFFICE -> listOf(Color(0xFF1A1000), Color(0xFF2E1E00), Color(0xFF3D2800))
-    GroupType.FRIENDS -> listOf(Color(0xFF0D1F0D), Color(0xFF1A3020), Color(0xFF1A3D1A))
-    GroupType.COUPLE -> listOf(Color(0xFF1F0D1A), Color(0xFF2E1022), Color(0xFF3D1A2E))
-    GroupType.EVENT -> listOf(Color(0xFF1A1000), Color(0xFF2A1800), Color(0xFF3A2200))
-    GroupType.APARTMENT -> listOf(Color(0xFF0D1A1F), Color(0xFF0D2A30), Color(0xFF0A2D35))
-    GroupType.OTHER -> listOf(Color(0xFF111112), Color(0xFF1A1A1C), Color(0xFF222222))
-}
-
-private fun coverEmoji(type: GroupType): String = when (type) {
-    GroupType.TRIP -> "✈️"
-    GroupType.HOME -> "🏠"
-    GroupType.OFFICE -> "💼"
-    GroupType.FRIENDS -> "👫"
-    GroupType.COUPLE -> "💑"
-    GroupType.EVENT -> "🎉"
-    GroupType.APARTMENT -> "🏢"
-    GroupType.OTHER -> "💰"
-}
-
-/**
- * Returns (alignment, rotation, fontSize, offsetXY) per group type.
- * Emoji is large and positioned in the upper-center area of the cover.
- */
-private fun coverEmojiStyle(type: GroupType): CoverEmojiStyle = when (type) {
-    // Airplane: center-top area, tilted flying in from right
-    GroupType.TRIP -> CoverEmojiStyle(Alignment.TopCenter, -15f, 80, Pair(20, 50))
-    // House: center, slightly above mid
-    GroupType.HOME -> CoverEmojiStyle(Alignment.Center, 0f, 82, Pair(0, -20))
-    // Briefcase: center, slightly right
-    GroupType.OFFICE -> CoverEmojiStyle(Alignment.Center, 0f, 78, Pair(20, -10))
-    // Friends: center-top
-    GroupType.FRIENDS -> CoverEmojiStyle(Alignment.TopCenter, 8f, 76, Pair(-10, 52))
-    // Couple: center
-    GroupType.COUPLE -> CoverEmojiStyle(Alignment.Center, 0f, 80, Pair(0, -16))
-    // Event: top-center, rotated, oversized
-    GroupType.EVENT -> CoverEmojiStyle(Alignment.TopCenter, 15f, 86, Pair(16, 44))
-    // Apartment: center
-    GroupType.APARTMENT -> CoverEmojiStyle(Alignment.Center, 0f, 76, Pair(0, -20))
-    // Other: center
-    GroupType.OTHER -> CoverEmojiStyle(Alignment.Center, 0f, 74, Pair(0, -16))
-}
-
-private data class CoverEmojiStyle(
-    val alignment: Alignment,
-    val rotation: Float,
-    val fontSize: Int,
-    val offset: Pair<Int, Int>, // x, y in dp
-)
-
-// ── Balance Card ──────────────────────────────────────────────────────────────
+// ── Sticky Balance Bar ────────────────────────────────────────────────────────
 
 @Composable
-private fun BalanceCard(
-    yourBalance: Double,
-    balances: List<Balance>,
-    currency: String,
-    onSettleUser: (String) -> Unit,
-    modifier: Modifier = Modifier,
+private fun StickyBalanceBar(
+    yourBalance : Double,
+    balances    : List<Balance>,
+    currency    : String,
+    groupUiState: GroupUiState = GroupUiState.ACTIVE_DEBT,
 ) {
-    val overallColor = when {
-        yourBalance > 0 -> Green400
-        yourBalance < 0 -> Negative
-        else -> TextSecondary
-    }
+    val isCentered = groupUiState == GroupUiState.SOLO ||
+            groupUiState == GroupUiState.NEW_GROUP ||
+            groupUiState == GroupUiState.ALL_SETTLED
 
-    val overallText = when {
-        yourBalance > 0 -> "You are owed ${MoneyUtils.format(yourBalance, currency)} overall"
-        yourBalance < 0 -> "You owe ${MoneyUtils.format(-yourBalance, currency)} overall"
-        balances.all { it.amount == 0.0 } -> "All settled up"
-        else -> "Expenses are balanced"
-    }
-
-    Box(
-        modifier = modifier
+    Row(
+        modifier              = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(Surface2)
-            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            .background(Color(0xF2111112))
+            .padding(horizontal = Spacing.lg, vertical = 6.dp),
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = if (isCentered) Arrangement.Center else Arrangement.Start,
     ) {
-        Text(
-            text     = overallText,
-            fontSize = 13.sp,
-            color    = overallColor,
+        when (groupUiState) {
+            GroupUiState.SOLO, GroupUiState.NEW_GROUP -> {
+                Text("No expenses yet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF))
+            }
+            GroupUiState.ALL_SETTLED -> {
+                Text("All settled 🎉", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF00C896))
+            }
+            GroupUiState.ACTIVE_DEBT -> {
+                val (label, amount, color) = when {
+                    yourBalance < 0 -> Triple("You owe", MoneyUtils.format(-yourBalance, currency), Color(0xFFF87171))
+                    else            -> Triple("Owed to you", MoneyUtils.format(yourBalance, currency), Color(0xFF00C896))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(label, fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                    Text(amount, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color)
+                }
+                // Avatar stack — colored by balance direction
+                val relevant = balances.filter { it.amount != 0.0 }.take(3)
+                if (relevant.isNotEmpty()) {
+                    Box(modifier = Modifier.width((relevant.size * 18 + 6).dp).height(28.dp)) {
+                        relevant.forEachIndexed { i, balance ->
+                            val avatarColor = if (balance.amount < 0) Color(0xFFF87171) else Color(0xFF00C896)
+                            val textColor   = if (balance.amount < 0) Color.White else Color.Black
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier         = Modifier
+                                    .offset(x = (i * 18).dp)
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(avatarColor),
+                            ) {
+                                Text(balance.otherUserName.take(1).uppercase(), fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold, color = textColor)
+                            }
+                        }
+                    }
+                }
+            }
+            else -> { /* no-op */ }
+        }
+    }
+    HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+}
+
+// ── Action Bar ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ActionBar(
+    onSettleUp           : () -> Unit,
+    onNavigateToBalances : () -> Unit,
+    onNavigateToAnalytics: () -> Unit,
+    groupUiState         : GroupUiState = GroupUiState.ACTIVE_DEBT,
+) {
+    // Settle up: only when there's active debt
+    val settleEnabled    = groupUiState == GroupUiState.ACTIVE_DEBT
+    // Balances/Charts: enabled once there's any history
+    val secondaryEnabled = groupUiState == GroupUiState.ACTIVE_DEBT ||
+            groupUiState == GroupUiState.ALL_SETTLED
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier              = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            // Settle up
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .clip(RoundedCornerShape(Radius.full))
+                    .background(if (settleEnabled) Color(0xFF00C896) else Color(0xFF232A34))
+                    .then(if (settleEnabled) Modifier.clickable { onSettleUp() } else Modifier)
+                    .padding(horizontal = Spacing.md, vertical = 10.dp),
+            ) {
+                Text("Settle up", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    color = if (settleEnabled) Color.Black else Color(0xFF6B7280))
+            }
+
+            // Secondary pills
+            listOf(
+                "Balances" to onNavigateToBalances,
+                "Charts"   to onNavigateToAnalytics,
+                "Export"   to {},
+            ).forEach { (label, action) ->
+                val enabled = secondaryEnabled && label != "Export"
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .clip(RoundedCornerShape(Radius.full))
+                        .background(if (secondaryEnabled && label != "Export") Color(0xFF151A21) else Color(0xFF232A34))
+                        .then(if (enabled) Modifier.clickable { action() } else Modifier)
+                        .padding(horizontal = Spacing.md, vertical = 10.dp),
+                ) {
+                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (enabled) Color(0xFFE8ECF2) else Color(0xFF6B7280))
+                }
+            }
+        }
+
+        // Right fade edge
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .width(32.dp)
+                .height(44.dp)
+                .background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF0B0E13))))
         )
     }
 }
 
-// ── Action Pills Row ──────────────────────────────────────────────────────────
-
-@Composable
-private fun ActionPillsRow(
-    onSettleUp            : () -> Unit,
-    onNavigateToBalances  : () -> Unit = {},
-    onNavigateToAnalytics : () -> Unit = {},
-    modifier              : Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-    ) {
-        // Settle up — green primary pill
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .clip(RoundedCornerShape(Radius.full))
-                .background(Green400)
-                .clickable { onSettleUp() }
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-        ) {
-            Text(
-                text = "Settle up",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Surface0,
-            )
-        }
-
-        // Balances — navigates to full member balance breakdown
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .clip(RoundedCornerShape(Radius.full))
-                .background(Surface2)
-                .clickable { onNavigateToBalances() }
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-        ) {
-            Text(
-                text = "Balances",
-                fontSize = 12.sp,
-                color = TextSecondary,
-            )
-        }
-
-        // Charts pill
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .clip(RoundedCornerShape(Radius.full))
-                .background(Surface2)
-                .clickable { onNavigateToAnalytics() }
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-        ) {
-            Text(text = "Charts", fontSize = 12.sp, color = TextSecondary)
-        }
-
-        // Export — muted placeholder
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .clip(RoundedCornerShape(Radius.full))
-                .background(Surface2)
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-        ) {
-            Text(
-                text = "Export",
-                fontSize = 12.sp,
-                color = TextDisabled,
-            )
-        }
-    }
-}
-
-// ── Expense Row ───────────────────────────────────────────────────────────────
+// ── Expense Row — card style with date rail ───────────────────────────────────
 
 @Composable
 private fun ExpenseRow(
-    expense: Expense,
-    onClick: () -> Unit,
+    expense     : Expense,
+    showDateRail: Boolean,
+    onClick     : () -> Unit,
 ) {
     val youLent = expense.yourBalance > 0
-    val youOwe = expense.yourBalance < 0
+    val youOwe  = expense.yourBalance < 0
 
-    val balanceLabel = when {
-        youLent -> "you lent"
-        youOwe -> "you owe"
-        else -> "settled"
-    }
-    val balanceColor = when {
-        youLent -> Green400
-        youOwe -> Negative
-        else -> TextTertiary
-    }
+    val balanceLabel  = when { youLent -> "you lent"; youOwe -> "you owe"; else -> "settled" }
+    val balanceColor  = when { youLent -> Color(0xFF00C896); youOwe -> Color(0xFFF87171); else -> TextTertiary }
     val balanceAmount = when {
         youLent -> MoneyUtils.format(expense.yourBalance, expense.currency)
-        youOwe -> MoneyUtils.format(-expense.yourBalance, expense.currency)
-        else -> ""
+        youOwe  -> MoneyUtils.format(-expense.yourBalance, expense.currency)
+        else    -> ""
     }
 
-    // "Who paid" subtitle
-    val paidByText = expense.payers.firstOrNull()?.let { payer ->
-        "${payer.fullName} paid ${MoneyUtils.format(payer.amountPaid, expense.currency)}"
+    val paidByText = expense.payers.firstOrNull()?.let {
+        "${it.fullName} paid ${MoneyUtils.format(it.amountPaid, expense.currency)}"
     } ?: "${expense.addedByName} paid ${MoneyUtils.format(expense.totalAmount, expense.currency)}"
 
-    // Date components
     val (monthAbbr, dayNum) = remember(expense.expenseDate) {
         try {
             val dt = LocalDateTime.parse(expense.expenseDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-            val month = dt.format(DateTimeFormatter.ofPattern("MMM"))
-            val day = dt.dayOfMonth.toString()
-            month to day
-        } catch (e: Exception) {
-            "" to ""
-        }
+            dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
+        } catch (e: Exception) { "" to "" }
     }
 
-    // Emoji background tint based on category
-    val emojiBg = categoryBgColor(expense.category)
-
     Row(
-        modifier = Modifier
+        modifier          = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.lg, vertical = 11.dp),
+            .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Date column
+        // Date rail — only on first item of day
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.width(30.dp),
+            modifier            = Modifier.width(24.dp),
         ) {
-            Text(
-                text = monthAbbr,
-                fontSize = 10.sp,
-                color = TextTertiary,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = dayNum,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextSecondary,
-                textAlign = TextAlign.Center,
-            )
+            if (showDateRail) {
+                Text(monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center)
+                Text(dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center)
+            }
         }
 
-        Spacer(modifier = Modifier.width(Spacing.sm))
+        Spacer(Modifier.width(10.dp))
 
-        // Category emoji box
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(Radius.md))
-                .background(emojiBg),
+        // Card
+        Row(
+            modifier          = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF151A21))
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = categoryEmoji(expense.category),
-                fontSize = 18.sp,
-            )
-        }
+            // Emoji icon
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF232A34)),
+            ) {
+                Text(categoryEmoji(expense.category), fontSize = 20.sp)
+            }
 
-        Spacer(modifier = Modifier.width(Spacing.md))
+            Spacer(Modifier.width(10.dp))
 
-        // Description + who paid
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = expense.description,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = paidByText,
-                fontSize = 12.sp,
-                color = TextTertiary,
-            )
-        }
-
-        Spacer(modifier = Modifier.width(Spacing.sm))
-
-        // Balance column
-        if (expense.yourBalance != 0.0) {
-            Column(horizontalAlignment = Alignment.End) {
+            // Description + meta
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = balanceLabel,
-                    fontSize = 10.sp,
-                    color = TextTertiary,
-                )
-                Text(
-                    text = balanceAmount,
-                    fontSize = 14.sp,
+                    text       = expense.description,
+                    fontSize   = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = balanceColor,
+                    color      = Color(0xFFE8ECF2),
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis,
                 )
+                Text(
+                    text     = paidByText,
+                    fontSize = 12.sp,
+                    color    = Color(0xFF9AA3AF),
+                )
+            }
+
+            // Balance
+            if (expense.yourBalance != 0.0) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(balanceLabel, fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                    Text(balanceAmount, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = balanceColor)
+                }
             }
         }
     }
-
-    HorizontalDivider(
-        color = Surface3,
-        thickness = 0.5.dp,
-        modifier = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
-    )
 }
 
 // ── Group Fully Settled Row ───────────────────────────────────────────────────
 
-/**
- * Scales icon row shown in the group timeline for isFullSettle settlements.
- * Shows "[Name] fully settled up with [OtherName]" — no amount.
- * Tapping navigates to the "fully settled up" detail screen.
- */
 @Composable
-private fun GroupFullySettledRow(settlement: com.prathik.fairshare.domain.model.Settlement, onClick: () -> Unit) {
+private fun GroupFullySettledRow(
+    settlement  : Settlement,
+    showDateRail: Boolean,
+    onClick     : () -> Unit,
+) {
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -1077,65 +1078,68 @@ private fun GroupFullySettledRow(settlement: com.prathik.fairshare.domain.model.
         modifier          = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.lg, vertical = 11.dp),
+            .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Date column
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier            = Modifier.width(30.dp),
+            modifier            = Modifier.width(24.dp),
         ) {
-            Text(monthAbbr, fontSize = 10.sp, color = TextTertiary, textAlign = TextAlign.Center)
-            Text(dayNum, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                color = TextSecondary, textAlign = TextAlign.Center)
+            if (showDateRail) {
+                Text(monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center)
+                Text(dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center)
+            }
         }
 
-        Spacer(modifier = Modifier.width(Spacing.sm))
+        Spacer(Modifier.width(10.dp))
 
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier         = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(Radius.md))
-                .background(Green400.copy(alpha = 0.12f)),
+        Row(
+            modifier          = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF151A21))
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("⚖️", fontSize = 18.sp)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF00C896).copy(alpha = 0.12f)),
+            ) {
+                Text("⚖️", fontSize = 20.sp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text       = "${settlement.payerName} fully settled up with ${settlement.receiverName}",
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color      = Color(0xFF00C896),
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+            )
         }
-
-        Spacer(modifier = Modifier.width(Spacing.md))
-
-        Text(
-            text       = "${settlement.payerName} fully settled up with ${settlement.receiverName}",
-            fontSize   = 15.sp,
-            fontWeight = FontWeight.Medium,
-            color      = Green400,
-            maxLines   = 1,
-            overflow   = TextOverflow.Ellipsis,
-        )
     }
-
-    HorizontalDivider(
-        color     = Surface3,
-        thickness = 0.5.dp,
-        modifier  = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
-    )
 }
-
 
 // ── Settlement Row ────────────────────────────────────────────────────────────
 
-@Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun SettlementRow(settlement: Settlement, onClick: () -> Unit, onDelete: () -> Unit) {
+@Composable
+private fun SettlementRow(
+    settlement  : Settlement,
+    showDateRail: Boolean,
+    onClick     : () -> Unit,
+    onDelete    : () -> Unit,
+) {
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-            val month = dt.format(DateTimeFormatter.ofPattern("MMM"))
-            val day = dt.dayOfMonth.toString()
-            month to day
-        } catch (e: Exception) {
-            "" to ""
-        }
+            dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
+        } catch (e: Exception) { "" to "" }
     }
 
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -1144,153 +1148,229 @@ private fun SettlementRow(settlement: Settlement, onClick: () -> Unit, onDelete:
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title   = { Text("Delete settlement?") },
-            text    = { Text("This will reverse the balance changes. This cannot be undone.") },
+            text    = { Text("This will reverse the balance changes.") },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    showDeleteDialog = false
-                    onDelete()
-                }) { Text("Delete", color = Negative) }
+                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false; onDelete() }) {
+                    Text("Delete", color = Negative)
+                }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
+                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             },
         )
     }
 
     Row(
-        modifier = Modifier
+        modifier          = Modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick     = onClick,
-                onLongClick = { showDeleteDialog = true },
-            )
-            .padding(horizontal = Spacing.lg, vertical = 11.dp),
+            .combinedClickable(onClick = onClick, onLongClick = { showDeleteDialog = true })
+            .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Date column
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.width(30.dp),
+            modifier            = Modifier.width(24.dp),
         ) {
-            Text(monthAbbr, fontSize = 10.sp, color = TextTertiary, textAlign = TextAlign.Center)
-            Text(dayNum, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                color = TextSecondary, textAlign = TextAlign.Center)
+            if (showDateRail) {
+                Text(monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center)
+                Text(dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center)
+            }
         }
 
-        Spacer(modifier = Modifier.width(Spacing.sm))
+        Spacer(Modifier.width(10.dp))
 
-        // Payment icon
+        Row(
+            modifier          = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF151A21))
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF00C896).copy(alpha = 0.12f)),
+            ) {
+                Text("🤝", fontSize = 20.sp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text       = "${settlement.payerName} paid ${settlement.receiverName}",
+                    fontSize   = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color      = Color(0xFF00C896),
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis,
+                )
+                Text("Payment", fontSize = 12.sp, color = Color(0xFF6B7280))
+            }
+            Text(
+                text       = MoneyUtils.format(settlement.amount, settlement.currency),
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = Color(0xFF00C896),
+            )
+        }
+    }
+}
+
+// ── Group Empty State ─────────────────────────────────────────────────────────
+
+@Composable
+private fun GroupEmptyState(
+    groupUiState: GroupUiState,
+    onAddMember : () -> Unit,
+    onAddExpense: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier            = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.xl)
+            .padding(top = 40.dp),
+    ) {
+        // Icon box
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(Radius.md))
-                .background(Green400.copy(alpha = 0.12f)),
+            modifier         = Modifier
+                .size(80.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF151A21)),
         ) {
-            Text("🤝", fontSize = 18.sp)
-        }
-
-        Spacer(modifier = Modifier.width(Spacing.md))
-
-        // Description
-        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "${settlement.payerName} paid ${settlement.receiverName}",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = Green400,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "Payment",
-                fontSize = 12.sp,
-                color = TextTertiary,
+                text     = if (groupUiState == GroupUiState.SOLO) "👥" else "🧾",
+                fontSize = 36.sp,
             )
         }
 
-        Spacer(modifier = Modifier.width(Spacing.sm))
+        Spacer(Modifier.height(Spacing.xl))
 
-        // Amount
         Text(
-            text = MoneyUtils.format(settlement.amount, settlement.currency),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Green400,
+            text       = if (groupUiState == GroupUiState.SOLO) "Add friends to get started"
+            else "Ready to split",
+            fontSize   = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color      = Color(0xFFE8ECF2),
+            textAlign  = TextAlign.Center,
         )
-    }
 
-    HorizontalDivider(
-        color = Surface3,
-        thickness = 0.5.dp,
-        modifier = Modifier.padding(start = Spacing.lg + 28.dp + Spacing.sm),
-    )
+        Spacer(Modifier.height(Spacing.sm))
+
+        Text(
+            text      = if (groupUiState == GroupUiState.SOLO)
+                "You need at least 2 people to\nsplit expenses in a group"
+            else
+                "Add your first expense with\nthe group to get started",
+            fontSize  = 14.sp,
+            color     = Color(0xFF9AA3AF),
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(Spacing.xxl))
+
+        // Primary CTA
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .clip(RoundedCornerShape(Radius.full))
+                .background(Color(0xFF00C896))
+                .clickable { if (groupUiState == GroupUiState.SOLO) onAddMember() else onAddExpense() }
+                .padding(horizontal = 32.dp, vertical = 14.dp),
+        ) {
+            Text(
+                text       = if (groupUiState == GroupUiState.SOLO) "Add group members"
+                else "Add your first expense",
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color      = Color.Black,
+            )
+        }
+
+        Spacer(Modifier.height(Spacing.lg))
+
+        // Secondary CTA
+        Text(
+            text     = if (groupUiState == GroupUiState.SOLO) "Or share group link"
+            else "Or add more members",
+            fontSize = 14.sp,
+            color    = Color(0xFF9AA3AF),
+            modifier = Modifier.clickable {
+                if (groupUiState != GroupUiState.SOLO) onAddMember()
+            },
+        )
+
+        Spacer(Modifier.height(80.dp))
+    }
+}
+
+// ── Cover top color (for top bar background when scrolled) ───────────────────
+
+private fun coverTopColor(type: GroupType): Color = when (type) {
+    GroupType.TRIP      -> Color(0xFF0D2137)
+    GroupType.HOME      -> Color(0xFF1A0D2E)
+    GroupType.OFFICE    -> Color(0xFF1A1000)
+    GroupType.FRIENDS   -> Color(0xFF0D1F0D)
+    GroupType.COUPLE    -> Color(0xFF1F0D1A)
+    GroupType.EVENT     -> Color(0xFF1A1000)
+    GroupType.APARTMENT -> Color(0xFF0D1A1F)
+    GroupType.OTHER     -> Color(0xFF111112)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-private fun String.toMonthHeader(): String {
-    return try {
-        val dateTime = LocalDateTime.parse(this, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-        dateTime.format(DateTimeFormatter.ofPattern("MMMM yyyy"))
-    } catch (e: Exception) {
-        "Earlier"
-    }
+private fun String.toMonthHeader(): String = try {
+    LocalDateTime.parse(this, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        .format(DateTimeFormatter.ofPattern("MMMM yyyy"))
+} catch (e: Exception) { "Earlier" }
+
+private fun String.toDayKey(): String = try {
+    LocalDateTime.parse(this, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        .format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+} catch (e: Exception) { this }
+
+private fun coverEmoji(type: GroupType): String = when (type) {
+    GroupType.TRIP      -> "✈️"
+    GroupType.HOME      -> "🏠"
+    GroupType.OFFICE    -> "💼"
+    GroupType.FRIENDS   -> "👫"
+    GroupType.COUPLE    -> "💑"
+    GroupType.EVENT     -> "🎉"
+    GroupType.APARTMENT -> "🏢"
+    GroupType.OTHER     -> "💰"
 }
 
 private fun categoryEmoji(category: ExpenseCategory?): String = when (category) {
-    ExpenseCategory.DINING_OUT -> "🍽️"
-    ExpenseCategory.GROCERIES -> "🛒"
-    ExpenseCategory.CAR -> "🚗"
-    ExpenseCategory.TAXI -> "🚕"
-    ExpenseCategory.PLANE -> "✈️"
-    ExpenseCategory.HOTEL -> "🏨"
-    ExpenseCategory.RENT -> "🏠"
-    ExpenseCategory.ELECTRICITY -> "⚡"
-    ExpenseCategory.WATER -> "💧"
-    ExpenseCategory.GAS_FUEL -> "⛽"
+    ExpenseCategory.DINING_OUT        -> "🍽️"
+    ExpenseCategory.GROCERIES         -> "🛒"
+    ExpenseCategory.CAR               -> "🚗"
+    ExpenseCategory.TAXI              -> "🚕"
+    ExpenseCategory.PLANE             -> "✈️"
+    ExpenseCategory.HOTEL             -> "🏨"
+    ExpenseCategory.RENT              -> "🏠"
+    ExpenseCategory.ELECTRICITY       -> "⚡"
+    ExpenseCategory.WATER             -> "💧"
+    ExpenseCategory.GAS_FUEL          -> "⛽"
     ExpenseCategory.TV_PHONE_INTERNET -> "📱"
-    ExpenseCategory.MOVIES -> "🎬"
-    ExpenseCategory.GAMES -> "🎮"
-    ExpenseCategory.MUSIC -> "🎵"
-    ExpenseCategory.SPORTS -> "⚽"
-    ExpenseCategory.MEDICAL -> "💊"
-    ExpenseCategory.EDUCATION -> "📚"
-    ExpenseCategory.GIFTS -> "🎁"
-    ExpenseCategory.LIQUOR -> "🍺"
-    ExpenseCategory.PETS -> "🐾"
-    ExpenseCategory.CLOTHING -> "👕"
-    ExpenseCategory.BUS_TRAIN -> "🚌"
-    ExpenseCategory.PARKING -> "🅿️"
-    else -> "💰"
-}
-
-private fun categoryBgColor(category: ExpenseCategory?): androidx.compose.ui.graphics.Color {
-    return when (category) {
-        ExpenseCategory.DINING_OUT, ExpenseCategory.GROCERIES,
-        ExpenseCategory.LIQUOR -> androidx.compose.ui.graphics.Color(0xFF1A2A1A)
-
-        ExpenseCategory.RENT, ExpenseCategory.MORTGAGE -> androidx.compose.ui.graphics.Color(
-            0xFF1A2A3A
-        )
-
-        ExpenseCategory.TAXI, ExpenseCategory.CAR,
-        ExpenseCategory.BUS_TRAIN, ExpenseCategory.PLANE -> androidx.compose.ui.graphics.Color(
-            0xFF2A1A0A
-        )
-
-        ExpenseCategory.ELECTRICITY, ExpenseCategory.WATER,
-        ExpenseCategory.GAS_FUEL,
-        ExpenseCategory.TV_PHONE_INTERNET -> androidx.compose.ui.graphics.Color(0xFF1A1A3A)
-
-        ExpenseCategory.MOVIES, ExpenseCategory.GAMES,
-        ExpenseCategory.MUSIC, ExpenseCategory.SPORTS -> androidx.compose.ui.graphics.Color(
-            0xFF2A1A2A
-        )
-
-        ExpenseCategory.MEDICAL -> androidx.compose.ui.graphics.Color(0xFF2A1A1A)
-        else -> androidx.compose.ui.graphics.Color(0xFF1E1E20)
-    }
+    ExpenseCategory.MOVIES            -> "🎬"
+    ExpenseCategory.GAMES             -> "🎮"
+    ExpenseCategory.MUSIC             -> "🎵"
+    ExpenseCategory.SPORTS            -> "⚽"
+    ExpenseCategory.MEDICAL           -> "💊"
+    ExpenseCategory.EDUCATION         -> "📚"
+    ExpenseCategory.GIFTS             -> "🎁"
+    ExpenseCategory.LIQUOR            -> "🍺"
+    ExpenseCategory.PETS              -> "🐾"
+    ExpenseCategory.CLOTHING          -> "👕"
+    ExpenseCategory.BUS_TRAIN         -> "🚌"
+    ExpenseCategory.PARKING           -> "🅿️"
+    ExpenseCategory.CLEANING          -> "🧹"
+    ExpenseCategory.HEAT_GAS          -> "🔥"
+    ExpenseCategory.TRASH             -> "🗑️"
+    else                              -> "💰"
 }
