@@ -68,25 +68,33 @@ class GroupsViewModel @Inject constructor(
                 _groupsState.value = GroupsUiState.Loading
             }
 
-            val groupsDeferred = async { getGroupsUseCase() }
-            val balancesDeferred = async { getAllBalancesUseCase() }
-
-            // Handle groups result
-            when (val result = groupsDeferred.await()) {
+            // Load groups — instant from Room cache after first launch
+            when (val result = getGroupsUseCase()) {
                 is ApiResult.Success -> {
                     _groupsState.value = GroupsUiState.Success(result.data)
-                    // Load per-group balances in parallel
-                    val groupBalanceResults = result.data.map { group ->
-                        async {
-                            group.id to when (val r = getGroupBalancesUseCase(group.id)) {
-                                is ApiResult.Success -> r.data.sumOf { it.amount }
-                                else -> null
+
+                    // Load per-group balances and overall summary in background
+                    // Groups show immediately — balance cards fill in when ready
+                    launch {
+                        val groupBalanceResults = result.data.map { group ->
+                            async {
+                                group.id to when (val r = getGroupBalancesUseCase(group.id)) {
+                                    is ApiResult.Success -> r.data.sumOf { it.amount }
+                                    else -> null
+                                }
                             }
+                        }.awaitAll()
+                        _groupBalanceMap.value = groupBalanceResults
+                            .mapNotNull { (id, bal) -> bal?.let { id to it } }
+                            .toMap()
+                    }
+
+                    launch {
+                        when (val result = getAllBalancesUseCase()) {
+                            is ApiResult.Success -> _balanceSummary.value = calculateSummary(result.data)
+                            else -> Unit
                         }
-                    }.awaitAll()
-                    _groupBalanceMap.value = groupBalanceResults
-                        .mapNotNull { (id, bal) -> bal?.let { id to it } }
-                        .toMap()
+                    }
                 }
                 is ApiResult.NetworkError -> {
                     if (_groupsState.value !is GroupsUiState.Success) {
@@ -104,13 +112,6 @@ class GroupsViewModel @Inject constructor(
                         )
                     }
                 }
-            }
-
-            // Handle balances result — silently ignore errors
-            // Balance summary is decorative — groups still show without it
-            when (val result = balancesDeferred.await()) {
-                is ApiResult.Success -> _balanceSummary.value = calculateSummary(result.data)
-                else -> Unit
             }
         }
     }

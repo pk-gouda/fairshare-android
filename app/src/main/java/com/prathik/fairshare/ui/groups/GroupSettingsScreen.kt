@@ -101,7 +101,7 @@ fun GroupSettingsScreen(
     val actionState      by viewModel.actionState.collectAsState()
     val friends          by viewModel.friends.collectAsState()
     val claimState       by viewModel.claimState.collectAsState()
-    val yourGroupBalance by viewModel.yourGroupBalance.collectAsState()
+    val yourGroupBalance: Double? by viewModel.yourGroupBalance.collectAsState()
     val editName         by viewModel.editName.collectAsState()
 
     val snackbarHost = remember { SnackbarHostState() }
@@ -111,7 +111,8 @@ fun GroupSettingsScreen(
     var showRemoveDialog  by remember { mutableStateOf<GroupMember?>(null) }
     var showNameDialog    by remember { mutableStateOf(false) }
     var showLeaveDialog   by remember { mutableStateOf(false) }
-    var showArchiveDialog by remember { mutableStateOf(false) }
+    var showArchiveDialog   by remember { mutableStateOf(false) }
+    var showUnarchiveDialog by remember { mutableStateOf(false) }
     var showAssignSheet   by remember { mutableStateOf<GroupMember?>(null) }
 
     val isAdmin = group?.createdById == viewModel.currentUserId
@@ -206,6 +207,23 @@ fun GroupSettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showArchiveDialog = false }) { Text("Cancel", color = TextSecondary) }
+            },
+        )
+    }
+
+    if (showUnarchiveDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnarchiveDialog = false },
+            containerColor   = Surface2,
+            title = { Text("Restore group?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = { Text("This group will reappear in your active groups list.", color = TextSecondary, fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = { showUnarchiveDialog = false; viewModel.unarchiveGroup() }) {
+                    Text("Restore", color = Green400, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnarchiveDialog = false }) { Text("Cancel", color = TextSecondary) }
             },
         )
     }
@@ -551,13 +569,25 @@ fun GroupSettingsScreen(
                         .border(1.dp, Negative.copy(alpha = 0.3f), RoundedCornerShape(Radius.xl)),
                 ) {
                     if (isAdmin) {
-                        DangerRow(
-                            icon     = Icons.Outlined.Archive,
-                            iconTint = TextSecondary,
-                            label    = "Archive group",
-                            subtitle = "Hide from main list",
-                            onClick  = { showArchiveDialog = true },
-                        )
+                        val isArchived = group?.isArchived == true
+                        if (isArchived) {
+                            DangerRow(
+                                icon     = Icons.Outlined.Archive,
+                                iconTint = Green400,
+                                label    = "Restore group",
+                                subtitle = "Move back to your active list",
+                                labelColor = Green400,
+                                onClick  = { showUnarchiveDialog = true },
+                            )
+                        } else {
+                            DangerRow(
+                                icon     = Icons.Outlined.Archive,
+                                iconTint = TextSecondary,
+                                label    = "Archive group",
+                                subtitle = "Hide from main list",
+                                onClick  = { showArchiveDialog = true },
+                            )
+                        }
                         HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                     }
                     DangerRow(

@@ -97,9 +97,9 @@ class GroupSettingsViewModel @Inject constructor(
 
     private suspend fun loadDataInternal() {
         _isLoading.value = true
-        val groupResult    = getGroupUseCase(groupId)
-        val membersResult  = getMembersUseCase(groupId)
-        val balanceResult  = getGroupBalancesUseCase(groupId)
+        val groupResult   = getGroupUseCase(groupId)
+        val membersResult = getMembersUseCase(groupId)
+        val balanceResult = getGroupBalancesUseCase(groupId)
         if (groupResult is ApiResult.Success) {
             _group.value = groupResult.data
             _editName.value = groupResult.data.name
@@ -110,9 +110,6 @@ class GroupSettingsViewModel @Inject constructor(
         }
         if (balanceResult is ApiResult.Success) {
             val data = balanceResult.data
-            // getGroupBalancesUseCase returns records from the current user's perspective.
-            // sumOf { it.amount } = net: positive = owed to you, negative = you owe.
-            // null = no expenses at all in this group.
             _yourGroupBalance.value = if (data.isEmpty()) null else data.sumOf { it.amount }
         }
         _isLoading.value = false
@@ -199,10 +196,26 @@ class GroupSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _actionState.value = GroupSettingsActionState.Loading
             when (groupRepository.archiveGroup(groupId)) {
-                is ApiResult.Success -> _actionState.value =
-                    GroupSettingsActionState.Success("Group archived")
+                is ApiResult.Success -> {
+                    _group.value = _group.value?.copy(isArchived = true)
+                    _actionState.value = GroupSettingsActionState.Success("Group archived")
+                }
                 else -> _actionState.value =
                     GroupSettingsActionState.Error("Failed to archive group")
+            }
+        }
+    }
+
+    fun unarchiveGroup() {
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (groupRepository.unarchiveGroup(groupId)) {
+                is ApiResult.Success -> {
+                    _group.value = _group.value?.copy(isArchived = false)
+                    _actionState.value = GroupSettingsActionState.Success("Group restored")
+                }
+                else -> _actionState.value =
+                    GroupSettingsActionState.Error("Failed to restore group")
             }
         }
     }

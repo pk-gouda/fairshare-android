@@ -30,11 +30,10 @@ class GroupRepositoryImpl @Inject constructor(
 ) : GroupRepository {
 
     override suspend fun getMyGroups(): ApiResult<List<Group>> {
-        // Return cached data immediately if available
         val cached = groupDao.getAll()
         if (cached.isNotEmpty()) {
-            // Refresh in background — caller gets cache instantly
-            refreshGroupsFromNetwork()
+            // Serve cache instantly — fire background refresh without blocking
+            CoroutineScope(Dispatchers.IO).launch { refreshGroupsFromNetwork() }
             return ApiResult.Success(cached.map { it.toDomain() })
         }
         // No cache — must wait for network

@@ -6,6 +6,7 @@ import com.prathik.fairshare.data.local.BalanceDao
 import com.prathik.fairshare.data.local.ExpenseDao
 import com.prathik.fairshare.data.local.FairShareDatabase
 import com.prathik.fairshare.data.local.GroupDao
+import com.prathik.fairshare.data.local.FriendDao
 import com.prathik.fairshare.data.local.InvitedFriendDao
 import com.prathik.fairshare.data.local.PendingActionDao
 import com.prathik.fairshare.data.local.UserDao
@@ -72,4 +73,9 @@ object DatabaseModule {
     @Singleton
     fun provideInvitedFriendDao(database: FairShareDatabase): InvitedFriendDao =
         database.invitedFriendDao()
+
+    @Provides
+    @Singleton
+    fun provideFriendDao(database: FairShareDatabase): FriendDao =
+        database.friendDao()
 }

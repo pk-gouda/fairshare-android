@@ -1,25 +1,48 @@
 package com.prathik.fairshare.data.repository.impl
 
+import com.prathik.fairshare.data.local.FriendDao
+import com.prathik.fairshare.data.local.FriendEntity
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.network.api.FriendApiService
 import com.prathik.fairshare.data.network.mapSuccess
 import com.prathik.fairshare.data.network.safeApiCall
+import com.prathik.fairshare.domain.model.AccountStatus
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.FriendStatus
 import com.prathik.fairshare.domain.model.Friendship
 import com.prathik.fairshare.domain.repository.FriendRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FriendRepositoryImpl @Inject constructor(
     private val friendService: FriendApiService,
+    private val friendDao    : FriendDao,
 ) : FriendRepository {
 
-    override suspend fun getFriends(): ApiResult<List<Friend>> =
-        safeApiCall { friendService.getFriends() }
+    override suspend fun getFriends(): ApiResult<List<Friend>> {
+        val cached = friendDao.getAll()
+        if (cached.isNotEmpty()) {
+            // Serve cache immediately, refresh in background
+            CoroutineScope(Dispatchers.IO).launch { refreshFriendsFromNetwork() }
+            return ApiResult.Success(cached.map { it.toFriend() })
+        }
+        return refreshFriendsFromNetwork()
+    }
+
+    private suspend fun refreshFriendsFromNetwork(): ApiResult<List<Friend>> {
+        val result = safeApiCall { friendService.getFriends() }
             .mapSuccess { list -> list.map { it.toDomain() } }
+        if (result is ApiResult.Success) {
+            friendDao.deleteAll()
+            friendDao.insertAll(result.data.map { it.toEntity() })
+        }
+        return result
+    }
 
     override suspend fun sendRequest(receiverId: String): ApiResult<Friendship> =
         safeApiCall { friendService.sendRequest(mapOf("receiverId" to receiverId)) }
@@ -71,3 +94,22 @@ class FriendRepositoryImpl @Inject constructor(
         safeApiCall { friendService.getBlocked() }
             .mapSuccess { list -> list.map { it.toDomain() } }
 }
+
+// ── Mappers ───────────────────────────────────────────────────────────────────
+
+private fun FriendEntity.toFriend(): Friend = Friend(
+    id                = id,
+    fullName          = fullName,
+    email             = email,
+    profilePictureUrl = profilePictureUrl,
+    accountStatus     = try { AccountStatus.valueOf(accountStatus) }
+    catch (e: IllegalArgumentException) { AccountStatus.ACTIVE },
+)
+
+private fun Friend.toEntity(): FriendEntity = FriendEntity(
+    id                = id,
+    fullName          = fullName,
+    email             = email,
+    profilePictureUrl = profilePictureUrl,
+    accountStatus     = accountStatus.name,
+)

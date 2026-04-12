@@ -109,12 +109,21 @@ fun FriendsScreen(
     val balanceMap       by viewModel.balanceMap.collectAsState()
     val actionState      by viewModel.actionState.collectAsState()
     val searchQuery      by viewModel.searchQuery.collectAsState()
+    val friends          by viewModel.friends.collectAsState()   // collect directly — triggers recomposition instantly
     val snackbarHost     = remember { SnackbarHostState() }
     val sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showSheet        by remember { mutableStateOf(false) }
 
-    val filteredFriends    by remember { derivedStateOf { viewModel.filteredActiveFriends() } }
-    val nonActiveFriends   by remember { derivedStateOf { viewModel.filteredNonActiveFriends() } }
+    // Filter inline so Compose recomposes whenever friends OR searchQuery changes
+    val q = searchQuery.trim().lowercase()
+    val filteredFriends = friends.filter { it.isActive }.let { list ->
+        if (q.isBlank()) list
+        else list.filter { it.fullName.lowercase().contains(q) || it.email.lowercase().contains(q) }
+    }
+    val nonActiveFriends = friends.filter { it.isPlaceholder || it.isInvited }.let { list ->
+        if (q.isBlank()) list
+        else list.filter { it.fullName.lowercase().contains(q) }
+    }
 
     val netBalance = owedToYou - youOwe
     val hasAnyBalance = balanceMap.isNotEmpty()

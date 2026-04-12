@@ -6,6 +6,7 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.User
 import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.usecase.friend.SendFriendRequestUseCase
+import com.prathik.fairshare.domain.usecase.friend.GetFriendsUseCase
 import com.prathik.fairshare.domain.usecase.user.GetMyProfileUseCase
 import com.prathik.fairshare.domain.usecase.user.SearchUserByEmailUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,6 +32,7 @@ class AddFriendViewModel @Inject constructor(
     private val searchUserByEmailUseCase: SearchUserByEmailUseCase,
     private val sendFriendRequestUseCase: SendFriendRequestUseCase,
     private val friendRepository        : FriendRepository,
+    private val getFriendsUseCase       : GetFriendsUseCase,
     private val getMyProfileUseCase     : GetMyProfileUseCase,
     private val friendEventBus          : FriendEventBus,
 ) : ViewModel() {
@@ -240,7 +242,11 @@ class AddFriendViewModel @Inject constructor(
                         if (successCount == 1) "Done!" else "$successCount friends added!"
                     )
                 }
-                friendEventBus.notifyFriendAdded()
+                // Fetch fresh list and push to FriendsScreen with count for snackbar
+                val freshResult = getFriendsUseCase()
+                if (freshResult is ApiResult.Success) {
+                    friendEventBus.notifyFriendAdded(freshResult.data, successCount)
+                }
                 onDone()
             }
         }

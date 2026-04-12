@@ -19,6 +19,9 @@ import com.prathik.fairshare.domain.model.SplitType
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Singleton
 class ExpenseRepositoryImpl @Inject constructor(
@@ -27,6 +30,20 @@ class ExpenseRepositoryImpl @Inject constructor(
 ) : ExpenseRepository {
 
     override suspend fun getGroupExpenses(groupId: String): ApiResult<List<Expense>> {
+        val cached = expenseDao.getByGroupId(groupId)
+        if (cached.isNotEmpty()) {
+            // Serve cache instantly, refresh in background
+            CoroutineScope(Dispatchers.IO).launch {
+                val result = safeApiCall { expenseService.getGroupExpenses(groupId) }
+                if (result is ApiResult.Success) {
+                    val entities = result.data.map { it.toEntity() }
+                    expenseDao.deleteByGroupId(groupId)
+                    expenseDao.insertAll(entities)
+                }
+            }
+            return ApiResult.Success(cached.map { it.toDomain() })
+        }
+        // No cache — wait for network
         val result = safeApiCall { expenseService.getGroupExpenses(groupId) }
         if (result is ApiResult.Success) {
             val entities = result.data.map { it.toEntity() }
@@ -160,4 +177,32 @@ class ExpenseRepositoryImpl @Inject constructor(
             createdAt    = createdAt,
             updatedAt    = updatedAt,
         )
+
+    private fun com.prathik.fairshare.data.local.ExpenseEntity.toDomain() = Expense(
+        id           = id,
+        description  = description,
+        totalAmount  = totalAmount,
+        currency     = currency,
+        groupId      = groupId,
+        groupName    = groupName,
+        addedById    = addedById,
+        addedByName  = addedByName,
+        splitType    = com.prathik.fairshare.domain.model.SplitType.valueOf(splitType),
+        category     = category?.let {
+            try { com.prathik.fairshare.domain.model.ExpenseCategory.valueOf(it) }
+            catch (e: IllegalArgumentException) { null }
+        },
+        notes        = notes,
+        expenseDate  = expenseDate,
+        isDeleted    = isDeleted,
+        payers       = emptyList(),   // lightweight cache — payer details fetched on demand
+        splits       = emptyList(),   // lightweight cache — split details fetched on demand
+        commentCount = commentCount,
+        itemCount    = itemCount,
+        yourPaid     = yourPaid,
+        yourShare    = yourShare,
+        yourBalance  = yourBalance,
+        createdAt    = createdAt,
+        updatedAt    = updatedAt,
+    )
 }

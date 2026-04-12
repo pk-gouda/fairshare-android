@@ -8,7 +8,6 @@ import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.friend.GetFriendsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,9 +45,12 @@ class FriendsViewModel @Inject constructor(
 
     init {
         loadData()
-        // Reload whenever a friend is added from AddFriendScreen
         viewModelScope.launch {
-            friendEventBus.friendAdded.collect { loadData() }
+            friendEventBus.friendAdded.collect { event ->
+                _friends.value = event.updatedList
+                val msg = if (event.addedCount == 1) "1 friend added" else "${event.addedCount} friends added"
+                _actionState.value = FriendsActionState.Success(msg)
+            }
         }
     }
 
@@ -56,26 +58,27 @@ class FriendsViewModel @Inject constructor(
         viewModelScope.launch {
             if (_friends.value.isEmpty()) _isLoading.value = true
 
-            val friendsDeferred  = async { getFriendsUseCase() }
-            val balancesDeferred = async { getAllBalancesUseCase() }
-
-            when (val result = friendsDeferred.await()) {
+            // Friends first — instant from Room cache after first launch
+            when (val result = getFriendsUseCase()) {
                 is ApiResult.Success -> _friends.value = result.data
                 else -> Unit
             }
-
-            when (val result = balancesDeferred.await()) {
-                is ApiResult.Success -> {
-                    val balances = result.data
-                    _balanceMap.value = balances.groupBy { it.otherUserId }
-                        .mapValues { (_, list) -> list.sumOf { it.amount } }
-                    _owedToYou.value = balances.filter { it.amount > 0 }.sumOf { it.amount }
-                    _youOwe.value    = balances.filter { it.amount < 0 }.sumOf { -it.amount }
-                }
-                else -> Unit
-            }
-
+            // Stop showing loader as soon as friends are ready
             _isLoading.value = false
+
+            // Balances load independently — updates amounts when ready without blocking display
+            launch {
+                when (val result = getAllBalancesUseCase()) {
+                    is ApiResult.Success -> {
+                        val balances = result.data
+                        _balanceMap.value = balances.groupBy { it.otherUserId }
+                            .mapValues { (_, list) -> list.sumOf { it.amount } }
+                        _owedToYou.value = balances.filter { it.amount > 0 }.sumOf { it.amount }
+                        _youOwe.value    = balances.filter { it.amount < 0 }.sumOf { -it.amount }
+                    }
+                    else -> Unit
+                }
+            }
         }
     }
 

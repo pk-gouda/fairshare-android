@@ -20,8 +20,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UserEntity::class,
         PendingActionEntity::class,
         InvitedFriendEntity::class,
+        FriendEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -31,6 +32,7 @@ abstract class FairShareDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun invitedFriendDao(): InvitedFriendDao
+    abstract fun friendDao(): FriendDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {

@@ -1,21 +1,22 @@
 package com.prathik.fairshare.ui.friends
 
+import com.prathik.fairshare.domain.model.Friend
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Singleton event bus that signals the FriendsScreen to reload its list.
- * Emitted by AddFriendViewModel after successfully adding any friend.
- * Collected by FriendsViewModel to trigger loadData().
- */
+data class FriendAddedEvent(
+    val updatedList : List<Friend>,
+    val addedCount  : Int,
+)
+
 @Singleton
 class FriendEventBus @Inject constructor() {
-    private val _friendAdded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val _friendAdded = MutableSharedFlow<FriendAddedEvent>(extraBufferCapacity = 1)
     val friendAdded = _friendAdded.asSharedFlow()
 
-    fun notifyFriendAdded() {
-        _friendAdded.tryEmit(Unit)
+    fun notifyFriendAdded(updatedList: List<Friend>, addedCount: Int) {
+        _friendAdded.tryEmit(FriendAddedEvent(updatedList, addedCount))
     }
 }
