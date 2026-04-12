@@ -70,10 +70,10 @@ class ImportSplitwiseViewModel @Inject constructor(
         }
     }
 
-    fun importGroup(csvContent: String, groupName: String, importerCsvName: String?) {
+    fun importGroup(csvContent: String, groupName: String, groupType: String, importerCsvName: String?) {
         viewModelScope.launch {
             _uiState.value = ImportUiState.Loading("Importing group…")
-            when (val result = importRepository.importGroup(csvContent, groupName, importerCsvName)) {
+            when (val result = importRepository.importGroup(csvContent, groupName, groupType, importerCsvName)) {
                 is ApiResult.Success -> {
                     val data = result.data
                     val groupId = data["groupId"] as? String

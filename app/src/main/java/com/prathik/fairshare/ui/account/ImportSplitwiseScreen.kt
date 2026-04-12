@@ -3,6 +3,7 @@ package com.prathik.fairshare.ui.account
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,6 +88,8 @@ fun ImportSplitwiseScreen(
     var importType          by remember { mutableStateOf<ImportType?>(null) }
     var groupName           by remember { mutableStateOf("") }
     var showGroupNameDialog by remember { mutableStateOf(false) }
+    var showGroupTypeDialog       by remember { mutableStateOf(false) }
+    var selectedGroupType         by remember { mutableStateOf("OTHER") }
     var showWhoAreYouDialog       by remember { mutableStateOf(false) }
     var showFriendWhoAreYouDialog by remember { mutableStateOf(false) }
     var pendingCsv                by remember { mutableStateOf<String?>(null) }
@@ -224,7 +227,7 @@ fun ImportSplitwiseScreen(
                 TextButton(onClick = {
                     if (groupName.isNotBlank()) {
                         showGroupNameDialog = false
-                        showWhoAreYouDialog = true
+                        showGroupTypeDialog = true
                     }
                 }) { Text("Next →", color = Green400) }
             },
@@ -234,13 +237,81 @@ fun ImportSplitwiseScreen(
         )
     }
 
-    // ── "Which one is you?" sheet — shown after group name is entered ──────────
+    // ── Group type picker ─────────────────────────────────────────────────────
+    if (showGroupTypeDialog) {
+        AlertDialog(
+            onDismissRequest = { showGroupTypeDialog = false },
+            containerColor   = Surface2,
+            title = { Text("What type of group is this?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    val types = listOf(
+                        Triple("TRIP",      "✈️", "Trip"),
+                        Triple("HOME",      "🏠", "Home"),
+                        Triple("APARTMENT", "🏢", "Apartment"),
+                        Triple("OFFICE",    "💼", "Office"),
+                        Triple("FRIENDS",   "👫", "Friends"),
+                        Triple("COUPLE",    "💑", "Couple"),
+                        Triple("EVENT",     "🎉", "Event"),
+                        Triple("OTHER",     "💰", "Other"),
+                    )
+                    // 2-column grid
+                    types.chunked(2).forEach { row ->
+                        Row(
+                            modifier              = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        ) {
+                            row.forEach { (value, emoji, label) ->
+                                val selected = selectedGroupType == value
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier         = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(Radius.lg))
+                                        .background(if (selected) Green400.copy(alpha = 0.15f) else Surface3)
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = if (selected) Green400 else Surface4,
+                                            shape = RoundedCornerShape(Radius.lg),
+                                        )
+                                        .clickable { selectedGroupType = value }
+                                        .padding(vertical = 12.dp),
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(emoji, fontSize = 22.sp)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text      = label,
+                                            fontSize  = 12.sp,
+                                            color     = if (selected) Green400 else TextSecondary,
+                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showGroupTypeDialog = false
+                    showWhoAreYouDialog = true
+                }) { Text("Next →", color = Green400) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGroupTypeDialog = false }) { Text("Back", color = TextSecondary) }
+            },
+        )
+    }
+
+    // ── "Which one is you?" sheet — shown after group type is picked ──────────
     if (showWhoAreYouDialog) {
         ModalBottomSheet(
             onDismissRequest = {
                 showWhoAreYouDialog = false
                 // User skipped — import without importer mapping (old behaviour)
-                pendingCsv?.let { viewModel.importGroup(it, groupName, null) }
+                pendingCsv?.let { viewModel.importGroup(it, groupName, selectedGroupType, null) }
                 viewModel.clearCsvNames()
             },
             sheetState     = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -296,7 +367,7 @@ fun ImportSplitwiseScreen(
                             .clickable {
                                 showWhoAreYouDialog = false
                                 viewModel.clearCsvNames()
-                                pendingCsv?.let { viewModel.importGroup(it, groupName, name) }
+                                pendingCsv?.let { viewModel.importGroup(it, groupName, selectedGroupType, name) }
                             }
                             .padding(horizontal = Spacing.lg, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -334,7 +405,7 @@ fun ImportSplitwiseScreen(
                         .clickable {
                             showWhoAreYouDialog = false
                             viewModel.clearCsvNames()
-                            pendingCsv?.let { viewModel.importGroup(it, groupName, null) }
+                            pendingCsv?.let { viewModel.importGroup(it, groupName, selectedGroupType, null) }
                         }
                         .padding(horizontal = Spacing.lg, vertical = 16.dp),
                 ) {

@@ -23,6 +23,7 @@ class ImportRepositoryImpl @Inject constructor(
     override suspend fun importGroup(
         csvContent: String,
         groupName: String,
+        groupType: String,
         importerCsvName: String?,
     ): ApiResult<Map<String, Any>> =
         safeApiCall {
@@ -30,6 +31,7 @@ class ImportRepositoryImpl @Inject constructor(
                 ImportRequest(
                     type            = "GROUP",
                     groupName       = groupName,
+                    groupType       = groupType,
                     csvContent      = csvContent,
                     importerCsvName = importerCsvName,
                 )

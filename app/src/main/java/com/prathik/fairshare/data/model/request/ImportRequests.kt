@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 data class ImportRequest(
     @SerialName("type")            val type: String,
     @SerialName("groupName")       val groupName: String? = null,
+    @SerialName("groupType")       val groupType: String? = null,
     @SerialName("csvContent")      val csvContent: String,
     @SerialName("importerCsvName") val importerCsvName: String? = null,
 )
