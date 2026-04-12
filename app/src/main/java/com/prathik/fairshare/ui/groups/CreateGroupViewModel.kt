@@ -129,6 +129,11 @@ class CreateGroupViewModel @Inject constructor(
         _selectedFriendIds.value = current
     }
 
+    /** Pre-selects a friend by ID — called when navigating from FriendSettings "Create group with X". */
+    fun preselectFriend(friendId: String) {
+        _selectedFriendIds.value = _selectedFriendIds.value + friendId
+    }
+
     fun filteredFriends(): List<Friend> {
         val query = _friendSearchQuery.value.trim()
         return if (query.isBlank()) _friends.value

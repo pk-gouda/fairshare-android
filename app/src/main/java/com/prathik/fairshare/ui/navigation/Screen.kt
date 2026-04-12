@@ -61,7 +61,10 @@ sealed class Screen(val route: String) {
         fun route(groupId: String) = "group/$groupId/analytics"
     }
 
-    object CreateGroup : Screen("create_group")
+    object CreateGroup : Screen("create_group?friendId={friendId}") {
+        fun route(friendId: String? = null) =
+            if (friendId != null) "create_group?friendId=$friendId" else "create_group"
+    }
     object JoinGroup : Screen("join_group?inviteCode={inviteCode}") {
         fun route(inviteCode: String? = null) =
             if (inviteCode != null) "join_group?inviteCode=$inviteCode"

@@ -115,6 +115,7 @@ private val allTypes = listOf(
 fun CreateGroupScreen(
     onBack         : () -> Unit,
     onGroupCreated : (String) -> Unit,
+    preselectFriendId: String? = null,
     viewModel      : CreateGroupViewModel = hiltViewModel(),
 ) {
     val step              by viewModel.step.collectAsState()
@@ -133,6 +134,11 @@ fun CreateGroupScreen(
 
     val snackbarHost = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    // Pre-select friend if navigated from FriendSettings "Create group with X"
+    LaunchedEffect(preselectFriendId) {
+        preselectFriendId?.let { viewModel.preselectFriend(it) }
+    }
 
     LaunchedEffect(actionState) {
         when (val s = actionState) {

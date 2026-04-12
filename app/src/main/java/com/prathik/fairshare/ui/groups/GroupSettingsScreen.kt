@@ -1,6 +1,7 @@
 package com.prathik.fairshare.ui.groups
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,8 +19,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.ExitToApp
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -27,8 +31,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -52,13 +53,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.GroupType
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsLoadingScreen
-import com.prathik.fairshare.ui.components.FsTopBar
-import com.prathik.fairshare.ui.components.FsIconButton
+import com.prathik.fairshare.ui.theme.AvatarColors
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -71,21 +74,13 @@ import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 
 /**
- * Group Settings Screen.
+ * Group Settings Screen — two states:
+ *  • Admin  — edit pencil in top bar, Add member button, Archive + Leave + Delete in danger zone
+ *  • Member — no edit pencil, no Add button, only Leave in danger zone
  *
- * Sections:
- * - Group avatar + name + type + created date
- * - Members list with remove option, + Add member
- * - Invite link with Copy / Share / Reset
- * - Preferences: simplify debts toggle, mute notifications
- * - Tools: Spending analytics, Recurring expenses, Reminders (placeholders)
- * - Danger zone: Archive, Leave group, Delete group
- * - Group ID footer
+ * Both states show: group header, balance card, members list, danger zone.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,23 +88,24 @@ fun GroupSettingsScreen(
     onBack               : () -> Unit,
     onNavigateToAddMember: (String) -> Unit,
     onGroupDeleted       : () -> Unit,
+    onNavigateToSettleUp : (groupId: String) -> Unit = {},
     onNavigateToMembers  : (String) -> Unit = {},
     onNavigateToAnalytics: (String) -> Unit = {},
     onNavigateToRecurring: (String) -> Unit = {},
     onNavigateToReminders: (String) -> Unit = {},
-    viewModel           : GroupSettingsViewModel = hiltViewModel(),
+    viewModel            : GroupSettingsViewModel = hiltViewModel(),
 ) {
-    val group             by viewModel.group.collectAsState()
-    val members           by viewModel.members.collectAsState()
-    val isLoading         by viewModel.isLoading.collectAsState()
-    val actionState       by viewModel.actionState.collectAsState()
-    val simplifyDebts     by viewModel.simplifyDebts.collectAsState()
-    val muteNotifications by viewModel.muteNotifications.collectAsState()
-    val friends           by viewModel.friends.collectAsState()
-    val claimState        by viewModel.claimState.collectAsState()
+    val group            by viewModel.group.collectAsState()
+    val members          by viewModel.members.collectAsState()
+    val isLoading        by viewModel.isLoading.collectAsState()
+    val actionState      by viewModel.actionState.collectAsState()
+    val friends          by viewModel.friends.collectAsState()
+    val claimState       by viewModel.claimState.collectAsState()
+    val yourGroupBalance by viewModel.yourGroupBalance.collectAsState()
+    val editName         by viewModel.editName.collectAsState()
 
-    val snackbarHost  = remember { SnackbarHostState() }
-    val clipboard     = LocalClipboardManager.current
+    val snackbarHost = remember { SnackbarHostState() }
+    val clipboard    = LocalClipboardManager.current
 
     var showDeleteDialog  by remember { mutableStateOf(false) }
     var showRemoveDialog  by remember { mutableStateOf<GroupMember?>(null) }
@@ -118,7 +114,8 @@ fun GroupSettingsScreen(
     var showArchiveDialog by remember { mutableStateOf(false) }
     var showAssignSheet   by remember { mutableStateOf<GroupMember?>(null) }
 
-    // Auto-refresh when screen resumes (e.g. returning from AddMember)
+    val isAdmin = group?.createdById == viewModel.currentUserId
+
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -126,23 +123,15 @@ fun GroupSettingsScreen(
         }
     }
 
-    // Handle action states
     LaunchedEffect(actionState) {
-        when (val state = actionState) {
-            is GroupSettingsActionState.Success     -> {
-                snackbarHost.showSnackbar(state.message)
-                viewModel.resetActionState()
-            }
-            is GroupSettingsActionState.Error       -> {
-                snackbarHost.showSnackbar(state.message)
-                viewModel.resetActionState()
-            }
+        when (val s = actionState) {
+            is GroupSettingsActionState.Success     -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
+            is GroupSettingsActionState.Error       -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
             is GroupSettingsActionState.GroupDeleted -> onGroupDeleted()
             else -> Unit
         }
     }
 
-    // Handle claim states
     LaunchedEffect(claimState) {
         when (val s = claimState) {
             is ClaimActionState.Success -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
@@ -157,24 +146,15 @@ fun GroupSettingsScreen(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             containerColor   = Surface2,
-            title = {
-                Text("Delete group?", color = TextPrimary, fontWeight = FontWeight.SemiBold)
-            },
-            text = {
-                Text(
-                    "This will permanently delete the group and all its expenses. This cannot be undone.",
-                    color = TextSecondary, fontSize = 14.sp,
-                )
-            },
+            title = { Text("Delete group?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = { Text("This will permanently delete the group and all its expenses. This cannot be undone.", color = TextSecondary, fontSize = 14.sp) },
             confirmButton = {
                 TextButton(onClick = { showDeleteDialog = false; viewModel.deleteGroup() }) {
                     Text("Delete", color = Negative, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
-                }
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel", color = TextSecondary) }
             },
         )
     }
@@ -183,303 +163,25 @@ fun GroupSettingsScreen(
         AlertDialog(
             onDismissRequest = { showRemoveDialog = null },
             containerColor   = Surface2,
-            title = {
-                Text("Remove ${member.fullName}?", color = TextPrimary, fontWeight = FontWeight.SemiBold)
-            },
-            text = {
-                Text(
-                    "They will be removed from the group. This cannot be undone if they have unsettled balances.",
-                    color = TextSecondary, fontSize = 14.sp,
-                )
-            },
+            title = { Text("Remove ${member.fullName}?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = { Text("They will be removed from this group. You must settle balances first.", color = TextSecondary, fontSize = 14.sp) },
             confirmButton = {
                 TextButton(onClick = { viewModel.removeMember(member.userId); showRemoveDialog = null }) {
                     Text("Remove", color = Negative, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRemoveDialog = null }) {
-                    Text("Cancel", color = TextSecondary)
-                }
+                TextButton(onClick = { showRemoveDialog = null }) { Text("Cancel", color = TextSecondary) }
             },
         )
     }
 
-    Scaffold(
-        containerColor = Surface0,
-        snackbarHost   = { SnackbarHost(snackbarHost) },
-        topBar         = {
-            FsTopBar(
-                title  = "Settings",
-                onBack = onBack,
-                actions = {
-                    FsIconButton(
-                        icon               = Icons.Outlined.Edit,
-                        contentDescription = "Edit group name",
-                        onClick            = { showNameDialog = true },
-                        tint               = TextSecondary,
-                    )
-                }
-            )
-        },
-    ) { innerPadding ->
-
-        if (isLoading && group == null) {
-            FsLoadingScreen()
-            return@Scaffold
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-        ) {
-
-            // ── Group avatar + name ───────────────────────────────────────────
-            group?.let { g ->
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier            = Modifier.fillMaxWidth().padding(vertical = Spacing.md),
-                ) {
-                    // Cover thumbnail with + badge
-                    Box(modifier = Modifier.size(72.dp)) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier         = Modifier
-                                .size(72.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Brush.linearGradient(coverGradientColors(g.type))),
-                        ) {
-                            Text(text = coverEmoji(g.type), fontSize = 32.sp)
-                        }
-                        // + badge
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier         = Modifier
-                                .size(22.dp)
-                                .clip(CircleShape)
-                                .background(Green400)
-                                .align(Alignment.BottomEnd),
-                        ) {
-                            Text(text = "+", fontSize = 14.sp, color = Surface0, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(Spacing.md))
-
-                    Text(
-                        text       = g.name,
-                        fontSize   = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color      = TextPrimary,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(Radius.sm))
-                                .background(Color(0xFF1A3A1A))
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text       = g.type.name,
-                                fontSize   = 10.sp,
-                                color      = Green400,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                        Text(
-                            text     = "${g.memberCount} members · Created ${g.createdAt.toShortDate()}",
-                            fontSize = 11.sp,
-                            color    = TextTertiary,
-                        )
-                    }
-                }
-            }
-
-            // ── Members ───────────────────────────────────────────────────────
-            SectionLabel("MEMBERS")
-            SettingsCard {
-                members.forEachIndexed { index, member ->
-                    val isMe          = member.userId == viewModel.currentUserId
-                    val isLast        = index == members.lastIndex
-                    val isPlaceholder = member.email.startsWith("placeholder+") &&
-                            (member.email.contains("@fairshare.import") ||
-                                    member.email.contains("@fairshare.local"))
-                    MemberRow(
-                        member    = member,
-                        isMe      = isMe,
-                        isCreator = group?.createdById == member.userId,
-                        onAssign  = if (isPlaceholder && !isMe) { { showAssignSheet = member } } else null,
-                        onRemove  = if (!isPlaceholder && !isMe) { { showRemoveDialog = member } } else null,
-                    )
-                    if (!isLast) HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                }
-
-                // Add member row
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                Row(
-                    modifier              = Modifier
-                        .fillMaxWidth()
-                        .clickable { onNavigateToAddMember(viewModel.groupId) }
-                        .padding(vertical = Spacing.md),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment     = Alignment.CenterVertically,
-                ) {
-                    Text(text = "+ ", fontSize = 14.sp, color = Green400, fontWeight = FontWeight.SemiBold)
-                    Text(text = "Add member", fontSize = 14.sp, color = Green400, fontWeight = FontWeight.SemiBold)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            // ── Invite link ───────────────────────────────────────────────────
-            SectionLabel("INVITE LINK")
-            SettingsCard {
-                val inviteCode = group?.inviteCode ?: ""
-                val inviteLink = "fairshare.app/join/$inviteCode"
-
-                Row(
-                    modifier          = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = Spacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text     = inviteLink,
-                        fontSize = 12.sp,
-                        color    = TextTertiary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.sm))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(Radius.sm))
-                            .background(Green400)
-                            .clickable { clipboard.setText(AnnotatedString(inviteLink)) }
-                            .padding(horizontal = Spacing.sm, vertical = 4.dp),
-                    ) {
-                        Text(text = "Copy", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Surface0)
-                    }
-                    Spacer(modifier = Modifier.width(Spacing.xs))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(Radius.sm))
-                            .background(Surface4)
-                            .clickable { /* TODO: share */ }
-                            .padding(horizontal = Spacing.sm, vertical = 4.dp),
-                    ) {
-                        Text(text = "Share", fontSize = 11.sp, color = TextSecondary)
-                    }
-                }
-
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-
-                // Reset link
-                Row(
-                    modifier          = Modifier
-                        .fillMaxWidth()
-                        .clickable { /* TODO: reset invite link API */ }
-                        .padding(vertical = Spacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(text = "↺  Reset invite link", fontSize = 13.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text(text = "Invalidates old link", fontSize = 11.sp, color = TextTertiary)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            // ── Preferences ───────────────────────────────────────────────────
-            SectionLabel("PREFERENCES")
-            SettingsCard {
-                ToggleRow(
-                    label    = "Simplify debts",
-                    subtitle = "Reduces total payments between members",
-                    checked  = simplifyDebts,
-                    onToggle = {
-                        viewModel.onSimplifyDebtsToggled()
-                        viewModel.saveSimplifyDebts(!simplifyDebts)
-                    },
-                )
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                ToggleRow(
-                    label    = "Mute notifications",
-                    subtitle = null,
-                    checked  = muteNotifications,
-                    onToggle = { viewModel.onMuteNotificationsToggled() },
-                )
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            // ── Tools ─────────────────────────────────────────────────────────
-            SectionLabel("TOOLS")
-            SettingsCard {
-                NavRow(label = "Spending analytics", onClick = { onNavigateToAnalytics(viewModel.groupId) })
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                NavRow(label = "Recurring expenses", badge = null, onClick = { onNavigateToRecurring(viewModel.groupId) })
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                NavRow(label = "Reminders", onClick = { onNavigateToReminders(viewModel.groupId) })
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            // ── Danger zone ───────────────────────────────────────────────────
-            SectionLabel("DANGER ZONE")
-            SettingsCard {
-                NavRow(label = "Archive group", onClick = { showArchiveDialog = true })
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                NavRow(
-                    label     = "Leave group",
-                    textColor = Negative,
-                    onClick   = { showLeaveDialog = true },
-                )
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-                NavRow(
-                    label     = "Delete group",
-                    textColor = Color(0xFFFF4444),
-                    onClick   = { showDeleteDialog = true },
-                )
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            // ── Footer ────────────────────────────────────────────────────────
-            Text(
-                text     = "Group ID: ${group?.inviteCode?.take(8) ?: ""} · v1.0.0",
-                fontSize = 10.sp,
-                color    = TextTertiary.copy(alpha = 0.4f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = Spacing.sm),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.xxxl))
-        }
-    }
-
-    // ── Leave group dialog ────────────────────────────────────────────────────
     if (showLeaveDialog) {
         AlertDialog(
             onDismissRequest = { showLeaveDialog = false },
             containerColor   = Surface2,
             title = { Text("Leave group?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-            text  = {
-                Text(
-                    "You will be removed from this group. You must settle all balances before leaving.",
-                    color = TextSecondary, fontSize = 14.sp,
-                )
-            },
+            text  = { Text("You will be removed from this group. Settle all balances before leaving.", color = TextSecondary, fontSize = 14.sp) },
             confirmButton = {
                 TextButton(onClick = { showLeaveDialog = false; viewModel.leaveGroup() }) {
                     Text("Leave", color = Negative, fontWeight = FontWeight.SemiBold)
@@ -491,18 +193,12 @@ fun GroupSettingsScreen(
         )
     }
 
-    // ── Archive group dialog ──────────────────────────────────────────────────
     if (showArchiveDialog) {
         AlertDialog(
             onDismissRequest = { showArchiveDialog = false },
             containerColor   = Surface2,
             title = { Text("Archive group?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-            text  = {
-                Text(
-                    "The group will be hidden from your active groups list. Expenses and balances are preserved.",
-                    color = TextSecondary, fontSize = 14.sp,
-                )
-            },
+            text  = { Text("The group will be hidden from your active list. Expenses and balances are preserved.", color = TextSecondary, fontSize = 14.sp) },
             confirmButton = {
                 TextButton(onClick = { showArchiveDialog = false; viewModel.archiveGroup() }) {
                     Text("Archive", color = TextPrimary, fontWeight = FontWeight.SemiBold)
@@ -514,7 +210,37 @@ fun GroupSettingsScreen(
         )
     }
 
-    // ── Assign / Claim sheet for PLACEHOLDER members ──────────────────────────
+    // ── Edit group name dialog ────────────────────────────────────────────────
+    if (showNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showNameDialog = false },
+            containerColor   = Surface2,
+            title = { Text("Edit group name", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                com.prathik.fairshare.ui.components.FsTextField(
+                    value         = editName,
+                    onValueChange = { viewModel.onNameChanged(it) },
+                    label         = "Group name",
+                    modifier      = androidx.compose.ui.Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (editName.isNotBlank()) {
+                        showNameDialog = false
+                        viewModel.saveGroupName()
+                    }
+                }) {
+                    Text("Save", color = Green400, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNameDialog = false }) { Text("Cancel", color = TextSecondary) }
+            },
+        )
+    }
+
+    // ── Assign sheet ──────────────────────────────────────────────────────────
     showAssignSheet?.let { member ->
         androidx.compose.material3.ModalBottomSheet(
             onDismissRequest = { showAssignSheet = null },
@@ -535,104 +261,382 @@ fun GroupSettingsScreen(
                     modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
                 )
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
-
-
-
-                // Friends list
-                // Exclude friends who are already real (non-placeholder) members
-                // of this group — assigning a placeholder to them would duplicate them.
-                val realMemberUserIds = members
-                    .filter { !it.email.startsWith("placeholder+") }
-                    .map { it.userId }
-                    .toSet()
-                val assignableFriends = friends.filter { it.id !in realMemberUserIds }
-
-                if (assignableFriends.isNotEmpty()) {
-                    Text("Or assign to a friend:",
-                        fontSize = 12.sp, color = TextTertiary,
-                        modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg,
-                            top = Spacing.md, bottom = Spacing.sm))
-                    assignableFriends.forEach { friend ->
+                val realMemberIds = members.filter { !it.email.startsWith("placeholder+") }.map { it.userId }.toSet()
+                val assignable    = friends.filter { it.id !in realMemberIds }
+                if (assignable.isNotEmpty()) {
+                    assignable.forEach { friend ->
                         Row(
-                            modifier          = Modifier
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    showAssignSheet = null
-                                    viewModel.assignMember(member.userId, friend.id)
-                                }
+                                .clickable { showAssignSheet = null; viewModel.assignMember(member.userId, friend.id) }
                                 .padding(horizontal = Spacing.lg, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            FsAvatar(name = friend.fullName, userId = friend.id,
-                                size = ComponentSize.avatarMd)
+                            FsAvatar(name = friend.fullName, userId = friend.id, size = ComponentSize.avatarMd)
                             Spacer(modifier = Modifier.width(Spacing.md))
-                            Text(friend.fullName, fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium, color = TextPrimary,
-                                modifier = Modifier.weight(1f))
+                            Text(friend.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.weight(1f))
                         }
                         HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                     }
                 }
-
-                // Skip
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showAssignSheet = null }
-                        .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                    modifier = Modifier.fillMaxWidth().clickable { showAssignSheet = null }.padding(horizontal = Spacing.lg, vertical = 16.dp),
                 ) { Text("Skip for now", fontSize = 14.sp, color = TextTertiary) }
             }
         }
     }
-}
 
-// ── Reusable components ───────────────────────────────────────────────────────
+    Scaffold(
+        containerColor = Surface0,
+        snackbarHost   = { SnackbarHost(snackbarHost) },
+        topBar = {
+            com.prathik.fairshare.ui.components.FsTopBar(
+                title  = "Group Settings",
+                onBack = onBack,
+                actions = if (isAdmin) {
+                    {
+                        androidx.compose.material3.IconButton(onClick = { showNameDialog = true }) {
+                            Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = TextSecondary)
+                        }
+                    }
+                } else null,
+            )
+        },
+    ) { innerPadding ->
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text          = text,
-        fontSize      = 10.sp,
-        fontWeight    = FontWeight.SemiBold,
-        color         = TextTertiary,
-        letterSpacing = 1.sp,
-        modifier      = Modifier.padding(start = 2.dp, bottom = 6.dp),
-    )
-}
+        if (isLoading && group == null) {
+            FsLoadingScreen()
+            return@Scaffold
+        }
 
-@Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(Surface2)
-            .padding(horizontal = Spacing.md),
-    ) {
-        content()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState()),
+        ) {
+
+            // ── Group header ──────────────────────────────────────────────────
+            group?.let { g ->
+                Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                    ) {
+                        // Emoji tile — tappable for admin (change photo)
+                        Box(modifier = Modifier.size(56.dp)) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier         = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Surface2)
+                                    .border(1.dp, Surface4, RoundedCornerShape(16.dp))
+                                    .then(if (isAdmin) Modifier.clickable { showNameDialog = true } else Modifier),
+                            ) {
+                                Text(coverEmoji(g.type), fontSize = 26.sp)
+                            }
+                            if (isAdmin) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier         = Modifier
+                                        .size(18.dp)
+                                        .clip(CircleShape)
+                                        .background(Green400)
+                                        .align(Alignment.BottomEnd),
+                                ) {
+                                    Text("+", fontSize = 11.sp, color = Surface0, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Column(modifier = Modifier.weight(1f).padding(top = 2.dp)) {
+                            Text(
+                                text       = g.name,
+                                fontSize   = 17.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color      = TextPrimary,
+                                maxLines   = 2,
+                                overflow   = TextOverflow.Ellipsis,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                // Type badge
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(Radius.sm))
+                                        .background(Green400.copy(alpha = 0.1f))
+                                        .border(1.dp, Green400.copy(alpha = 0.3f), RoundedCornerShape(Radius.sm))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                                ) {
+                                    Text(g.type.name, fontSize = 10.sp, color = Green400, fontWeight = FontWeight.SemiBold)
+                                }
+                                Text("${g.memberCount} members", fontSize = 12.sp, color = TextTertiary)
+                                Text("·", fontSize = 12.sp, color = TextTertiary)
+                                Text(g.createdAt.toShortDate(), fontSize = 12.sp, color = TextTertiary)
+                            }
+                        }
+                    }
+
+                    // Balance card — state-aware
+                    Spacer(modifier = Modifier.height(Spacing.md))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.xl))
+                            .background(Surface2)
+                            .border(1.dp, Surface4, RoundedCornerShape(Radius.xl))
+                            .padding(horizontal = Spacing.md, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        val balance = yourGroupBalance   // local snapshot → enables smart cast
+                        Column {
+                            Text("Your balance", fontSize = 11.sp, color = TextTertiary)
+                            when {
+                                balance == null -> Text(
+                                    "No expenses yet",
+                                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary,
+                                )
+                                balance < 0 -> Text(
+                                    "You owe ${com.prathik.fairshare.util.MoneyUtils.format(-balance, "USD")}",
+                                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Negative,
+                                )
+                                balance > 0 -> Text(
+                                    "You are owed ${com.prathik.fairshare.util.MoneyUtils.format(balance, "USD")}",
+                                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Green400,
+                                )
+                                else -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("✓ ", fontSize = 14.sp, color = Green400)
+                                    Text("Settled up", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary)
+                                }
+                            }
+                        }
+                        // CTA — only when balance exists
+                        when {
+                            balance != null && balance < 0 -> Box(
+                                contentAlignment = Alignment.Center,
+                                modifier         = Modifier
+                                    .clip(RoundedCornerShape(Radius.lg))
+                                    .background(Green400)
+                                    .clickable { onNavigateToSettleUp(viewModel.groupId) }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            ) {
+                                Text("Settle up", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Surface0)
+                            }
+                            balance != null && balance > 0 -> Box(
+                                contentAlignment = Alignment.Center,
+                                modifier         = Modifier
+                                    .clip(RoundedCornerShape(Radius.lg))
+                                    .background(Surface2)
+                                    .border(1.dp, Surface4, RoundedCornerShape(Radius.lg))
+                                    .clickable { /* remind */ }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            ) {
+                                Text("Remind", fontSize = 13.sp, color = TextSecondary)
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+            }
+
+            SectionDivider()
+
+            // ── Members ───────────────────────────────────────────────────────
+            Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Members", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    // Add button — admin only
+                    if (isAdmin) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .clip(RoundedCornerShape(Radius.md))
+                                .background(Green400.copy(alpha = 0.1f))
+                                .border(1.dp, Green400, RoundedCornerShape(Radius.md))
+                                .clickable { onNavigateToAddMember(viewModel.groupId) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("+", fontSize = 14.sp, color = Green400, fontWeight = FontWeight.Bold)
+                                Text("Add", fontSize = 12.sp, color = Green400, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.sm))
+
+                // Fix 4: Banner when all other members are pending
+                val pendingCount  = members.count { it.email.startsWith("placeholder+") || it.userId == viewModel.currentUserId }
+                val showBanner    = members.size > 1 && pendingCount >= members.size - 1
+                if (showBanner) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.lg))
+                            .background(Surface2)
+                            .border(1.dp, Surface4, RoundedCornerShape(Radius.lg))
+                            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Text("ℹ️", fontSize = 13.sp)
+                        Text(
+                            "Pending members will see expenses when they join FairShare",
+                            fontSize = 12.sp, color = TextSecondary, lineHeight = 18.sp,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.xl))
+                        .background(Surface2)
+                        .border(1.dp, Surface4, RoundedCornerShape(Radius.xl)),
+                ) {
+                    members.forEachIndexed { index, member ->
+                        val isMe          = member.userId == viewModel.currentUserId
+                        val isCreator     = group?.createdById == member.userId
+                        val isPlaceholder = member.email.startsWith("placeholder+")
+                        val isPending     = member.email.contains("@invited") ||
+                                (!isPlaceholder && member.email.isNotBlank() && isCreator.not() && !member.email.contains("@fairshare"))
+
+                        MemberRow(
+                            member       = member,
+                            isMe         = isMe,
+                            isAdmin      = isCreator,
+                            isPlaceholder = isPlaceholder,
+                            showControls = isAdmin && !isMe,
+                            onAssign     = if (isPlaceholder && isAdmin) { { showAssignSheet = member } } else null,
+                            onRemove     = if (!isPlaceholder && !isMe && isAdmin) { { showRemoveDialog = member } } else null,
+                        )
+                        if (index < members.lastIndex) {
+                            HorizontalDivider(
+                                color    = Surface3,
+                                thickness = 0.5.dp,
+                                modifier  = Modifier.padding(start = 56.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            SectionDivider()
+
+            // ── Danger zone ───────────────────────────────────────────────────
+            Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+                Text(
+                    text          = "Danger Zone",
+                    fontSize      = 11.sp,
+                    fontWeight    = FontWeight.Medium,
+                    color         = Negative,
+                    letterSpacing = 1.sp,
+                    modifier      = Modifier.padding(bottom = Spacing.sm),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.xl))
+                        .background(Surface2)
+                        .border(1.dp, Negative.copy(alpha = 0.3f), RoundedCornerShape(Radius.xl)),
+                ) {
+                    if (isAdmin) {
+                        DangerRow(
+                            icon     = Icons.Outlined.Archive,
+                            iconTint = TextSecondary,
+                            label    = "Archive group",
+                            subtitle = "Hide from main list",
+                            onClick  = { showArchiveDialog = true },
+                        )
+                        HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                    }
+                    DangerRow(
+                        icon     = Icons.Outlined.ExitToApp,
+                        iconTint = Negative,
+                        label    = "Leave group",
+                        subtitle = "You won't see expenses",
+                        labelColor = Negative,
+                        onClick  = { showLeaveDialog = true },
+                    )
+                    if (isAdmin) {
+                        HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                        DangerRow(
+                            icon     = Icons.Outlined.Delete,
+                            iconTint = Negative,
+                            label    = "Delete group",
+                            subtitle = "Permanent. Cannot be undone",
+                            labelColor = Negative,
+                            onClick  = { showDeleteDialog = true },
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(80.dp))
+        }
     }
 }
 
+// ── Section divider ───────────────────────────────────────────────────────────
+
+@Composable
+private fun SectionDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .background(Surface0)
+            .border(0.5.dp, Surface4, RoundedCornerShape(0.dp)),
+    )
+}
+
+// ── Member row ────────────────────────────────────────────────────────────────
+
 @Composable
 private fun MemberRow(
-    member   : GroupMember,
-    isMe     : Boolean,
-    isCreator: Boolean,
-    onAssign : (() -> Unit)?,
-    onRemove : (() -> Unit)?,
+    member       : GroupMember,
+    isMe         : Boolean,
+    isAdmin      : Boolean,
+    isPlaceholder: Boolean,
+    showControls : Boolean,
+    onAssign     : (() -> Unit)?,
+    onRemove     : (() -> Unit)?,
 ) {
     Row(
         modifier          = Modifier
             .fillMaxWidth()
-            .padding(vertical = Spacing.sm),
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm + 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FsAvatar(
-            name   = member.fullName,
-            userId = member.userId,
-            size   = ComponentSize.avatarMd,
-        )
+        // Avatar
+        val avatarColor = AvatarColors[Math.abs(member.userId.hashCode()) % AvatarColors.size]
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(avatarColor),
+        ) {
+            Text(
+                text       = member.fullName.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color      = Surface0,
+            )
+        }
+
         Spacer(modifier = Modifier.width(Spacing.md))
+
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -646,121 +650,122 @@ private fun MemberRow(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF1A3A1A))
+                            .background(Green400.copy(alpha = 0.1f))
+                            .border(1.dp, Green400.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
                             .padding(horizontal = 6.dp, vertical = 1.dp),
                     ) {
-                        Text(text = "you", fontSize = 9.sp, color = Green400, fontWeight = FontWeight.SemiBold)
+                        Text("YOU", fontSize = 9.sp, color = Green400, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (isPlaceholder) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Negative.copy(alpha = 0.1f))
+                            .border(1.dp, Negative.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                    ) {
+                        Text("PENDING", fontSize = 9.sp, color = Negative, fontWeight = FontWeight.Bold)
                     }
                 }
             }
             Text(
-                text     = member.email,
+                text     = if (isPlaceholder) "Invited ${member.joinedAt.toRelativeDate()}" else member.email,
                 fontSize = 11.sp,
                 color    = TextTertiary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (isCreator) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Radius.xs))
-                    .background(Surface4)
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Text(text = "admin", fontSize = 10.sp, color = TextSecondary)
+
+        // Right side badge/action
+        when {
+            isAdmin && !isMe -> {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Radius.sm))
+                        .background(Green400.copy(alpha = 0.1f))
+                        .border(1.dp, Green400.copy(alpha = 0.3f), RoundedCornerShape(Radius.sm))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                ) {
+                    Text("ADMIN", fontSize = 9.sp, color = Green400, fontWeight = FontWeight.Bold)
+                }
             }
-        } else if (onAssign != null) {
-            // PLACEHOLDER — show link icon
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(Green400.copy(alpha = 0.12f))
-                    .clickable { onAssign() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = "🔗", fontSize = 14.sp)
+            isAdmin && isMe -> {
+                // Show both YOU badge (already inline) and ADMIN badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Radius.sm))
+                        .background(Green400.copy(alpha = 0.1f))
+                        .border(1.dp, Green400.copy(alpha = 0.3f), RoundedCornerShape(Radius.sm))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                ) {
+                    Text("ADMIN", fontSize = 9.sp, color = Green400, fontWeight = FontWeight.Bold)
+                }
             }
-        } else if (onRemove != null) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .clickable { onRemove() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = "⋮", fontSize = 18.sp, color = TextTertiary)
+            onAssign != null -> {
+                // Placeholder — 44dp tap target
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(Radius.md))
+                        .background(Surface4)
+                        .clickable { onAssign() },
+                ) {
+                    Text("🔗", fontSize = 14.sp)
+                }
+            }
+            onRemove != null -> {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(Radius.md))
+                        .background(Surface4)
+                        .clickable { onRemove() },
+                ) {
+                    Icon(Icons.Outlined.MoreVert, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }
 }
 
-@Composable
-private fun ToggleRow(
-    label   : String,
-    subtitle: String?,
-    checked : Boolean,
-    onToggle: () -> Unit,
-) {
-    Row(
-        modifier          = Modifier
-            .fillMaxWidth()
-            .padding(vertical = Spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = label, fontSize = 14.sp, color = TextPrimary)
-            if (subtitle != null) {
-                Text(text = subtitle, fontSize = 11.sp, color = TextTertiary)
-            }
-        }
-        Switch(
-            checked         = checked,
-            onCheckedChange = { onToggle() },
-            colors          = SwitchDefaults.colors(
-                checkedThumbColor       = Color.White,
-                checkedTrackColor       = Green400,
-                uncheckedThumbColor     = TextTertiary,
-                uncheckedTrackColor     = Surface4,
-                uncheckedBorderColor    = Surface4,
-            ),
-        )
-    }
-}
+// ── Danger row ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun NavRow(
-    label    : String,
-    badge    : String? = null,
-    textColor: Color   = TextSecondary,
-    onClick  : () -> Unit,
+private fun DangerRow(
+    icon      : ImageVector,
+    iconTint  : Color,
+    label     : String,
+    subtitle  : String,
+    labelColor: Color = TextPrimary,
+    onClick   : () -> Unit,
 ) {
     Row(
         modifier          = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = Spacing.md),
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm + 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text      = label,
-            fontSize  = 14.sp,
-            color     = textColor,
-            modifier  = Modifier.weight(1f),
-        )
-        if (badge != null) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Radius.sm))
-                    .background(Surface4)
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Text(text = badge, fontSize = 10.sp, color = TextSecondary)
-            }
-            Spacer(modifier = Modifier.width(Spacing.sm))
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(Radius.md))
+                .background(iconTint.copy(alpha = 0.1f)),
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
         }
-        Text(text = "›", fontSize = 18.sp, color = TextTertiary)
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label,    fontSize = 14.sp, fontWeight = FontWeight.Medium, color = labelColor)
+            Text(subtitle, fontSize = 12.sp, color = TextTertiary)
+        }
+        Text("›", fontSize = 20.sp, color = TextTertiary)
     }
 }
 
@@ -778,15 +783,18 @@ private fun String.toShortDate(): String {
     }
 }
 
-private fun coverGradientColors(type: GroupType): List<Color> = when (type) {
-    GroupType.TRIP      -> listOf(Color(0xFF0D2137), Color(0xFF1A3A5C), Color(0xFF0D4A6B))
-    GroupType.HOME      -> listOf(Color(0xFF1A0D2E), Color(0xFF2E1A4A), Color(0xFF3D1A5C))
-    GroupType.OFFICE    -> listOf(Color(0xFF1A1000), Color(0xFF2E1E00), Color(0xFF3D2800))
-    GroupType.FRIENDS   -> listOf(Color(0xFF0D1F0D), Color(0xFF1A3020), Color(0xFF1A3D1A))
-    GroupType.COUPLE    -> listOf(Color(0xFF1F0D1A), Color(0xFF2E1022), Color(0xFF3D1A2E))
-    GroupType.EVENT     -> listOf(Color(0xFF1A1000), Color(0xFF2A1800), Color(0xFF3A2200))
-    GroupType.APARTMENT -> listOf(Color(0xFF0D1A1F), Color(0xFF0D2A30), Color(0xFF0A2D35))
-    GroupType.OTHER     -> listOf(Color(0xFF111112), Color(0xFF1A1A1C), Color(0xFF222222))
+private fun String.toRelativeDate(): String {
+    return try {
+        val dt   = java.time.LocalDateTime.parse(this, java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        val days = java.time.temporal.ChronoUnit.DAYS.between(dt.toLocalDate(), java.time.LocalDate.now())
+        when {
+            days == 0L -> "today"
+            days == 1L -> "1d ago"
+            days < 7   -> "${days}d ago"
+            days < 30  -> "${days / 7}w ago"
+            else       -> dt.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+        }
+    } catch (e: Exception) { "" }
 }
 
 private fun coverEmoji(type: GroupType): String = when (type) {

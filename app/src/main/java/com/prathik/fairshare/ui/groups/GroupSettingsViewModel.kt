@@ -12,6 +12,7 @@ import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.repository.GroupRepository
 import com.prathik.fairshare.domain.repository.ImportRepository
 import com.prathik.fairshare.domain.usecase.group.DeleteGroupUseCase
+import com.prathik.fairshare.domain.usecase.group.GetGroupBalancesUseCase
 import com.prathik.fairshare.domain.usecase.group.LeaveGroupUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
@@ -26,17 +27,18 @@ import javax.inject.Inject
 
 @HiltViewModel
 class GroupSettingsViewModel @Inject constructor(
-    private val getGroupUseCase    : GetGroupUseCase,
-    private val getMembersUseCase  : GetGroupMembersUseCase,
-    private val updateGroupUseCase : UpdateGroupUseCase,
-    private val removeMemberUseCase: RemoveMemberUseCase,
-    private val deleteGroupUseCase : DeleteGroupUseCase,
-    private val leaveGroupUseCase  : LeaveGroupUseCase,
-    private val groupRepository    : GroupRepository,
-    private val importRepository   : ImportRepository,
-    private val friendRepository   : FriendRepository,
-    private val tokenStore         : EncryptedTokenStore,
-    savedStateHandle               : SavedStateHandle,
+    private val getGroupUseCase         : GetGroupUseCase,
+    private val getMembersUseCase       : GetGroupMembersUseCase,
+    private val getGroupBalancesUseCase : GetGroupBalancesUseCase,
+    private val updateGroupUseCase      : UpdateGroupUseCase,
+    private val removeMemberUseCase     : RemoveMemberUseCase,
+    private val deleteGroupUseCase      : DeleteGroupUseCase,
+    private val leaveGroupUseCase       : LeaveGroupUseCase,
+    private val groupRepository         : GroupRepository,
+    private val importRepository        : ImportRepository,
+    private val friendRepository        : FriendRepository,
+    private val tokenStore              : EncryptedTokenStore,
+    savedStateHandle                    : SavedStateHandle,
 ) : ViewModel() {
 
     val groupId      : String  = checkNotNull(savedStateHandle["groupId"])
@@ -48,6 +50,10 @@ class GroupSettingsViewModel @Inject constructor(
 
     private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
     val members: StateFlow<List<GroupMember>> = _members.asStateFlow()
+
+    /** Net balance in this group. Positive = owed to you, negative = you owe, null = no expenses. */
+    private val _yourGroupBalance = MutableStateFlow<Double?>(null)
+    val yourGroupBalance: StateFlow<Double?> = _yourGroupBalance.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -91,8 +97,9 @@ class GroupSettingsViewModel @Inject constructor(
 
     private suspend fun loadDataInternal() {
         _isLoading.value = true
-        val groupResult   = getGroupUseCase(groupId)
-        val membersResult = getMembersUseCase(groupId)
+        val groupResult    = getGroupUseCase(groupId)
+        val membersResult  = getMembersUseCase(groupId)
+        val balanceResult  = getGroupBalancesUseCase(groupId)
         if (groupResult is ApiResult.Success) {
             _group.value = groupResult.data
             _editName.value = groupResult.data.name
@@ -100,6 +107,13 @@ class GroupSettingsViewModel @Inject constructor(
         }
         if (membersResult is ApiResult.Success) {
             _members.value = membersResult.data
+        }
+        if (balanceResult is ApiResult.Success) {
+            val data = balanceResult.data
+            // getGroupBalancesUseCase returns records from the current user's perspective.
+            // sumOf { it.amount } = net: positive = owed to you, negative = you owe.
+            // null = no expenses at all in this group.
+            _yourGroupBalance.value = if (data.isEmpty()) null else data.sumOf { it.amount }
         }
         _isLoading.value = false
     }

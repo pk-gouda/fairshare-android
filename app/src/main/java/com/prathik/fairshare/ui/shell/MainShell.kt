@@ -493,7 +493,15 @@ fun MainShell(
                 GroupAnalyticsScreen(onBack = { shellNavController.popBackStack() })
             }
 
-            composable(Screen.CreateGroup.route) {
+            composable(
+                route     = Screen.CreateGroup.route,
+                arguments = listOf(navArgument("friendId") {
+                    type     = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }),
+            ) { backStackEntry ->
+                val preselectFriendId = backStackEntry.arguments?.getString("friendId")
                 CreateGroupScreen(
                     onBack = { shellNavController.popBackStack() },
                     onGroupCreated = { groupId: String ->
@@ -501,6 +509,7 @@ fun MainShell(
                             popUpTo(Screen.CreateGroup.route) { inclusive = true }
                         }
                     },
+                    preselectFriendId = preselectFriendId,
                 )
             }
 
@@ -795,7 +804,7 @@ fun MainShell(
                         shellNavController.navigate(Screen.GroupDetail.route(groupId))
                     },
                     onNavigateToCreateGroup = {
-                        shellNavController.navigate(Screen.CreateGroup.route)
+                        shellNavController.navigate(Screen.CreateGroup.route(friendId))
                     },
                 )
             }
