@@ -39,19 +39,28 @@ class FriendSettingsViewModel @Inject constructor(
 
     private var myEmail: String = ""
 
-    private val _friend      = MutableStateFlow<Friend?>(null)
+    private val _friend       = MutableStateFlow<Friend?>(null)
     val friend: StateFlow<Friend?> = _friend.asStateFlow()
 
-    private val _friendType  = MutableStateFlow<FriendType>(FriendType.Accepted)
+    private val _friendType   = MutableStateFlow<FriendType>(FriendType.Accepted)
     val friendType: StateFlow<FriendType> = _friendType.asStateFlow()
 
     private val _sharedGroups = MutableStateFlow<List<Group>>(emptyList())
     val sharedGroups: StateFlow<List<Group>> = _sharedGroups.asStateFlow()
 
-    private val _isLoading   = MutableStateFlow(false)
+    /** All groups the current user belongs to — for the "Add to existing group" picker. */
+    private val _allGroups = MutableStateFlow<List<Group>>(emptyList())
+    val allGroups: StateFlow<List<Group>> = _allGroups.asStateFlow()
+
+    /** Net direct balance with this friend.
+     *  Positive = they owe you, Negative = you owe them, null = no expenses yet. */
+    private val _directBalance = MutableStateFlow<Double?>(null)
+    val directBalance: StateFlow<Double?> = _directBalance.asStateFlow()
+
+    private val _isLoading    = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _actionState = MutableStateFlow<FriendSettingsActionState>(FriendSettingsActionState.Idle)
+    private val _actionState  = MutableStateFlow<FriendSettingsActionState>(FriendSettingsActionState.Idle)
     val actionState: StateFlow<FriendSettingsActionState> = _actionState.asStateFlow()
 
     init {
@@ -68,12 +77,14 @@ class FriendSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
 
-            val friendsDeferred  = async { friendRepository.getFriends() }
-            val sentDeferred     = async { friendRepository.getSentRequests() }
+            val friendsDeferred   = async { friendRepository.getFriends() }
+            val sentDeferred      = async { friendRepository.getSentRequests() }
             val breakdownDeferred = async { balanceRepository.getBreakdownWithUser(friendId) }
-            val groupsDeferred   = async { getGroupsUseCase() }
+            // getNetBalanceWithUser queries UserBalance — catches ALL expenses including non-group.
+            // This is the authoritative source for the removal guard.
+            val netBalanceDeferred = async { balanceRepository.getNetBalanceWithUser(friendId) }
+            val groupsDeferred    = async { getGroupsUseCase() }
 
-            // Backend now returns ACTIVE, PLACEHOLDER, and INVITED friends
             val allFriends = (friendsDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
             val found = allFriends.find { it.id == friendId }
 
@@ -85,7 +96,6 @@ class FriendSettingsViewModel @Inject constructor(
                     else                -> FriendType.Accepted
                 }
             } else {
-                // Sent request — pending acceptance from a real user
                 val sent = (sentDeferred.await() as? ApiResult.Success)
                     ?.data?.find { it.receiverId == friendId }
                 if (sent != null) {
@@ -99,14 +109,20 @@ class FriendSettingsViewModel @Inject constructor(
                 }
             }
 
-            // Shared groups — use per-group breakdown which has real groupIds
+            // Shared groups — from GroupBalance breakdown (per-group rows)
             val breakdownResult = breakdownDeferred.await()
             val groupsResult    = groupsDeferred.await()
             if (breakdownResult is ApiResult.Success && groupsResult is ApiResult.Success) {
-                val sharedGroupIds = breakdownResult.data
-                    .mapNotNull { it.groupId }
-                    .toSet()
+                val sharedGroupIds = breakdownResult.data.mapNotNull { it.groupId }.toSet()
                 _sharedGroups.value = groupsResult.data.filter { it.id in sharedGroupIds }
+                _allGroups.value    = groupsResult.data   // for "Add to existing group" picker
+            }
+
+            // Net balance guard — from UserBalance (covers group + non-group expenses)
+            val netResult = netBalanceDeferred.await()
+            if (netResult is ApiResult.Success) {
+                val net = netResult.data.sumOf { it.amount }
+                _directBalance.value = if (net == 0.0 && netResult.data.isEmpty()) null else net
             }
 
             _isLoading.value = false
@@ -128,36 +144,35 @@ class FriendSettingsViewModel @Inject constructor(
     }
 
     fun updateContactInfo(newEmail: String) {
-        val local = _friend.value ?: return
+        val local   = _friend.value ?: return
         val trimmed = newEmail.trim()
 
         if (trimmed.isBlank()) {
-            _actionState.value = FriendSettingsActionState.Error("Please enter an email or phone number")
+            _actionState.value = FriendSettingsActionState.Error("Please enter an email address")
             return
         }
         if (trimmed.equals(myEmail, ignoreCase = true)) {
-            _actionState.value = FriendSettingsActionState.Error("You can\'t use your own email address")
+            _actionState.value = FriendSettingsActionState.Error("You can't use your own email address")
             return
         }
 
         viewModelScope.launch {
-            // Re-invite with the updated email — backend handles deduplication
             when (friendRepository.inviteFriend(email = trimmed, name = local.fullName)) {
                 is ApiResult.Success -> {
-                    _friend.value = local.copy(email = trimmed)
+                    _friend.value     = local.copy(email = trimmed)
                     _friendType.value = FriendType.Invited(trimmed)
-                    _actionState.value = FriendSettingsActionState.Success("Contact updated")
+                    _actionState.value = FriendSettingsActionState.Success("Invite sent!")
                 }
-                else -> _actionState.value = FriendSettingsActionState.Error("Failed to update contact")
+                else -> _actionState.value = FriendSettingsActionState.Error("Failed to send invite")
             }
         }
     }
 
     fun removeFriend(onRemoved: () -> Unit) {
+        // Backend soft-deletes all direct expenses and clears UserBalance records,
+        // so no frontend balance guard is needed here.
         viewModelScope.launch {
             _isLoading.value = true
-            // All friend types (accepted, invited, placeholder) are now server-side
-            // so we always call removeFriend on the backend
             when (friendRepository.removeFriend(friendId)) {
                 is ApiResult.Success -> {
                     _actionState.value = FriendSettingsActionState.Success("Removed")
@@ -181,6 +196,10 @@ class FriendSettingsViewModel @Inject constructor(
             }
             _isLoading.value = false
         }
+    }
+
+    fun showError(message: String) {
+        _actionState.value = FriendSettingsActionState.Error(message)
     }
 
     fun resetActionState() { _actionState.value = FriendSettingsActionState.Idle }

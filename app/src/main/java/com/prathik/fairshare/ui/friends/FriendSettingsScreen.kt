@@ -1,8 +1,11 @@
 package com.prathik.fairshare.ui.friends
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,24 +14,31 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonRemove
-import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -47,156 +57,305 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.domain.model.Group
+import com.prathik.fairshare.domain.model.GroupType
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsTextField
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.theme.AvatarColors
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
-import com.prathik.fairshare.ui.theme.Orange400
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
 import com.prathik.fairshare.ui.theme.Surface3
+import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
+import com.prathik.fairshare.util.MoneyUtils
 
+/**
+ * Friend Settings Screen — three states:
+ *  • Accepted    — balance in header, Settle up CTA, real shared groups, remove/block/report
+ *  • Invited     — "Pending" status, orange invite-pending card, enabled groups section, cancel/remove
+ *  • Placeholder — "Offline" status, green invite card, enabled groups section, remove only
+ *
+ *  Removing a friend with an outstanding balance is blocked — must settle first.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendSettingsScreen(
-    onBack: () -> Unit,
-    onRemoved: () -> Unit,
-    viewModel: FriendSettingsViewModel = hiltViewModel(),
+    onBack                 : () -> Unit,
+    onRemoved              : () -> Unit,
+    onNavigateToSettleUp   : () -> Unit      = {},
+    onNavigateToGroup      : (String) -> Unit = {},
+    onNavigateToCreateGroup: () -> Unit       = {},
+    viewModel              : FriendSettingsViewModel = hiltViewModel(),
 ) {
-    val friend by viewModel.friend.collectAsState()
-    val friendType by viewModel.friendType.collectAsState()
-    val sharedGroups by viewModel.sharedGroups.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val actionState by viewModel.actionState.collectAsState()
-    val snackbarHost = remember { SnackbarHostState() }
+    val friend        by viewModel.friend.collectAsState()
+    val friendType    by viewModel.friendType.collectAsState()
+    val sharedGroups  by viewModel.sharedGroups.collectAsState()
+    val allGroups     by viewModel.allGroups.collectAsState()
+    val directBalance by viewModel.directBalance.collectAsState()
+    val isLoading     by viewModel.isLoading.collectAsState()
+    val actionState   by viewModel.actionState.collectAsState()
+    val snackbarHost        = remember { SnackbarHostState() }
+    val groupPickerSheet    = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var showRemoveDialog by remember { mutableStateOf(false) }
-    var showBlockDialog by remember { mutableStateOf(false) }
-    var showEditEmail by remember { mutableStateOf(false) }
-    var editEmailValue by remember { mutableStateOf("") }
+    var showRemoveDialog          by remember { mutableStateOf(false) }
+    var showCancelInviteDialog    by remember { mutableStateOf(false) }
+    var showSharedGroupsBlocker   by remember { mutableStateOf(false) }
+    var showBlockDialog           by remember { mutableStateOf(false) }
+    var showEmailDialog           by remember { mutableStateOf(false) }
+    var showGroupPicker           by remember { mutableStateOf(false) }
+    var editEmailValue            by remember { mutableStateOf("") }
+
+    val firstName = friend?.fullName?.split(" ")?.firstOrNull() ?: "them"
+
+    // Remove guard:
+    //  • Has shared groups → show blocker (must leave groups first)
+    //  • No shared groups  → show Splitwise-style disclaimer (backend will delete direct expenses)
+    //  • Invited/Pending   → no balance possible, skip both checks
+    val tryRemove: () -> Unit = {
+        when {
+            isLoading -> { /* still loading — ignore tap */ }
+            sharedGroups.isNotEmpty() -> showSharedGroupsBlocker = true
+            else -> showRemoveDialog = true
+        }
+    }
 
     LaunchedEffect(actionState) {
         when (val s = actionState) {
-            is FriendSettingsActionState.Error -> {
-                snackbarHost.showSnackbar(s.message)
-                viewModel.resetActionState()
-            }
-
-            is FriendSettingsActionState.Success -> {
-                snackbarHost.showSnackbar(s.message)
-                viewModel.resetActionState()
-            }
-
+            is FriendSettingsActionState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
+            is FriendSettingsActionState.Success -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
             else -> Unit
         }
     }
 
-    // Remove dialog
+    // Pre-fill email dialog for invited friends
+    LaunchedEffect(friendType) {
+        if (friendType is FriendType.Invited) {
+            editEmailValue = (friendType as FriendType.Invited).email
+        }
+    }
+
+    // ── Remove dialog — Splitwise-style disclaimer (Image 1) ──────────────────
     if (showRemoveDialog) {
         AlertDialog(
             onDismissRequest = { showRemoveDialog = false },
-            containerColor = Surface2,
-            title = { Text("Remove?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-            text = {
-                Text(
-                    "Remove ${friend?.fullName ?: "this person"} from your friends list?",
-                    color = TextSecondary, fontSize = 14.sp,
-                )
+            containerColor   = Surface2,
+            title = { Text("Remove $firstName?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                Column {
+                    Text(
+                        "This will remove ${friend?.fullName ?: "this person"} from your friends list, and delete any non-group expenses you two have shared.",
+                        color    = TextSecondary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.md))
+                    Text(
+                        "They will be able to see you've removed them (from Activity) but they won't receive an email or push notification.",
+                        color    = TextSecondary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    showRemoveDialog = false; viewModel.removeFriend { onRemoved() }
-                }) {
+                TextButton(onClick = { showRemoveDialog = false; viewModel.removeFriend { onRemoved() } }) {
                     Text("Remove", color = Negative, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRemoveDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
+                TextButton(onClick = { showRemoveDialog = false }) { Text("Cancel", color = TextSecondary) }
+            },
+        )
+    }
+
+    // ── Shared groups blocker dialog (Image 2) ────────────────────────────────
+    if (showSharedGroupsBlocker) {
+        AlertDialog(
+            onDismissRequest = { showSharedGroupsBlocker = false },
+            containerColor   = Surface2,
+            title = { Text("You have shared groups", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                Column {
+                    Text(
+                        "If you wish to delete this person from your friends list, you will need to delete them (or yourself) from your groups, or remove the groups entirely.",
+                        color    = TextSecondary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.md))
+                    Text(
+                        "You can access these settings by tapping on a group on this screen.",
+                        color    = TextSecondary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSharedGroupsBlocker = false }) {
+                    Text("OK", color = Green400, fontWeight = FontWeight.SemiBold)
                 }
             },
         )
     }
 
-    // Block dialog
+    // ── Cancel invite dialog ──────────────────────────────────────────────────
+    if (showCancelInviteDialog) {
+        AlertDialog(
+            onDismissRequest = { showCancelInviteDialog = false },
+            containerColor   = Surface2,
+            title = { Text("Cancel invite?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = { Text("This will remove $firstName from your friends list and cancel their invite.", color = TextSecondary, fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = { showCancelInviteDialog = false; viewModel.removeFriend { onRemoved() } }) {
+                    Text("Cancel invite", color = Negative, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCancelInviteDialog = false }) { Text("Keep", color = TextSecondary) }
+            },
+        )
+    }
+
+
     if (showBlockDialog) {
         AlertDialog(
             onDismissRequest = { showBlockDialog = false },
-            containerColor = Surface2,
-            title = {
-                Text(
-                    "Block ${friend?.fullName ?: "user"}?",
-                    color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
-            text = {
-                Text(
-                    "They won't be able to contact you or see your profile.",
-                    color = TextSecondary, fontSize = 14.sp,
-                )
-            },
+            containerColor   = Surface2,
+            title = { Text("Block ${friend?.fullName ?: "user"}?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = { Text("They won't be able to contact you or see your profile.", color = TextSecondary, fontSize = 14.sp) },
             confirmButton = {
-                TextButton(onClick = {
-                    showBlockDialog = false; viewModel.blockUser { onRemoved() }
-                }) {
+                TextButton(onClick = { showBlockDialog = false; viewModel.blockUser { onRemoved() } }) {
                     Text("Block", color = Negative, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBlockDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
-                }
+                TextButton(onClick = { showBlockDialog = false }) { Text("Cancel", color = TextSecondary) }
             },
         )
     }
 
-    // Edit contact info dialog
-    if (showEditEmail) {
+    // ── Add email / invite dialog ─────────────────────────────────────────────
+    if (showEmailDialog) {
         AlertDialog(
-            onDismissRequest = { showEditEmail = false },
-            containerColor = Surface2,
-            title = {
-                Text(
-                    "Edit contact info",
-                    color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
-            text = {
-                FsTextField(
-                    value = editEmailValue,
-                    onValueChange = { editEmailValue = it },
-                    label = "Email or phone",
-                    keyboardType = KeyboardType.Email,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            onDismissRequest = { showEmailDialog = false },
+            containerColor   = Surface2,
+            title = { Text("Add email & invite", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                Column {
+                    Text(
+                        "Enter $firstName's email to send them a FairShare invite.",
+                        color    = TextSecondary,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = Spacing.md),
+                    )
+                    FsTextField(
+                        value         = editEmailValue,
+                        onValueChange = { editEmailValue = it },
+                        label         = "Email address",
+                        keyboardType  = KeyboardType.Email,
+                        modifier      = Modifier.fillMaxWidth(),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    showEditEmail = false
+                    showEmailDialog = false
                     viewModel.updateContactInfo(editEmailValue)
                 }) {
-                    Text("Save", color = Green400, fontWeight = FontWeight.SemiBold)
+                    Text("Send invite", color = Green400, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showEditEmail = false }) {
-                    Text("Cancel", color = TextSecondary)
-                }
+                TextButton(onClick = { showEmailDialog = false }) { Text("Cancel", color = TextSecondary) }
             },
         )
+    }
+
+    // ── Add to existing group picker sheet ────────────────────────────────────
+    if (showGroupPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showGroupPicker = false },
+            sheetState       = groupPickerSheet,
+            containerColor   = Surface2,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = Spacing.xxxl),
+            ) {
+                Text(
+                    text       = "Add $firstName to a group",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text     = "Choose a group to add them to",
+                    fontSize = 14.sp,
+                    color    = TextSecondary,
+                )
+                Spacer(modifier = Modifier.height(Spacing.lg))
+                if (allGroups.isEmpty()) {
+                    Text(
+                        text     = "You don't have any groups yet.",
+                        fontSize = 14.sp,
+                        color    = TextTertiary,
+                        modifier = Modifier.padding(bottom = Spacing.lg),
+                    )
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(bottom = Spacing.md),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(allGroups, key = { it.id }) { group ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(Radius.xl))
+                                    .background(Surface0)
+                                    .clickable {
+                                        showGroupPicker = false
+                                        onNavigateToGroup(group.id)
+                                    }
+                                    .padding(horizontal = Spacing.md, vertical = Spacing.md),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier         = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(Radius.md))
+                                        .background(Surface2)
+                                        .border(1.dp, Surface4, RoundedCornerShape(Radius.md)),
+                                ) {
+                                    Text(groupEmoji(group.type), fontSize = 18.sp)
+                                }
+                                Spacer(modifier = Modifier.width(Spacing.md))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(group.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                                    Text("${group.memberCount} members", fontSize = 12.sp, color = TextTertiary)
+                                }
+                                Text("›", fontSize = 20.sp, color = TextTertiary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(
         containerColor = Surface0,
-        snackbarHost = { SnackbarHost(snackbarHost) },
+        snackbarHost   = { SnackbarHost(snackbarHost) },
         topBar = { FsTopBar(title = "Friend Settings", onBack = onBack) },
     ) { innerPadding ->
         Column(
@@ -208,231 +367,571 @@ fun FriendSettingsScreen(
 
             // ── Profile header ────────────────────────────────────────────────
             Row(
-                modifier = Modifier
+                modifier          = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FsAvatar(
-                    name = friend?.fullName ?: "",
-                    userId = friend?.id ?: "",
-                    size = 48.dp,
-                )
+                FsAvatar(name = friend?.fullName ?: "", userId = friend?.id ?: "", size = 56.dp)
                 Spacer(modifier = Modifier.width(Spacing.md))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = friend?.fullName ?: "",
-                        fontSize = 16.sp,
+                        text       = friend?.fullName ?: "",
+                        fontSize   = 17.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
+                        color      = TextPrimary,
                     )
                     Text(
-                        text = when (val t = friendType) {
-                            is FriendType.Invited -> t.email
+                        text     = when (val t = friendType) {
+                            is FriendType.Invited  -> t.email
                             FriendType.Placeholder -> "No email address"
-                            FriendType.Pending -> "Request pending"
-                            FriendType.Accepted -> friend?.email ?: ""
+                            FriendType.Pending     -> "Request pending"
+                            FriendType.Accepted    -> friend?.email ?: ""
                         },
                         fontSize = 13.sp,
-                        color = TextTertiary,
+                        color    = TextTertiary,
+                        modifier = Modifier.padding(top = 2.dp),
                     )
+                }
+                Spacer(modifier = Modifier.width(Spacing.sm))
+
+                // Right-side: balance (accepted) or status pill (others)
+                when (friendType) {
+                    FriendType.Accepted -> {
+                        val bal = directBalance
+                        if (bal != null) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text     = if (bal > 0) "Owed to you" else "You owe",
+                                    fontSize = 11.sp,
+                                    color    = TextTertiary,
+                                )
+                                Text(
+                                    text       = MoneyUtils.format(Math.abs(bal), "USD"),
+                                    fontSize   = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color      = if (bal > 0) Green400 else Negative,
+                                )
+                            }
+                        }
+                    }
+                    is FriendType.Invited, FriendType.Pending -> {
+                        StatusPill(label = "Pending", color = Negative)
+                    }
+                    FriendType.Placeholder -> {
+                        StatusPill(label = "Offline", color = TextTertiary)
+                    }
                 }
             }
 
-            HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-            Spacer(modifier = Modifier.height(Spacing.md))
+            // ── Settle up CTA — accepted with outstanding balance ─────────────
+            val bal = directBalance
+            if (friendType is FriendType.Accepted && bal != null && bal != 0.0) {
+                Box(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.xl))
+                            .background(Green400)
+                            .clickable { onNavigateToSettleUp() }
+                            .padding(vertical = 14.dp),
+                    ) {
+                        Text(
+                            text       = "Settle up ${MoneyUtils.format(Math.abs(bal), "USD")}",
+                            fontSize   = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = Surface0,
+                        )
+                    }
+                }
+            }
 
-            // ── Context-aware banner ──────────────────────────────────────────
+            SectionDivider()
+
+            // ── Context card — invited or placeholder ─────────────────────────
             when (val t = friendType) {
-                FriendType.Placeholder -> {
-                    InviteBanner(
-                        message = "${friend?.fullName ?: "This person"} is not on FairShare. Would you like to send an invite?",
-                        actions = listOf(
-                            BannerAction(
-                                Icons.Outlined.Send,
-                                "Invite ${friend?.fullName ?: "them"} to FairShare"
-                            ) {
-                                viewModel.sendInvite {}
-                            },
-                        ),
-                    )
-                }
-
                 is FriendType.Invited -> {
-                    LaunchedEffect(friend) { editEmailValue = t.email }
-                    InviteBanner(
-                        message = "${
-                            friend?.fullName?.split(" ")?.firstOrNull() ?: "Their"
-                        }'s invite has not been accepted. Is the email address \"${t.email}\" correct?",
-                        actions = listOf(
-                            BannerAction(Icons.Outlined.Edit, "No, edit contact info") {
-                                editEmailValue = t.email
-                                showEditEmail = true
-                            },
-                            BannerAction(Icons.Outlined.Send, "Yes, resend invite") {
-                                viewModel.sendInvite {}
-                            },
-                        ),
+                    InvitePendingCard(
+                        firstName   = firstName,
+                        email       = t.email,
+                        onResend    = { viewModel.sendInvite {} },
+                        onCancel    = { showCancelInviteDialog = true },
+                        modifier    = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
                     )
+                    SectionDivider()
                 }
-
+                FriendType.Placeholder -> {
+                    PlaceholderInviteCard(
+                        firstName       = firstName,
+                        onAddEmailInvite = {
+                            editEmailValue = ""
+                            showEmailDialog = true
+                        },
+                        modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    )
+                    SectionDivider()
+                }
                 else -> Unit
             }
 
             // ── Shared groups ─────────────────────────────────────────────────
-            Spacer(modifier = Modifier.height(Spacing.md))
-            Text(
-                text = "Shared groups",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-                modifier = Modifier.padding(horizontal = Spacing.lg),
-            )
-            Spacer(modifier = Modifier.height(Spacing.sm))
-            if (sharedGroups.isEmpty()) {
-                Text(
-                    text = "You and ${
-                        friend?.fullName?.split(" ")?.firstOrNull() ?: "this person"
-                    } do not share any groups.",
-                    fontSize = 13.sp,
-                    color = TextTertiary,
-                    modifier = Modifier.padding(horizontal = Spacing.lg),
-                )
-            } else {
-                sharedGroups.forEach { group ->
+            val isNonActive = friendType is FriendType.Invited ||
+                    friendType == FriendType.Placeholder
+
+            Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+                Spacer(modifier = Modifier.height(Spacing.md))
+                Text("Shared groups", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Spacer(modifier = Modifier.height(Spacing.sm))
+
+                if (isNonActive) {
+                    // Empty groups card — enabled so user can still create/add
+                    if (sharedGroups.isEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.xl))
+                                .background(Surface2)
+                                .border(1.dp, Surface4, RoundedCornerShape(Radius.xl))
+                                .padding(Spacing.md),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier         = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(Radius.lg))
+                                        .background(Surface3)
+                                        .border(1.dp, Surface4, RoundedCornerShape(Radius.lg)),
+                                ) {
+                                    Text("👥", fontSize = 18.sp)
+                                }
+                                Spacer(modifier = Modifier.width(Spacing.md))
+                                Text(
+                                    text     = "You and $firstName don't share any groups yet",
+                                    fontSize = 13.sp,
+                                    color    = TextSecondary,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(Spacing.md))
+                            // Create group — green border, enabled
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier         = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(Radius.lg))
+                                    .background(Surface2)
+                                    .border(1.dp, Green400, RoundedCornerShape(Radius.lg))
+                                    .clickable { onNavigateToCreateGroup() }
+                                    .padding(vertical = 10.dp),
+                            ) {
+                                Text(
+                                    text       = "Create group with $firstName",
+                                    fontSize   = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color      = Green400,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text     = if (friendType is FriendType.Invited)
+                                    "$firstName will see it when they join"
+                                else
+                                    "$firstName will see it when they join FairShare",
+                                fontSize = 11.sp,
+                                color    = TextTertiary,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                    } else {
+                        sharedGroups.forEachIndexed { index, group ->
+                            SharedGroupRow(group = group, onClick = { onNavigateToGroup(group.id) })
+                            if (index < sharedGroups.lastIndex) {
+                                Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Surface4))
+                            }
+                        }
+                    }
+                    // Add to existing group — always shown for non-active
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.lg))
+                            .background(Surface2)
+                            .border(1.dp, Surface4, RoundedCornerShape(Radius.lg))
+                            .clickable { showGroupPicker = true }
+                            .padding(vertical = 11.dp),
+                    ) {
+                        Row(
+                            verticalAlignment      = Alignment.CenterVertically,
+                            horizontalArrangement  = androidx.compose.foundation.layout.Arrangement.Center,
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Add to existing group", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+                        }
+                    }
+                } else if (sharedGroups.isEmpty()) {
                     Text(
-                        text = group.name,
-                        fontSize = 14.sp,
-                        color = TextPrimary,
-                        modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xs),
+                        text     = "You and $firstName don't share any groups.",
+                        fontSize = 13.sp,
+                        color    = TextTertiary,
                     )
+                } else {
+                    sharedGroups.forEachIndexed { index, group ->
+                        SharedGroupRow(group = group, onClick = { onNavigateToGroup(group.id) })
+                        if (index < sharedGroups.lastIndex) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(0.5.dp)
+                                    .background(Surface4)
+                                    .padding(start = 52.dp),
+                            )
+                        }
+                    }
                 }
+                Spacer(modifier = Modifier.height(Spacing.md))
+            }
+
+            SectionDivider()
+
+            // ── Quick actions — accepted friends only ─────────────────────────
+            if (friendType is FriendType.Accepted) {
+                Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+                    Spacer(modifier = Modifier.height(Spacing.md))
+                    Text(
+                        text          = "QUICK ACTIONS",
+                        fontSize      = 11.sp,
+                        color         = TextTertiary,
+                        fontWeight    = FontWeight.Medium,
+                        letterSpacing = 1.sp,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                    SettingsRow(
+                        icon     = Icons.Outlined.History,
+                        iconTint = TextSecondary,
+                        label    = "View expense history",
+                        onClick  = { onBack() },   // history lives on FriendDetail timeline
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                }
+                SectionDivider()
             }
 
             // ── Manage relationship ───────────────────────────────────────────
-            Spacer(modifier = Modifier.height(Spacing.xl))
-            Text(
-                text = "Manage relationship",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-                modifier = Modifier.padding(horizontal = Spacing.lg),
-            )
-            Spacer(modifier = Modifier.height(Spacing.sm))
-
-            ManageRow(
-                icon = Icons.Outlined.PersonRemove,
-                iconTint = Negative,
-                label = "Remove from friends list",
-                subtitle = "Remove this user from your friends list.",
-                onClick = { showRemoveDialog = true },
-            )
-
-            // Block and Report — only for real users
-            if (friendType == FriendType.Accepted || friendType == FriendType.Pending) {
-                ManageRow(
-                    icon = Icons.Outlined.Block,
-                    iconTint = TextSecondary,
-                    label = "Block user",
-                    subtitle = "Remove this user from your friends list, hide any groups you share, and suppress future expenses/notifications from them.",
-                    onClick = { showBlockDialog = true },
+            Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+                Spacer(modifier = Modifier.height(Spacing.md))
+                Text(
+                    text          = "MANAGE RELATIONSHIP",
+                    fontSize      = 11.sp,
+                    color         = TextTertiary,
+                    fontWeight    = FontWeight.Medium,
+                    letterSpacing = 1.sp,
                 )
-                ManageRow(
-                    icon = Icons.Outlined.Flag,
-                    iconTint = TextSecondary,
-                    label = "Report user",
-                    subtitle = "Flag an abusive, suspicious, or spam account.",
-                    onClick = { /* TODO */ },
-                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+
+                when (friendType) {
+                    is FriendType.Invited, FriendType.Pending -> {
+                        SettingsRow(
+                            icon     = Icons.Outlined.Delete,
+                            iconTint = TextSecondary,
+                            label    = "Cancel invite",
+                            subtitle = "Remove pending invitation",
+                            onClick  = { showCancelInviteDialog = true },   // no balance check needed
+                        )
+                        Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Surface4))
+                        SettingsRow(
+                            icon       = Icons.Outlined.PersonRemove,
+                            iconTint   = Negative,
+                            label      = "Remove from friends list",
+                            subtitle   = "Delete contact",
+                            labelColor = Negative,
+                            onClick    = { tryRemove() },
+                        )
+                    }
+                    FriendType.Placeholder -> {
+                        SettingsRow(
+                            icon       = Icons.Outlined.PersonRemove,
+                            iconTint   = Negative,
+                            label      = "Remove from friends list",
+                            subtitle   = "Delete this contact",
+                            labelColor = Negative,
+                            onClick    = { tryRemove() },
+                        )
+                    }
+                    FriendType.Accepted -> {
+                        SettingsRow(
+                            icon       = Icons.Outlined.PersonRemove,
+                            iconTint   = Negative,
+                            label      = "Remove from friends list",
+                            subtitle   = "You won't see each other's expenses",
+                            labelColor = Negative,
+                            onClick    = { tryRemove() },
+                        )
+                        Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Surface4))
+                        SettingsRow(
+                            icon     = Icons.Outlined.Block,
+                            iconTint = TextSecondary,
+                            label    = "Block user",
+                            subtitle = "Hide shared groups and suppress future notifications",
+                            onClick  = { showBlockDialog = true },
+                        )
+                        Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Surface4))
+                        SettingsRow(
+                            icon     = Icons.Outlined.Flag,
+                            iconTint = TextSecondary,
+                            label    = "Report user",
+                            subtitle = "Flag an abusive, suspicious, or spam account",
+                            onClick  = { viewModel.showError("Report feature coming soon") },
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(80.dp))
             }
-
-            Spacer(modifier = Modifier.height(80.dp))
         }
     }
 }
 
-// ── Banner ────────────────────────────────────────────────────────────────────
-
-data class BannerAction(
-    val icon: ImageVector,
-    val label: String,
-    val onClick: () -> Unit,
-)
+// ── Section divider ───────────────────────────────────────────────────────────
 
 @Composable
-private fun InviteBanner(message: String, actions: List<BannerAction>) {
-    Column(
+private fun SectionDivider() {
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.lg)
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(Orange400),
-    ) {
-        Text(
-            text = message,
-            fontSize = 14.sp,
-            color = Color.White,
-            modifier = Modifier.padding(
-                horizontal = Spacing.md,
-                vertical = Spacing.md,
+            .height(8.dp)
+            .background(Surface0)
+            .border(
+                width = 0.5.dp,
+                color = Surface4,
+                shape = RoundedCornerShape(0.dp),
             ),
-        )
-        actions.forEach { action ->
-            HorizontalDivider(color = Color.White.copy(alpha = 0.3f), thickness = 0.5.dp)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = action.onClick)
-                    .padding(horizontal = Spacing.md, vertical = Spacing.md),
-                verticalAlignment = Alignment.CenterVertically,
+    )
+}
+
+// ── Status pill ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun StatusPill(label: String, color: Color) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.full))
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(Radius.full))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Column(horizontalAlignment = Alignment.End) {
+            Text("Status", fontSize = 10.sp, color = TextTertiary)
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = color)
+        }
+    }
+}
+
+// ── Invite Pending card (invited state) ───────────────────────────────────────
+
+@Composable
+private fun InvitePendingCard(
+    firstName: String,
+    email    : String,
+    onResend : () -> Unit,
+    onCancel : () -> Unit,
+    modifier : Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.xl))
+            .background(Surface2)
+            .border(1.dp, Negative.copy(alpha = 0.3f), RoundedCornerShape(Radius.xl))
+            .padding(Spacing.md),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Negative.copy(alpha = 0.15f)),
             ) {
-                Icon(
-                    imageVector = action.icon,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp),
+                Icon(Icons.Outlined.Schedule, contentDescription = null, tint = Negative, modifier = Modifier.size(16.dp))
+            }
+            Spacer(modifier = Modifier.width(Spacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Invite pending", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "$firstName hasn't accepted your invite yet. Is the address \"$email\" correct?",
+                    fontSize = 12.sp,
+                    color    = TextSecondary,
+                    lineHeight = 18.sp,
                 )
-                Spacer(modifier = Modifier.width(Spacing.md))
-                Text(text = action.label, fontSize = 14.sp, color = Color.White)
+                Spacer(modifier = Modifier.height(Spacing.md))
+                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.sm)) {
+                    // Resend
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .clip(RoundedCornerShape(Radius.md))
+                            .background(Negative)
+                            .clickable(onClick = onResend)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Text("Resend invite", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    }
+                    // Cancel
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .clip(RoundedCornerShape(Radius.md))
+                            .background(Surface3)
+                            .border(1.dp, Surface4, RoundedCornerShape(Radius.md))
+                            .clickable(onClick = onCancel)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Text("Cancel invite", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+                    }
+                }
             }
         }
     }
 }
 
-// ── Manage row ────────────────────────────────────────────────────────────────
+// ── Placeholder Invite card ───────────────────────────────────────────────────
 
 @Composable
-private fun ManageRow(
-    icon: ImageVector,
-    iconTint: androidx.compose.ui.graphics.Color,
-    label: String,
-    subtitle: String,
-    onClick: () -> Unit,
+private fun PlaceholderInviteCard(
+    firstName       : String,
+    onAddEmailInvite: () -> Unit,
+    modifier        : Modifier = Modifier,
 ) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.xl))
+            .background(Surface2)
+            .border(1.dp, Green400.copy(alpha = 0.3f), RoundedCornerShape(Radius.xl))
+            .padding(Spacing.md),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Green400.copy(alpha = 0.15f)),
+            ) {
+                Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = Green400, modifier = Modifier.size(16.dp))
+            }
+            Spacer(modifier = Modifier.width(Spacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Invite to FairShare", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "$firstName isn't on FairShare yet. Add an email to send an invite and let them track expenses too.",
+                    fontSize = 12.sp,
+                    color    = TextSecondary,
+                    lineHeight = 18.sp,
+                )
+                Spacer(modifier = Modifier.height(Spacing.md))
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .clip(RoundedCornerShape(Radius.md))
+                        .background(Green400)
+                        .clickable(onClick = onAddEmailInvite)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text("Add email & invite", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Surface0)
+                }
+            }
+        }
+    }
+}
+
+// ── Shared Group Row ──────────────────────────────────────────────────────────
+
+@Composable
+private fun SharedGroupRow(group: Group, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
+        modifier          = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+            .padding(vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(Radius.lg))
+                .background(Surface2)
+                .border(1.dp, Surface4, RoundedCornerShape(Radius.lg)),
+        ) {
+            Text(groupEmoji(group.type), fontSize = 18.sp)
+        }
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(group.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Text("${group.memberCount} members", fontSize = 12.sp, color = TextTertiary)
+        }
+        Text("›", fontSize = 20.sp, color = TextTertiary)
+    }
+}
+
+// ── Settings Row ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun SettingsRow(
+    icon      : ImageVector,
+    iconTint  : Color,
+    label     : String,
+    subtitle  : String  = "",
+    labelColor: Color   = TextPrimary,
+    onClick   : () -> Unit,
+) {
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = Spacing.md),
         verticalAlignment = Alignment.Top,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconTint,
-            modifier = Modifier
-                .size(20.dp)
-                .padding(top = 2.dp),
-        )
-        Spacer(modifier = Modifier.width(Spacing.md))
-        Column {
-            Text(
-                text = label,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (iconTint == Negative) Negative else TextPrimary,
-            )
-            Text(text = subtitle, fontSize = 12.sp, color = TextTertiary)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(Radius.md))
+                .background(iconTint.copy(alpha = 0.1f)),
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
         }
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = labelColor)
+            if (subtitle.isNotEmpty()) {
+                Text(text = subtitle, fontSize = 12.sp, color = TextTertiary, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        Text("›", fontSize = 20.sp, color = TextTertiary, modifier = Modifier.padding(top = 2.dp))
     }
+}
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+private fun groupEmoji(type: com.prathik.fairshare.domain.model.GroupType): String = when (type) {
+    GroupType.HOME      -> "🏠"
+    GroupType.TRIP      -> "✈️"
+    GroupType.COUPLE    -> "💑"
+    GroupType.OFFICE    -> "💼"
+    GroupType.FRIENDS   -> "👫"
+    GroupType.EVENT     -> "🎉"
+    GroupType.APARTMENT -> "🏢"
+    GroupType.OTHER     -> "💰"
 }

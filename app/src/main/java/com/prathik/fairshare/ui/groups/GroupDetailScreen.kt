@@ -115,32 +115,46 @@ enum class GroupUiState {
 // Within each bucket, the group ID hash picks a specific image —
 // so two HOME groups will always get different covers, but both look like home photos.
 //
-// Bucket layout (indices into DEFAULT_COVERS):
-//   HOME / APARTMENT : 0–3   (interior/home photos)
-//   TRIP             : 10–14 (travel/nature)
-//   OFFICE           : 15–18 (urban/work)
-//   FRIENDS / COUPLE : 4–9   (abstract/gradient — versatile)
-//   EVENT            : 19–21 (food/celebration)
-//   OTHER            : 22–23 (minimal/texture)
+// Bucket layout (0-based indices into DEFAULT_COVERS):
+//   HOME      : 0–4   (cover_01–05)
+//   APARTMENT : 5–8   (cover_06–09)
+//   TRIP      : 9–21  (cover_10–22)
+//   OFFICE    : 22–25 (cover_23–26)
+//   FRIENDS   : 26–31 (cover_27–32)
+//   COUPLE    : 32–37 (cover_33–38)
+//   EVENT     : 38–42 (cover_39–43)
+//   OTHER     : 43–48 (cover_44–49)
 
 private val DEFAULT_COVERS: List<Int> = listOf(
-    R.drawable.cover_01, R.drawable.cover_02, R.drawable.cover_03, R.drawable.cover_04, // 0–3  home
-    R.drawable.cover_05, R.drawable.cover_06, R.drawable.cover_07, R.drawable.cover_08, // 4–7  abstract
-    R.drawable.cover_09, R.drawable.cover_10, R.drawable.cover_11, R.drawable.cover_12, // 8–11 abstract/travel
-    R.drawable.cover_13, R.drawable.cover_14, R.drawable.cover_15, R.drawable.cover_16, // 12–15 travel/urban
-    R.drawable.cover_17, R.drawable.cover_18, R.drawable.cover_19, R.drawable.cover_20, // 16–19 urban/food
-    R.drawable.cover_21, R.drawable.cover_22, R.drawable.cover_23, R.drawable.cover_24, // 20–23 food/minimal
+    // HOME (0–4)
+    R.drawable.cover_01, R.drawable.cover_02, R.drawable.cover_03, R.drawable.cover_04, R.drawable.cover_05,
+    // APARTMENT (5–8)
+    R.drawable.cover_06, R.drawable.cover_07, R.drawable.cover_08, R.drawable.cover_09,
+    // TRIP (9–21)
+    R.drawable.cover_10, R.drawable.cover_11, R.drawable.cover_12, R.drawable.cover_13, R.drawable.cover_14,
+    R.drawable.cover_15, R.drawable.cover_16, R.drawable.cover_17, R.drawable.cover_18, R.drawable.cover_19,
+    R.drawable.cover_20, R.drawable.cover_21, R.drawable.cover_22,
+    // OFFICE (22–25)
+    R.drawable.cover_23, R.drawable.cover_24, R.drawable.cover_25, R.drawable.cover_26,
+    // FRIENDS (26–31)
+    R.drawable.cover_27, R.drawable.cover_28, R.drawable.cover_29, R.drawable.cover_30, R.drawable.cover_31, R.drawable.cover_32,
+    // COUPLE (32–37)
+    R.drawable.cover_33, R.drawable.cover_34, R.drawable.cover_35, R.drawable.cover_36, R.drawable.cover_37, R.drawable.cover_38,
+    // EVENT (38–42)
+    R.drawable.cover_39, R.drawable.cover_40, R.drawable.cover_41, R.drawable.cover_42, R.drawable.cover_43,
+    // OTHER (43–48)
+    R.drawable.cover_44, R.drawable.cover_45, R.drawable.cover_46, R.drawable.cover_47, R.drawable.cover_48, R.drawable.cover_49,
 )
 
 private fun groupTypeIndices(type: GroupType): IntRange = when (type) {
-    GroupType.HOME      -> 0..3
-    GroupType.APARTMENT -> 0..3
-    GroupType.TRIP      -> 11..14
-    GroupType.OFFICE    -> 15..18
-    GroupType.FRIENDS   -> 4..10
-    GroupType.COUPLE    -> 4..10
-    GroupType.EVENT     -> 19..22
-    GroupType.OTHER     -> 22..23
+    GroupType.HOME      -> 0..4
+    GroupType.APARTMENT -> 5..8
+    GroupType.TRIP      -> 9..21
+    GroupType.OFFICE    -> 22..25
+    GroupType.FRIENDS   -> 26..31
+    GroupType.COUPLE    -> 32..37
+    GroupType.EVENT     -> 38..42
+    GroupType.OTHER     -> 43..48
 }
 
 /** Returns a drawable resource ID — type-biased so it looks right, ID-hashed so each group is unique. */

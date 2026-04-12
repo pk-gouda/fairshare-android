@@ -783,11 +783,19 @@ fun MainShell(
             composable(
                 route = Screen.FriendSettings.route,
                 arguments = listOf(navArgument("friendId") { type = NavType.StringType })
-            ) {
+            ) { backStackEntry ->
+                val friendId = backStackEntry.arguments?.getString("friendId") ?: return@composable
                 FriendSettingsScreen(
-                    onBack = { shellNavController.popBackStack() },
-                    onRemoved = {
-                        shellNavController.popBackStack(Screen.Friends.route, false)
+                    onBack    = { shellNavController.popBackStack() },
+                    onRemoved = { shellNavController.popBackStack(Screen.Friends.route, false) },
+                    onNavigateToSettleUp    = {
+                        shellNavController.navigate(Screen.SettleUp.route(friendId))
+                    },
+                    onNavigateToGroup       = { groupId ->
+                        shellNavController.navigate(Screen.GroupDetail.route(groupId))
+                    },
+                    onNavigateToCreateGroup = {
+                        shellNavController.navigate(Screen.CreateGroup.route)
                     },
                 )
             }
