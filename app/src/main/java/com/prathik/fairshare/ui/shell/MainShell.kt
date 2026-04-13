@@ -53,6 +53,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.prathik.fairshare.ui.expense.AddExpenseScreen
+import com.prathik.fairshare.ui.expense.ItemAssignmentScreen
+import com.prathik.fairshare.ui.expense.ItemAssignmentViewModel
+import com.prathik.fairshare.ui.expense.ReviewSubmitScreen
 import com.prathik.fairshare.ui.groups.GroupBalancesScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
@@ -589,6 +592,9 @@ fun MainShell(
                     onNavigateToCurrency = {
                         shellNavController.navigate(Screen.CurrencySelect.route)
                     },
+                    onNavigateToItemize = { receiptId ->
+                        shellNavController.navigate(Screen.ItemAssignment.route(receiptId))
+                    },
                 )
             }
             composable(Screen.CurrencySelect.route) { backStackEntry ->
@@ -682,8 +688,72 @@ fun MainShell(
 
             composable(
                 route = Screen.ItemAssignment.route,
-                arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Item Assignment") }
+                arguments = listOf(navArgument("receiptId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val receiptId = backStackEntry.arguments?.getString("receiptId") ?: return@composable
+                val parentEntry = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.AddExpense.route)
+                }
+                val addExpenseViewModel = hiltViewModel<AddExpenseViewModel>(parentEntry)
+                val members by addExpenseViewModel.members.collectAsState()
+                val currency by addExpenseViewModel.currency.collectAsState()
+                ItemAssignmentScreen(
+                    receiptId = receiptId,
+                    members   = members,
+                    currency  = currency,
+                    onBack               = { shellNavController.popBackStack() },
+                    onDone               = { assignments ->
+                        addExpenseViewModel.setItemAssignments(assignments)
+                    },
+                    onNavigateToReview   = {
+                        shellNavController.navigate(Screen.ReviewSubmit.route)
+                    },
+                )
+            }
+
+
+            composable(route = Screen.ReviewSubmit.route) { backStackEntry ->
+                val addExpenseEntry = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.AddExpense.route)
+                }
+                val itemAssignEntry = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.ItemAssignment.route)
+                }
+                val addExpenseViewModel = hiltViewModel<AddExpenseViewModel>(addExpenseEntry)
+                val itemAssignViewModel = hiltViewModel<ItemAssignmentViewModel>(itemAssignEntry)
+
+                val items       by itemAssignViewModel.items.collectAsState()
+                val assignments by itemAssignViewModel.assignments.collectAsState()
+                val members     by addExpenseViewModel.members.collectAsState()
+                val currency    by addExpenseViewModel.currency.collectAsState()
+                val uiState     by addExpenseViewModel.uiState.collectAsState()
+                val receiptState by addExpenseViewModel.receiptState.collectAsState()
+
+                val receipt = (receiptState as? com.prathik.fairshare.ui.expense.ReceiptScanState.Success)?.receipt
+
+                if (receipt == null) {
+                    shellNavController.popBackStack()
+                    return@composable
+                }
+
+                ReviewSubmitScreen(
+                    receipt     = receipt,
+                    items       = items,
+                    assignments = assignments.mapValues { it.value.toList() },
+                    members     = members,
+                    currency    = currency,
+                    isLoading   = uiState is com.prathik.fairshare.ui.expense.AddExpenseUiState.Loading,
+                    onBack      = { shellNavController.popBackStack() },
+                    onSubmit    = { addExpenseViewModel.submit() },
+                )
+
+                // Navigate away on success
+                androidx.compose.runtime.LaunchedEffect(uiState) {
+                    if (uiState is com.prathik.fairshare.ui.expense.AddExpenseUiState.Success) {
+                        shellNavController.popBackStack(Screen.AddExpense.route, inclusive = true)
+                    }
+                }
+            }
 
             // ── Settlement screens ────────────────────────────────────────────
             composable(

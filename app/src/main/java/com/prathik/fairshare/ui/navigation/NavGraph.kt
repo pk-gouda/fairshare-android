@@ -197,10 +197,12 @@ fun NavGraph(
         }
         composable(
             route = Screen.ItemAssignment.route,
-            arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
+            arguments = listOf(navArgument("receiptId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Item Assignment")
         }
+
+        composable(route = Screen.ReviewSubmit.route) { PlaceholderScreen("Review & Submit") }
 
         // ── Settlement ────────────────────────────────────────────────────────
         composable(

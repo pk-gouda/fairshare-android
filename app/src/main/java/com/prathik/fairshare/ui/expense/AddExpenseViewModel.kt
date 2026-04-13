@@ -153,6 +153,15 @@ class AddExpenseViewModel @Inject constructor(
     val receiptState: StateFlow<ReceiptScanState> = _receiptState.asStateFlow()
 
     private var scannedReceiptId: String? = null
+    val currentReceiptId: String? get() = scannedReceiptId
+
+    // itemId → list of userIds assigned to that item
+    private val _itemAssignments = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    val itemAssignments: StateFlow<Map<String, List<String>>> = _itemAssignments.asStateFlow()
+
+    fun setItemAssignments(assignments: Map<String, List<String>>) {
+        _itemAssignments.value = assignments
+    }
 
     // ── UI State ──────────────────────────────────────────────────────────────
     private val _uiState = MutableStateFlow<AddExpenseUiState>(AddExpenseUiState.Idle)
@@ -549,6 +558,7 @@ class AddExpenseViewModel @Inject constructor(
                 splitData        = _splitData.value,
                 receiptId        = scannedReceiptId,
                 remainderPointer = _pointerAtCreation,
+                itemAssignments  = _itemAssignments.value.ifEmpty { null },
             )) {
                 is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
                 is ApiResult.NetworkError -> _uiState.value =

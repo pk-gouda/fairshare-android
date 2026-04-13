@@ -110,6 +110,7 @@ fun AddExpenseScreen(
     onBack              : () -> Unit,
     onSuccess           : () -> Unit,
     onNavigateToCurrency: () -> Unit,
+    onNavigateToItemize : (receiptId: String) -> Unit = {},
     viewModel           : AddExpenseViewModel = hiltViewModel(),
 ) {
     val uiState           by viewModel.uiState.collectAsState()
@@ -445,7 +446,10 @@ fun AddExpenseScreen(
                         .clip(RoundedCornerShape(Radius.xl))
                         .background(Surface0)
                         .border(1.dp, Green400.copy(alpha = 0.5f), RoundedCornerShape(Radius.xl))
-                        .clickable { /* TODO: navigate to itemize screen */ }
+                        .clickable {
+                            val rid = viewModel.currentReceiptId
+                            if (rid != null) onNavigateToItemize(rid)
+                        }
                         .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,

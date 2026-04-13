@@ -20,6 +20,7 @@ data class CreateExpenseRequest(
     @SerialName("idempotencyKey") val idempotencyKey: String? = null,
     @SerialName("receiptId")       val receiptId: String? = null,
     @SerialName("remainderPointer") val remainderPointer: Int? = null,
+    @SerialName("itemAssignments")   val itemAssignments: Map<String, List<String>>? = null,
 )
 
 @Serializable

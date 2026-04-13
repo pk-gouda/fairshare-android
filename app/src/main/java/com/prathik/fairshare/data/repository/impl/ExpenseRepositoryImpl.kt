@@ -70,6 +70,7 @@ class ExpenseRepositoryImpl @Inject constructor(
         splitData: Map<String, Double>?,
         receiptId: String?,
         remainderPointer: Int?,
+        itemAssignments: Map<String, List<String>>?,
     ): ApiResult<Expense> =
         safeApiCall {
             expenseService.createExpense(
@@ -86,6 +87,7 @@ class ExpenseRepositoryImpl @Inject constructor(
                     splitData        = splitData,
                     receiptId        = receiptId,
                     remainderPointer = remainderPointer,
+                    itemAssignments  = itemAssignments,
                 )
             )
         }.mapSuccess { it.toDomain() }
