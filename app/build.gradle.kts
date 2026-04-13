@@ -112,6 +112,8 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
 
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+
     implementation(libs.androidx.security.crypto)
 
     implementation(libs.androidx.biometric)

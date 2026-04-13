@@ -1,7 +1,11 @@
 package com.prathik.fairshare.ui.expense
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -93,6 +97,7 @@ import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
 import com.prathik.fairshare.util.MoneyUtils
+import androidx.compose.ui.platform.LocalContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -133,9 +138,33 @@ fun AddExpenseScreen(
     var showDatePicker    by remember { mutableStateOf(false) }
     var showNoteField     by remember { mutableStateOf(notes.isNotBlank()) }
 
-    val receiptScanLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicturePreview()
-    ) { bitmap -> bitmap?.let { viewModel.scanReceipt(it) } }
+    val context = LocalContext.current
+
+    // GmsDocumentScanner — Google's native document scanning UI with auto crop + flatten
+    val scannerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
+            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data!!)
+            val imageUri = scanResult?.pages?.firstOrNull()?.imageUri
+            if (imageUri != null) viewModel.scanReceipt(context, imageUri)
+        }
+    }
+
+    fun launchScanner() {
+        val options = GmsDocumentScannerOptions.Builder()
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setPageLimit(1)
+            .build()
+        GmsDocumentScanning.getClient(options)
+            .getStartScanIntent(context as androidx.activity.ComponentActivity)
+            .addOnSuccessListener { intentSender ->
+                scannerLauncher.launch(
+                    androidx.activity.result.IntentSenderRequest.Builder(intentSender).build()
+                )
+            }
+    }
 
     LaunchedEffect(uiState) {
         when (val s = uiState) {
@@ -294,7 +323,7 @@ fun AddExpenseScreen(
                     .clip(RoundedCornerShape(Radius.xl))
                     .background(Surface0)
                     .border(1.dp, Green400.copy(alpha = 0.5f), RoundedCornerShape(Radius.xl))
-                    .clickable { receiptScanLauncher.launch(null) }
+                    .clickable { launchScanner() }
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,

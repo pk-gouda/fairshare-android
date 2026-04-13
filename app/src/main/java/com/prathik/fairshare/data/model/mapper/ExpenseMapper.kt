@@ -35,6 +35,17 @@ fun ExpenseResponse.toDomain(): Expense = Expense(
     yourBalance  = yourBalance,
     createdAt    = createdAt,
     updatedAt    = updatedAt,
+    receipt      = receipt?.toDomain(),
+)
+
+fun ExpenseResponse.ReceiptSummary.toDomain(): Expense.ReceiptSummary = Expense.ReceiptSummary(
+    receiptId      = receiptId,
+    imageUrl       = imageUrl,
+    merchantName   = merchantName,
+    totalAmount    = totalAmount,
+    scanConfidence = scanConfidence,
+    itemCount      = itemCount,
+    receiptDate    = receiptDate,
 )
 
 fun ExpenseResponse.PayerDetail.toDomain(): Expense.PayerDetail = Expense.PayerDetail(

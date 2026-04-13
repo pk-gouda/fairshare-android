@@ -275,16 +275,27 @@ fun GroupsHomeScreen(
                 )
 
                 is GroupsUiState.Success -> {
-                    val displayGroups = if (searchQuery.isBlank()) state.groups
-                    else state.groups.filter { it.name.contains(searchQuery, ignoreCase = true) }
+                    val allGroups    = state.groups
+                    val activeGroups = allGroups.filter { !it.isArchived }.let { list ->
+                        if (searchQuery.isBlank()) list
+                        else list.filter { it.name.contains(searchQuery, ignoreCase = true) }
+                    }
+                    val archivedGroups = allGroups.filter { it.isArchived }.let { list ->
+                        if (searchQuery.isBlank()) list
+                        else list.filter { it.name.contains(searchQuery, ignoreCase = true) }
+                    }
+                    val displayGroups = if (searchQuery.isBlank()) activeGroups
+                    else activeGroups + archivedGroups
 
-                    if (displayGroups.isEmpty() && searchQuery.isBlank()) {
+                    if (activeGroups.isEmpty() && archivedGroups.isEmpty() && searchQuery.isBlank()) {
                         // ── State 1: Empty ────────────────────────────────────
                         EmptyGroupsState(onAddGroup = { showAddGroupSheet = true })
                     } else {
                         // Compute total owed / owed-to-me for ring fill fractions
                         val totalOwed    = balanceSummary?.youOwe?.takeIf { it > 0 } ?: 1.0
                         val totalOwedMe  = balanceSummary?.owedToMe?.takeIf { it > 0 } ?: 1.0
+
+                        var showArchived by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
@@ -293,10 +304,11 @@ fun GroupsHomeScreen(
                                 start = Spacing.lg,
                                 end = Spacing.lg,
                                 top = Spacing.md,
-                                bottom = 100.dp, // FAB + nav clearance
+                                bottom = 100.dp,
                             ),
                         ) {
-                            items(items = displayGroups, key = { it.id }) { group ->
+                            // ── Active groups ─────────────────────────────────
+                            items(items = activeGroups, key = { it.id }) { group ->
                                 val balance = groupBalanceMap[group.id]
                                 val fraction: Float = when {
                                     balance == null || balance == 0.0 -> 0f
@@ -309,6 +321,44 @@ fun GroupsHomeScreen(
                                     fraction = fraction,
                                     onClick  = { onNavigateToGroup(group.id) },
                                 )
+                            }
+
+                            // ── Archived section header ───────────────────────
+                            if (archivedGroups.isNotEmpty()) {
+                                item {
+                                    androidx.compose.foundation.layout.Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { showArchived = !showArchived }
+                                            .padding(vertical = Spacing.sm),
+                                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                    ) {
+                                        androidx.compose.material3.Text(
+                                            text = if (showArchived) "▾" else "▸",
+                                            fontSize = 12.sp,
+                                            color = TextTertiary,
+                                        )
+                                        androidx.compose.material3.Text(
+                                            text = "Archived (${archivedGroups.size})",
+                                            fontSize = 12.sp,
+                                            color = TextTertiary,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                        )
+                                    }
+                                }
+
+                                // ── Archived group cards ──────────────────────
+                                if (showArchived) {
+                                    items(items = archivedGroups, key = { "archived_${it.id}" }) { group ->
+                                        GroupCard(
+                                            group    = group,
+                                            balance  = null,
+                                            fraction = 0f,
+                                            onClick  = { onNavigateToGroup(group.id) },
+                                        )
+                                    }
+                                }
                             }
 
                             // ── Add a group dashed card ───────────────────────

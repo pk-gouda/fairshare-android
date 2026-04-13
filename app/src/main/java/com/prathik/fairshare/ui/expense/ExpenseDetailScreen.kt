@@ -66,6 +66,7 @@ import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.util.MoneyUtils
+import coil.compose.AsyncImage
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -319,6 +320,53 @@ private fun ExpenseDetailContent(
                     modifier = Modifier.padding(horizontal = Spacing.lg)
                 )
                 MetaRow(icon = "📝", label = "Notes", value = expense.notes)
+            }
+
+            // ── Receipt image ──────────────────────────────────────────────────
+            expense.receipt?.imageUrl?.takeIf { it.isNotBlank() && !it.startsWith("pending") && !it.startsWith("s3-upload-failed") }?.let { imageUrl ->
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🧾", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(Spacing.sm))
+                        Text("Receipt", fontSize = 14.sp, color = TextSecondary,
+                            modifier = Modifier.weight(1f))
+                        expense.receipt.merchantName?.let {
+                            Text(it, fontSize = 13.sp,
+                                color = com.prathik.fairshare.ui.theme.TextTertiary)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                    var showFullImage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = "Receipt",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(Radius.lg))
+                            .clickable { showFullImage = true },
+                    )
+                    if (showFullImage) {
+                        androidx.compose.ui.window.Dialog(onDismissRequest = { showFullImage = false }) {
+                            AsyncImage(
+                                model = imageUrl,
+                                contentDescription = "Receipt full size",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(Radius.lg))
+                                    .clickable { showFullImage = false },
+                            )
+                        }
+                    }
+                }
             }
             HorizontalDivider(
                 color = Surface4, thickness = 0.5.dp,

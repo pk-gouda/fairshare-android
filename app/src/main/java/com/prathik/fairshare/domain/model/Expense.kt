@@ -27,7 +27,19 @@ data class Expense(
     val yourBalance: Double,
     val createdAt: String,
     val updatedAt: String,
+    val receipt: ReceiptSummary? = null,
 ) : Parcelable {
+
+    @Parcelize
+    data class ReceiptSummary(
+        val receiptId     : String,
+        val imageUrl      : String?,
+        val merchantName  : String?,
+        val totalAmount   : Double,
+        val scanConfidence: String?,
+        val itemCount     : Int?,
+        val receiptDate   : String?,
+    ) : Parcelable
 
     @Parcelize
     data class PayerDetail(

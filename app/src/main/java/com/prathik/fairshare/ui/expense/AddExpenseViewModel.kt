@@ -1,7 +1,5 @@
 package com.prathik.fairshare.ui.expense
 
-import android.graphics.Bitmap
-import android.util.Base64
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -23,7 +21,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
 import java.time.LocalDateTime
 import javax.inject.Inject
 
@@ -453,42 +450,54 @@ class AddExpenseViewModel @Inject constructor(
     // ── Receipt scan ──────────────────────────────────────────────────────────
 
     /**
-     * Scans a receipt bitmap — compresses to JPEG, base64 encodes,
-     * sends to backend Gemini AI, pre-fills form from result.
+     * Scans a receipt from a URI returned by GmsDocumentScanner.
+     * Compresses to max 1000px wide / JPEG 75% before sending (per handoff spec).
      */
-    fun scanReceipt(bitmap: Bitmap) {
+    fun scanReceipt(context: android.content.Context, uri: android.net.Uri) {
         viewModelScope.launch {
             _receiptState.value = ReceiptScanState.Scanning
 
-            val outputStream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
-            val base64 = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-
-            when (val result = scanReceiptUseCase(
-                imageBase64 = base64,
-                mimeType = "image/jpeg",
-                preferredCurrency = _currency.value,
-            )) {
-                is ApiResult.Success -> {
-                    val receipt = result.data
-                    scannedReceiptId = receipt.id
-                    receipt.merchantName?.let { _description.value = it }
-                    receipt.totalAmount.let { _amount.value = it.toString() }
-                    receipt.receiptDate?.let { _expenseDate.value = it }
-                    receipt.currency?.let { _currency.value = it }
-                    _receiptState.value = ReceiptScanState.Success(receipt)
-                    recalculateSplits()
+            try {
+                // Decode and compress
+                val inputStream = context.contentResolver.openInputStream(uri)
+                var bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                if (bitmap.width > 1000) {
+                    val ratio = 1000f / bitmap.width
+                    val h = (bitmap.height * ratio).toInt()
+                    bitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 1000, h, true)
                 }
+                val outputStream = java.io.ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, outputStream)
+                val base64 = android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.NO_WRAP)
 
-                is ApiResult.NetworkError -> {
-                    _receiptState.value = ReceiptScanState.Error("No internet connection.")
+                when (val result = scanReceiptUseCase(
+                    imageBase64 = base64,
+                    mimeType = "image/jpeg",
+                    preferredCurrency = _currency.value,
+                )) {
+                    is ApiResult.Success -> {
+                        val receipt = result.data
+                        scannedReceiptId = receipt.id
+                        receipt.merchantName?.let { _description.value = it }
+                        receipt.totalAmount.let { _amount.value = it.toString() }
+                        receipt.receiptDate?.let { date ->
+                            _expenseDate.value = if (date.length == 10) "${date}T00:00:00" else date
+                        }
+                        receipt.currency?.let { _currency.value = it }
+                        _receiptState.value = ReceiptScanState.Success(receipt)
+                        recalculateSplits()
+                    }
+                    is ApiResult.NetworkError -> {
+                        _receiptState.value = ReceiptScanState.Error("No internet connection.")
+                    }
+                    else -> {
+                        _receiptState.value = ReceiptScanState.Error(
+                            "Failed to scan receipt. Try again or enter manually."
+                        )
+                    }
                 }
-
-                else -> {
-                    _receiptState.value = ReceiptScanState.Error(
-                        "Failed to scan receipt. Try again or enter manually."
-                    )
-                }
+            } catch (e: Exception) {
+                _receiptState.value = ReceiptScanState.Error("Could not read image. Try again.")
             }
         }
     }
