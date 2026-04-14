@@ -79,6 +79,7 @@ fun SettleUpScreen(
     val otherUserName   by viewModel.otherUserName.collectAsState()
     val balanceAmount   by viewModel.balanceAmount.collectAsState()
     val balanceCurrency by viewModel.balanceCurrency.collectAsState()
+    val payerName       by viewModel.payerName.collectAsState()
     val snackbarHost    = remember { SnackbarHostState() }
     val scope           = rememberCoroutineScope()
     val context         = LocalContext.current
@@ -86,16 +87,35 @@ fun SettleUpScreen(
     val isLoading       = uiState is SettleUpUiState.Loading
     val biometricHelper = remember { BiometricHelper(context) }
 
-    // Direction: overridePayerId set → payer chosen manually ("More options")
-    // otherwise → derive from balance sign (positive = they owe you → they pay)
-    val payerIsOther = (viewModel.overridePayerId != null &&
-            viewModel.overridePayerId != viewModel.currentUserId) ||
-            (viewModel.overridePayerId == null && balanceAmount > 0)
+    // Direction logic:
+    // overridePayerId = null → derive from balance (positive = they owe you → they pay)
+    // overridePayerId = currentUserId → current user is payer
+    // overridePayerId = someone else → that person is the payer, otherUserId is recipient
+    val overridePayer = viewModel.overridePayerId
+    val currentUser   = viewModel.currentUserId
 
-    val fromName   = if (payerIsOther) otherUserName.ifBlank { "Friend" } else "You"
-    val fromUserId = if (payerIsOther) viewModel.otherUserId else ""
-    val toName     = if (payerIsOther) "You" else otherUserName.ifBlank { "Friend" }
-    val toUserId   = if (payerIsOther) "" else viewModel.otherUserId
+    val fromName = when {
+        overridePayer == null && balanceAmount > 0  -> otherUserName.ifBlank { "Friend" }
+        overridePayer == null                       -> "You"
+        overridePayer == currentUser                -> "You"
+        else                                        -> payerName.ifBlank { otherUserName.ifBlank { "Friend" } }
+    }
+    val fromUserId = when {
+        overridePayer == null && balanceAmount > 0  -> viewModel.otherUserId
+        overridePayer == null                       -> ""
+        overridePayer == currentUser                -> ""
+        else                                        -> overridePayer
+    }
+    val toName = when {
+        overridePayer == null && balanceAmount > 0  -> "You"
+        overridePayer == null                       -> otherUserName.ifBlank { "Friend" }
+        overridePayer == currentUser                -> otherUserName.ifBlank { "Friend" }
+        else                                        -> otherUserName.ifBlank { "Friend" }
+    }
+    val toUserId = when {
+        overridePayer == null && balanceAmount > 0  -> ""
+        else                                        -> viewModel.otherUserId
+    }
 
     // Amount to show as placeholder / default
     val defaultAmount = when {

@@ -45,6 +45,9 @@ class SettleUpViewModel @Inject constructor(
     private val _otherUserName = MutableStateFlow("")
     val otherUserName: StateFlow<String> = _otherUserName.asStateFlow()
 
+    private val _payerName = MutableStateFlow("")
+    val payerName: StateFlow<String> = _payerName.asStateFlow()
+
     /** Positive = they owe you. Negative = you owe them. */
     private val _balanceAmount = MutableStateFlow(0.0)
     val balanceAmount: StateFlow<Double> = _balanceAmount.asStateFlow()
@@ -98,6 +101,16 @@ class SettleUpViewModel @Inject constructor(
     }
 
     private suspend fun loadNameFromFriends() {
+        // Load payer name if override is set and payer is not current user
+        if (overridePayerId != null && overridePayerId != currentUserId) {
+            when (val friends = friendRepository.getFriends()) {
+                is ApiResult.Success -> {
+                    _payerName.value = friends.data.find { it.id == overridePayerId }?.fullName ?: ""
+                }
+                else -> Unit
+            }
+        }
+
         when (val friends = friendRepository.getFriends()) {
             is ApiResult.Success -> {
                 _otherUserName.value = friends.data.find { it.id == otherUserId }?.fullName ?: ""

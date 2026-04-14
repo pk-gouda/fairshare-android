@@ -1,6 +1,8 @@
 package com.prathik.fairshare.ui.expense
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -78,11 +80,8 @@ fun ItemAssignmentScreen(
     val isLoading   by viewModel.isLoading.collectAsState()
     val assignments by viewModel.assignments.collectAsState()
 
-    // Only load items if not already loaded — prevents clearing assignments on back navigation
     LaunchedEffect(receiptId) {
-        if (viewModel.items.value.isEmpty()) {
-            viewModel.loadItems(receiptId)
-        }
+        viewModel.loadItems(receiptId)
     }
 
     Scaffold(
@@ -276,10 +275,13 @@ private fun ItemAssignmentCard(
 
         Spacer(Modifier.height(Spacing.sm))
 
-        // Member chips
+        // Member chips — horizontally scrollable for groups with many members
+        val chipScrollState = rememberScrollState()
         Row(
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-            modifier              = Modifier.fillMaxWidth(),
+            modifier              = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(chipScrollState),
         ) {
             members.forEach { member ->
                 val isAssigned = member.userId in assigned
@@ -305,49 +307,57 @@ private fun MemberChip(
         .filter { it.isNotBlank() }
         .take(2)
         .joinToString("") { it.first().uppercase() }
+    val firstName = member.fullName.split(" ").firstOrNull() ?: initials
 
-    Box(
-        modifier          = Modifier.size(44.dp),
-        contentAlignment  = Alignment.Center,
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier            = Modifier
+            .clickable { onClick() }
+            .padding(horizontal = 2.dp),
     ) {
-        // Avatar circle — always shows initials
         Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(if (isAssigned) Green400.copy(alpha = 0.2f) else Surface3)
-                .border(
-                    width = 2.dp,
-                    color = if (isAssigned) Green400 else Surface4,
-                    shape = CircleShape,
-                )
-                .clickable { onClick() },
+            modifier         = Modifier.size(44.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text       = initials,
-                fontSize   = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color      = if (isAssigned) Green400 else TextSecondary,
-            )
-        }
-        // Small checkmark badge when selected
-        if (isAssigned) {
             Box(
                 modifier = Modifier
-                    .size(16.dp)
-                    .align(Alignment.BottomEnd)
+                    .size(40.dp)
                     .clip(CircleShape)
-                    .background(Green400),
+                    .background(if (isAssigned) Green400.copy(alpha = 0.2f) else Surface3)
+                    .border(2.dp, if (isAssigned) Green400 else Surface4, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector        = Icons.Outlined.Check,
-                    contentDescription = null,
-                    tint               = Color.Black,
-                    modifier           = Modifier.size(10.dp),
+                Text(
+                    text       = initials,
+                    fontSize   = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = if (isAssigned) Green400 else TextSecondary,
                 )
             }
+            if (isAssigned) {
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .align(Alignment.BottomEnd)
+                        .clip(CircleShape)
+                        .background(Green400),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector        = Icons.Outlined.Check,
+                        contentDescription = null,
+                        tint               = Color.Black,
+                        modifier           = Modifier.size(10.dp),
+                    )
+                }
+            }
         }
+        Text(
+            text       = firstName,
+            fontSize   = 10.sp,
+            color      = if (isAssigned) Green400 else TextSecondary,
+            fontWeight = if (isAssigned) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines   = 1,
+        )
     }
 }
