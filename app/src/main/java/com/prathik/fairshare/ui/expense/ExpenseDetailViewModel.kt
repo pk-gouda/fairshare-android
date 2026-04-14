@@ -4,8 +4,12 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.network.api.ExpenseApiService
+import com.prathik.fairshare.data.network.safeApiCall
+import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Expense
+import com.prathik.fairshare.domain.model.ExpenseItem
 import com.prathik.fairshare.domain.usecase.expense.DeleteExpenseUseCase
 import com.prathik.fairshare.domain.usecase.expense.GetExpenseUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,13 +21,14 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ExpenseDetailViewModel @Inject constructor(
-    private val getExpenseUseCase: GetExpenseUseCase,
-    private val deleteExpenseUseCase: DeleteExpenseUseCase,
-    private val tokenStore: EncryptedTokenStore,
-    savedStateHandle: SavedStateHandle,
+    private val getExpenseUseCase    : GetExpenseUseCase,
+    private val deleteExpenseUseCase : DeleteExpenseUseCase,
+    private val expenseApiService    : ExpenseApiService,
+    private val tokenStore           : EncryptedTokenStore,
+    savedStateHandle                 : SavedStateHandle,
 ) : ViewModel() {
 
-    val expenseId: String = savedStateHandle.get<String>("expenseId") ?: ""
+    val expenseId    : String  = savedStateHandle.get<String>("expenseId") ?: ""
     val currentUserId: String? = tokenStore.getUserId()
 
     private val _expenseState = MutableStateFlow<ExpenseDetailUiState>(ExpenseDetailUiState.Loading)
@@ -32,35 +37,47 @@ class ExpenseDetailViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<ExpenseActionState>(ExpenseActionState.Idle)
     val actionState: StateFlow<ExpenseActionState> = _actionState.asStateFlow()
 
-    init {
-        loadExpense()
-    }
+    private val _items = MutableStateFlow<List<ExpenseItem>>(emptyList())
+    val items: StateFlow<List<ExpenseItem>> = _items.asStateFlow()
+
+    private val _itemsLoading = MutableStateFlow(false)
+    val itemsLoading: StateFlow<Boolean> = _itemsLoading.asStateFlow()
+
+    init { loadExpense() }
 
     private var hasLoadedOnce = false
 
     fun loadExpense() {
         viewModelScope.launch {
-            // Only show loading spinner on first load — subsequent refreshes are silent
-            if (!hasLoadedOnce) {
-                _expenseState.value = ExpenseDetailUiState.Loading
-            }
+            if (!hasLoadedOnce) _expenseState.value = ExpenseDetailUiState.Loading
             when (val result = getExpenseUseCase(expenseId)) {
                 is ApiResult.Success -> {
                     _expenseState.value = ExpenseDetailUiState.Success(result.data)
                     hasLoadedOnce = true
+                    // Always load items — itemCount may be 0 due to lazy loading on backend
+                    if (_items.value.isEmpty()) {
+                        loadItems()
+                    }
                 }
                 is ApiResult.NotFound -> _expenseState.value = ExpenseDetailUiState.Deleted
                 is ApiResult.NetworkError -> {
-                    if (!hasLoadedOnce) {
-                        _expenseState.value = ExpenseDetailUiState.Error("No internet connection.", true)
-                    }
+                    if (!hasLoadedOnce) _expenseState.value = ExpenseDetailUiState.Error("No internet connection.", true)
                 }
                 else -> {
-                    if (!hasLoadedOnce) {
-                        _expenseState.value = ExpenseDetailUiState.Error("Failed to load expense.", false)
-                    }
+                    if (!hasLoadedOnce) _expenseState.value = ExpenseDetailUiState.Error("Failed to load expense.", false)
                 }
             }
+        }
+    }
+
+    fun loadItems() {
+        viewModelScope.launch {
+            _itemsLoading.value = true
+            val result = safeApiCall { expenseApiService.getExpenseItems(expenseId) }
+            if (result is ApiResult.Success) {
+                _items.value = result.data.map { it.toDomain() }
+            }
+            _itemsLoading.value = false
         }
     }
 
@@ -68,18 +85,14 @@ class ExpenseDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _actionState.value = ExpenseActionState.Loading
             when (val result = deleteExpenseUseCase(expenseId)) {
-                is ApiResult.Success -> _actionState.value = ExpenseActionState.Deleted
-                is ApiResult.NetworkError -> _actionState.value =
-                    ExpenseActionState.Error("No internet connection.")
-
-                else -> _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
+                is ApiResult.Success    -> _actionState.value = ExpenseActionState.Deleted
+                is ApiResult.NetworkError -> _actionState.value = ExpenseActionState.Error("No internet connection.")
+                else                    -> _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
             }
         }
     }
 
-    fun resetActionState() {
-        _actionState.value = ExpenseActionState.Idle
-    }
+    fun resetActionState() { _actionState.value = ExpenseActionState.Idle }
 }
 
 sealed class ExpenseDetailUiState {
@@ -90,7 +103,7 @@ sealed class ExpenseDetailUiState {
 }
 
 sealed class ExpenseActionState {
-    object Idle : ExpenseActionState()
+    object Idle    : ExpenseActionState()
     object Loading : ExpenseActionState()
     object Deleted : ExpenseActionState()
     data class Error(val message: String) : ExpenseActionState()

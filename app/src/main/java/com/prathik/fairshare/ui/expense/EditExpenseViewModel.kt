@@ -82,6 +82,9 @@ class EditExpenseViewModel @Inject constructor(
     private val _notes = MutableStateFlow("")
     val notes: StateFlow<String> = _notes.asStateFlow()
 
+    private val _itemCount = MutableStateFlow(0)
+    val itemCount: StateFlow<Int> = _itemCount.asStateFlow()
+
     private val _expenseDate = MutableStateFlow(LocalDateTime.now().toString())
     val expenseDate: StateFlow<String> = _expenseDate.asStateFlow()
 
@@ -151,6 +154,7 @@ class EditExpenseViewModel @Inject constructor(
 
         // Split data — from expense.splits
         _splitData.value = expense.splits.associate { it.userId to it.amountOwed }
+        _itemCount.value = expense.itemCount
     }
 
     /**
@@ -228,7 +232,23 @@ class EditExpenseViewModel @Inject constructor(
     }
 
     fun onSplitTypeChanged(value: SplitType) {
+        val previousType = _splitType.value
         _splitType.value = value
+
+        // Clear splitData when switching between incompatible types
+        // so stale amounts/percentages/shares don't bleed across
+        if (previousType != value) {
+            val wasEqual = previousType == SplitType.EQUAL
+            val isNowNonEqual = value != SplitType.EQUAL
+            if (wasEqual && isNowNonEqual) {
+                // Clear equal dollar amounts — they're meaningless as % or shares
+                _splitData.value = emptyMap()
+            } else if (!wasEqual && isNowNonEqual && previousType != value) {
+                // Switching between non-equal types (e.g. % → shares) — also clear
+                _splitData.value = emptyMap()
+            }
+        }
+
         recalculateSplits()
     }
 

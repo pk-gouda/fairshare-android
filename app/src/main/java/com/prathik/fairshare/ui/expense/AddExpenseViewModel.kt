@@ -247,7 +247,20 @@ class AddExpenseViewModel @Inject constructor(
     }
 
     fun onSplitTypeChanged(value: SplitType) {
+        val previous = _splitType.value
         _splitType.value = value
+
+        // Clear stale splitData when switching types so old amounts don't bleed through
+        if (previous != value) {
+            if (previous == SplitType.EQUAL && value != SplitType.EQUAL) {
+                // Equal dollar amounts are meaningless as %, shares, or exact amounts
+                _splitData.value = emptyMap()
+            } else if (previous != SplitType.EQUAL && value != SplitType.EQUAL) {
+                // Switching between non-equal types (e.g. % → shares) — also clear
+                _splitData.value = emptyMap()
+            }
+        }
+
         recalculateSplits()
     }
 
@@ -536,7 +549,8 @@ class AddExpenseViewModel @Inject constructor(
         if (_payerData.value.isEmpty()) {
             _uiState.value = AddExpenseUiState.Error("Please select who paid."); return
         }
-        if (_splitData.value.isEmpty()) {
+        // Skip splitData check when itemAssignments present — backend computes splits from items
+        if (_splitData.value.isEmpty() && _itemAssignments.value.isEmpty()) {
             _uiState.value = AddExpenseUiState.Error("Please set how to split."); return
         }
 

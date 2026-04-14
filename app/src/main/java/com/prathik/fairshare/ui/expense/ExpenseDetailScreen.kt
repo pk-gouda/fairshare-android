@@ -17,12 +17,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Notes
+import com.prathik.fairshare.ui.theme.TextTertiary
+import androidx.compose.material.icons.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -92,8 +97,10 @@ fun ExpenseDetailScreen(
     onDeleted: () -> Unit,
     viewModel: ExpenseDetailViewModel = hiltViewModel(),
 ) {
-    val expenseState by viewModel.expenseState.collectAsState()
-    val actionState by viewModel.actionState.collectAsState()
+    val expenseState  by viewModel.expenseState.collectAsState()
+    val actionState   by viewModel.actionState.collectAsState()
+    val items         by viewModel.items.collectAsState()
+    val itemsLoading  by viewModel.itemsLoading.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -170,6 +177,7 @@ fun ExpenseDetailScreen(
                 is ExpenseDetailUiState.Success -> ExpenseDetailContent(
                     expense = state.expense,
                     currentUserId = viewModel.currentUserId,
+                    items = items,
                     onSettle = { onNavigateToSettle(it) },
                     isDeleting = actionState is ExpenseActionState.Loading,
                 )
@@ -204,11 +212,13 @@ fun ExpenseDetailScreen(
 
 @Composable
 private fun ExpenseDetailContent(
-    expense: Expense,
-    currentUserId: String?,
-    onSettle: (String) -> Unit,
-    isDeleting: Boolean,
+    expense       : Expense,
+    currentUserId : String?,
+    items         : List<com.prathik.fairshare.domain.model.ExpenseItem>,
+    onSettle      : (String) -> Unit,
+    isDeleting    : Boolean,
 ) {
+    var showItemBreakdown by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -507,6 +517,110 @@ private fun ExpenseDetailContent(
                         color = Surface4, thickness = 0.5.dp,
                         modifier = Modifier.padding(horizontal = Spacing.lg)
                     )
+                }
+            }
+        }
+
+
+        // ── Item breakdown (expandable) ───────────────────────────────────────
+        if (items.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(Spacing.lg))
+
+            // Tap to expand row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .clip(RoundedCornerShape(Radius.xl))
+                    .background(Surface2)
+                    .clickable { showItemBreakdown = !showItemBreakdown }
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector        = Icons.Outlined.ReceiptLong,
+                        contentDescription = null,
+                        tint               = Green400,
+                        modifier           = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.sm))
+                    Text(
+                        text       = "View item breakdown",
+                        fontSize   = 14.sp,
+                        color      = Green400,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                Icon(
+                    imageVector        = if (showItemBreakdown) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint               = Green400,
+                    modifier           = Modifier.size(18.dp),
+                )
+            }
+
+            // Expanded item list
+            if (showItemBreakdown) {
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg)
+                        .clip(RoundedCornerShape(Radius.xl))
+                        .background(Surface2),
+                ) {
+                    items.forEachIndexed { index, item ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        ) {
+                            Row(
+                                modifier              = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment     = Alignment.Top,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text       = item.name,
+                                        fontSize   = 14.sp,
+                                        color      = TextPrimary,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    item.quantity?.let { qty ->
+                                        if (qty > 1) Text("×$qty", fontSize = 12.sp, color = TextTertiary)
+                                    }
+                                }
+                                Text(
+                                    text       = MoneyUtils.format(item.totalPrice, expense.currency),
+                                    fontSize   = 14.sp,
+                                    color      = TextPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            // Assigned members
+                            if (item.assignedTo.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val assignedNames = item.assignedTo.map { assigned ->
+                                    if (assigned.userId == currentUserId) "You" else assigned.fullName.split(" ").first()
+                                }
+                                Text(
+                                    text     = assignedNames.joinToString(", "),
+                                    fontSize = 12.sp,
+                                    color    = Green400,
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Split equally among all", fontSize = 12.sp, color = TextTertiary)
+                            }
+                        }
+                        if (index < items.lastIndex) {
+                            HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                                modifier = Modifier.padding(horizontal = Spacing.lg))
+                        }
+                    }
                 }
             }
         }

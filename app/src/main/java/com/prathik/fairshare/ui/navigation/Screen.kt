@@ -95,6 +95,10 @@ sealed class Screen(val route: String) {
 
     object ReviewSubmit : Screen("review_submit")
 
+    object EditItemAssignment : Screen("edit_items/{expenseId}") {
+        fun route(expenseId: String) = "edit_items/$expenseId"
+    }
+
     // ── Settlement ────────────────────────────────────────────────────────────
     object SettleUp : Screen("settle/{otherUserId}?groupId={groupId}&payerId={payerId}") {
         fun route(otherUserId: String, groupId: String? = null, payerId: String? = null) =

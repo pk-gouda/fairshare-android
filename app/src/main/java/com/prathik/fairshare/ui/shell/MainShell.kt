@@ -55,6 +55,7 @@ import androidx.navigation.navArgument
 import com.prathik.fairshare.ui.expense.AddExpenseScreen
 import com.prathik.fairshare.ui.expense.ItemAssignmentScreen
 import com.prathik.fairshare.ui.expense.ItemAssignmentViewModel
+import com.prathik.fairshare.ui.expense.SaveState
 import com.prathik.fairshare.ui.expense.ReviewSubmitScreen
 import com.prathik.fairshare.ui.groups.GroupBalancesScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
@@ -655,12 +656,16 @@ fun MainShell(
             composable(
                 route = Screen.EditExpense.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
-            ) {
+            ) { backStackEntry ->
+                val expenseId = backStackEntry.arguments?.getString("expenseId") ?: ""
                 EditExpenseScreen(
                     onBack = { shellNavController.popBackStack() },
                     onSuccess = { shellNavController.popBackStack() },
                     onNavigateToCurrency = {
                         shellNavController.navigate(Screen.CurrencySelect.route)
+                    },
+                    onNavigateToEditItems = {
+                        shellNavController.navigate(Screen.EditItemAssignment.route(expenseId))
                     },
                 )
             }
@@ -694,7 +699,8 @@ fun MainShell(
                 val parentEntry = remember(backStackEntry) {
                     shellNavController.getBackStackEntry(Screen.AddExpense.route)
                 }
-                val addExpenseViewModel = hiltViewModel<AddExpenseViewModel>(parentEntry)
+                val addExpenseViewModel  = hiltViewModel<AddExpenseViewModel>(parentEntry)
+                val itemAssignViewModel  = hiltViewModel<ItemAssignmentViewModel>()
                 val members by addExpenseViewModel.members.collectAsState()
                 val currency by addExpenseViewModel.currency.collectAsState()
                 ItemAssignmentScreen(
@@ -753,6 +759,45 @@ fun MainShell(
                         shellNavController.popBackStack(Screen.AddExpense.route, inclusive = true)
                     }
                 }
+            }
+            composable(
+                route = Screen.EditItemAssignment.route,
+                arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val expenseId = backStackEntry.arguments?.getString("expenseId") ?: return@composable
+                val editExpenseEntry = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.EditExpense.route)
+                }
+                val editExpenseViewModel = hiltViewModel<EditExpenseViewModel>(editExpenseEntry)
+                val itemAssignViewModel  = hiltViewModel<ItemAssignmentViewModel>()
+                val members  by editExpenseViewModel.members.collectAsState()
+                val currency by editExpenseViewModel.currency.collectAsState()
+                val items       by itemAssignViewModel.items.collectAsState()
+                val assignments by itemAssignViewModel.assignments.collectAsState()
+                val saveState   by itemAssignViewModel.saveState.collectAsState()
+
+                androidx.compose.runtime.LaunchedEffect(expenseId) {
+                    itemAssignViewModel.loadItemsForExpense(expenseId)
+                }
+
+                androidx.compose.runtime.LaunchedEffect(saveState) {
+                    if (saveState is SaveState.Success) {
+                        itemAssignViewModel.resetSaveState()
+                        shellNavController.popBackStack()
+                    }
+                }
+
+                ItemAssignmentScreen(
+                    receiptId          = "",  // not used in edit mode
+                    members            = members,
+                    currency           = currency,
+                    onBack             = { shellNavController.popBackStack() },
+                    onDone             = { assignments ->
+                        itemAssignViewModel.setAssignmentsFromMap(assignments)
+                        itemAssignViewModel.saveAssignments(expenseId)
+                    },
+                    onNavigateToReview = {},  // no review step in edit mode
+                )
             }
 
             // ── Settlement screens ────────────────────────────────────────────

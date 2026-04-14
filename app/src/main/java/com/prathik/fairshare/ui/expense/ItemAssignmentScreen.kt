@@ -78,8 +78,11 @@ fun ItemAssignmentScreen(
     val isLoading   by viewModel.isLoading.collectAsState()
     val assignments by viewModel.assignments.collectAsState()
 
+    // Only load items if not already loaded — prevents clearing assignments on back navigation
     LaunchedEffect(receiptId) {
-        viewModel.loadItems(receiptId)
+        if (viewModel.items.value.isEmpty()) {
+            viewModel.loadItems(receiptId)
+        }
     }
 
     Scaffold(
@@ -304,32 +307,47 @@ private fun MemberChip(
         .joinToString("") { it.first().uppercase() }
 
     Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(if (isAssigned) Green400 else Surface3)
-            .border(
-                width = if (isAssigned) 0.dp else 1.dp,
-                color = if (isAssigned) Color.Transparent else Surface4,
-                shape = CircleShape,
-            )
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
+        modifier          = Modifier.size(44.dp),
+        contentAlignment  = Alignment.Center,
     ) {
-        if (isAssigned) {
-            Icon(
-                imageVector        = Icons.Outlined.Check,
-                contentDescription = "Assigned",
-                tint               = Color.Black,
-                modifier           = Modifier.size(18.dp),
-            )
-        } else {
+        // Avatar circle — always shows initials
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(if (isAssigned) Green400.copy(alpha = 0.2f) else Surface3)
+                .border(
+                    width = 2.dp,
+                    color = if (isAssigned) Green400 else Surface4,
+                    shape = CircleShape,
+                )
+                .clickable { onClick() },
+            contentAlignment = Alignment.Center,
+        ) {
             Text(
                 text       = initials,
                 fontSize   = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color      = TextSecondary,
+                color      = if (isAssigned) Green400 else TextSecondary,
             )
+        }
+        // Small checkmark badge when selected
+        if (isAssigned) {
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(Green400),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector        = Icons.Outlined.Check,
+                    contentDescription = null,
+                    tint               = Color.Black,
+                    modifier           = Modifier.size(10.dp),
+                )
+            }
         }
     }
 }
