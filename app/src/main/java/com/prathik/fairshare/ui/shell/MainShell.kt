@@ -410,8 +410,8 @@ fun MainShell(
                     onNavigateToAddMember = { gId ->
                         shellNavController.navigate(Screen.AddMember.route(gId))
                     },
-                    onNavigateToSettle = { otherUserId, payerId ->
-                        shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId, payerId))
+                    onNavigateToSettle = { otherUserId, payerId, payerName ->
+                        shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId, payerId, payerName))
                     },
                     onNavigateToSettlement = { settlementId ->
                         shellNavController.navigate(Screen.SettlementDetail.route(settlementId))
@@ -815,6 +815,11 @@ fun MainShell(
                         nullable = true
                         defaultValue = null
                     },
+                    navArgument("payerName") {
+                        type         = NavType.StringType
+                        nullable     = true
+                        defaultValue = null
+                    },
                 )
             ) {
                 SettleUpScreen(
@@ -886,8 +891,8 @@ fun MainShell(
                         )
                     },
                     onNavigateToAddExpense = { shellNavController.navigate(Screen.AddExpense.route(friendId = friendId)) },
-                    onNavigateToSettle = { fId, gId, payerId ->
-                        shellNavController.navigate(Screen.SettleUp.route(fId, gId, payerId))
+                    onNavigateToSettle = { fId, gId, payerId, payerName ->
+                        shellNavController.navigate(Screen.SettleUp.route(fId, gId, payerId, payerName))
                     },
                     onNavigateToSearch = {
                         shellNavController.navigate(Screen.Search.route())

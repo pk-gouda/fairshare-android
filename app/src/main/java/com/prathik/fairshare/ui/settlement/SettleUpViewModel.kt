@@ -27,7 +27,8 @@ class SettleUpViewModel @Inject constructor(
 
     val otherUserId    : String  = savedStateHandle.get<String>("otherUserId") ?: ""
     val groupId        : String? = savedStateHandle.get<String>("groupId")?.takeIf { it.isNotBlank() }
-    val overridePayerId: String? = savedStateHandle.get<String>("payerId")?.takeIf { it.isNotBlank() }
+    val overridePayerId  : String? = savedStateHandle.get<String>("payerId")?.takeIf { it.isNotBlank() }
+    val overridePayerName: String? = savedStateHandle.get<String>("payerName")?.takeIf { it.isNotBlank() }
     val currentUserId  : String? = tokenStore.getUserId()
 
     private val _notes = MutableStateFlow("")
@@ -56,6 +57,10 @@ class SettleUpViewModel @Inject constructor(
     val balanceCurrency: StateFlow<String> = _balanceCurrency.asStateFlow()
 
     init {
+        // Pre-populate payer name immediately from nav arg — no async needed
+        if (overridePayerName != null) _payerName.value = overridePayerName
+        // When direction is manually overridden, start with 0.00 immediately
+        if (overridePayerId != null) _balanceAmount.value = 0.0
         loadBalance()
     }
 
@@ -75,45 +80,44 @@ class SettleUpViewModel @Inject constructor(
                 when (val result = balanceRepository.getBreakdownWithUser(otherUserId)) {
                     is ApiResult.Success -> {
                         val scoped = result.data.filter { it.groupId == groupId }
-                        _balanceAmount.value   = scoped.sumOf { it.amount }
+                        if (overridePayerId == null) _balanceAmount.value = scoped.sumOf { it.amount }
                         _balanceCurrency.value = scoped.firstOrNull()?.currency
                             ?: tokenStore.getPreferredCurrency()
                         val name = scoped.firstOrNull()?.otherUserName
                         if (!name.isNullOrBlank()) _otherUserName.value = name
-                        else loadNameFromFriends()
                     }
-                    else -> loadNameFromFriends()
+                    else -> Unit
                 }
             } else {
                 when (val result = balanceRepository.getNetBalanceWithUser(otherUserId)) {
                     is ApiResult.Success -> {
-                        _balanceAmount.value   = result.data.sumOf { it.amount }
+                        if (overridePayerId == null) _balanceAmount.value = result.data.sumOf { it.amount }
                         _balanceCurrency.value = result.data.firstOrNull()?.currency
                             ?: tokenStore.getPreferredCurrency()
                         val name = result.data.firstOrNull()?.otherUserName
                         if (!name.isNullOrBlank()) _otherUserName.value = name
-                        else loadNameFromFriends()
                     }
-                    else -> loadNameFromFriends()
+                    else -> Unit
                 }
             }
+            // Always load names from friends cache — covers payer name and
+            // fills otherUserName if balance API didn't return it
+            loadNamesFromFriends()
         }
     }
 
-    private suspend fun loadNameFromFriends() {
-        // Load payer name if override is set and payer is not current user
-        if (overridePayerId != null && overridePayerId != currentUserId) {
-            when (val friends = friendRepository.getFriends()) {
-                is ApiResult.Success -> {
-                    _payerName.value = friends.data.find { it.id == overridePayerId }?.fullName ?: ""
-                }
-                else -> Unit
-            }
-        }
-
+    private suspend fun loadNamesFromFriends() {
         when (val friends = friendRepository.getFriends()) {
             is ApiResult.Success -> {
-                _otherUserName.value = friends.data.find { it.id == otherUserId }?.fullName ?: ""
+                // Always load otherUserName (fills in if balance didn't return it)
+                val otherName = friends.data.find { it.id == otherUserId }?.fullName
+                if (!otherName.isNullOrBlank()) _otherUserName.value = otherName
+
+                // Always load payerName when override is a different user
+                if (overridePayerId != null && overridePayerId != currentUserId) {
+                    val pName = friends.data.find { it.id == overridePayerId }?.fullName
+                    if (!pName.isNullOrBlank()) _payerName.value = pName
+                }
             }
             else -> Unit
         }

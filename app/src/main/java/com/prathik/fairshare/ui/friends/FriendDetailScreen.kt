@@ -132,7 +132,7 @@ fun FriendDetailScreen(
     onNavigateToSettings  : () -> Unit,
     onNavigateToExpense   : (String) -> Unit,
     onNavigateToAddExpense: () -> Unit,
-    onNavigateToSettle    : (friendId: String, groupId: String?, payerId: String?) -> Unit,
+    onNavigateToSettle    : (friendId: String, groupId: String?, payerId: String?, payerName: String?) -> Unit,
     onNavigateToSearch    : () -> Unit,
     onNavigateToSettlement: (String) -> Unit = {},
     onNavigateToGroup     : (String) -> Unit = {},
@@ -497,7 +497,7 @@ fun FriendDetailScreen(
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
-                            .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null) }
+                            .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null, null) }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -522,7 +522,7 @@ fun FriendDetailScreen(
                         Row(
                             modifier          = Modifier
                                 .fillMaxWidth()
-                                .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, balance.groupId, null) }
+                                .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, balance.groupId, null, null) }
                                 .padding(horizontal = Spacing.lg, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -548,7 +548,7 @@ fun FriendDetailScreen(
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
-                            .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null) }
+                            .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null, null) }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -592,7 +592,7 @@ fun FriendDetailScreen(
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
-                            .clickable { showPayerSheet = false; onNavigateToSettle(viewModel.friendId, null, userId) }
+                            .clickable { showPayerSheet = false; onNavigateToSettle(viewModel.friendId, null, userId, name) }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

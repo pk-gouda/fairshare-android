@@ -98,7 +98,7 @@ fun SettleUpScreen(
         overridePayer == null && balanceAmount > 0  -> otherUserName.ifBlank { "Friend" }
         overridePayer == null                       -> "You"
         overridePayer == currentUser                -> "You"
-        else                                        -> payerName.ifBlank { otherUserName.ifBlank { "Friend" } }
+        else                                        -> payerName.ifBlank { "..." }
     }
     val fromUserId = when {
         overridePayer == null && balanceAmount > 0  -> viewModel.otherUserId
