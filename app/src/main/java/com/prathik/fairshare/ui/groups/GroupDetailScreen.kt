@@ -276,11 +276,15 @@ fun GroupDetailScreen(
                         val group = state.group
 
                         // Derive group state
-                        val hasActivity = (expensesState is ExpensesUiState.Success &&
-                                (expensesState as ExpensesUiState.Success).expenses.isNotEmpty()) ||
-                                settlements.isNotEmpty()
+                        // ✅ Fix 2: guard against expensesState still Loading — without this,
+                        // hasActivity is false while expenses are in-flight, causing the sticky
+                        // bar to flash "No expenses yet" on every cold open before data arrives.
+                        val hasActivity = expensesState is ExpensesUiState.Success &&
+                                ((expensesState as ExpensesUiState.Success).expenses.isNotEmpty() ||
+                                        settlements.isNotEmpty())
 
                         val groupUiState: GroupUiState = when {
+                            expensesState is ExpensesUiState.Loading -> GroupUiState.NEW_GROUP // neutral while loading
                             group.memberCount <= 1                   -> GroupUiState.SOLO
                             !hasActivity                             -> GroupUiState.NEW_GROUP
                             yourBalance == 0.0                       -> GroupUiState.ALL_SETTLED
@@ -747,7 +751,7 @@ private fun GroupCoverHeader(
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF232A34))
-                        .clickable { },
+                        .clickable(onClick = onSettingsClick),
                 ) {
                     if (groupUiState == GroupUiState.ALL_SETTLED) {
                         Canvas(modifier = Modifier.size(28.dp)) {

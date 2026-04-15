@@ -167,10 +167,30 @@ fun MainShell(
         if (index >= 0) selectedTabIndex = index
     }
 
+    // Routes where bottom nav should be hidden (modal screens)
+    // Hide bottom nav on modal screens — check exact static prefixes
+    val showBottomBar = when {
+        currentRoute == null -> true
+        currentRoute.startsWith("add_expense") -> false
+        currentRoute.startsWith("expense/") && currentRoute.endsWith("/edit") -> false
+        currentRoute.startsWith("settle/") -> false
+        currentRoute.startsWith("item_assignment/") -> false
+        currentRoute.startsWith("edit_items/") -> false
+        currentRoute == "review_submit" -> false
+        currentRoute.startsWith("create_group") -> false
+        currentRoute == "add_friend" -> false
+        currentRoute == "add_friend_email" -> false
+        currentRoute.startsWith("group/") && currentRoute.endsWith("/add_member") -> false
+        currentRoute.startsWith("group/") && currentRoute.endsWith("/reminders/create") -> false
+        currentRoute == "currency_select" -> false
+        currentRoute == "scan_qr_code" -> false
+        else -> true
+    }
+
     Scaffold(
         containerColor = Surface0,
         bottomBar = {
-            Box {
+            if (showBottomBar) Box {
                 NavigationBar(
                     containerColor = Surface1,
                     tonalElevation = androidx.compose.ui.unit.Dp.Unspecified,
@@ -813,11 +833,6 @@ fun MainShell(
                     navArgument("payerId") {
                         type = NavType.StringType
                         nullable = true
-                        defaultValue = null
-                    },
-                    navArgument("payerName") {
-                        type         = NavType.StringType
-                        nullable     = true
                         defaultValue = null
                     },
                 )

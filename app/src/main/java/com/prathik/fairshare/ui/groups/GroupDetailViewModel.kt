@@ -55,6 +55,11 @@ class GroupDetailViewModel @Inject constructor(
     private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
     val members: StateFlow<List<GroupMember>> = _members.asStateFlow()
 
+    // ✅ Fix 1: guard flag so refreshExpenses() skips if loadData() hasn't finished yet.
+    // This prevents the RESUMED lifecycle trigger from firing 3 extra requests
+    // at the same time as the 5 requests already in-flight from init { loadData() }.
+    private var initialLoadDone = false
+
     init { loadData() }
 
     fun loadData() {
@@ -111,10 +116,17 @@ class GroupDetailViewModel @Inject constructor(
                 is ApiResult.Success -> _members.value = result.data
                 else -> Unit
             }
+
+            // ✅ Fix 1: mark initial load complete so RESUMED refreshes are now allowed
+            initialLoadDone = true
         }
     }
 
     fun refreshExpenses() {
+        // ✅ Fix 1: skip if loadData() is still in-flight — avoids 8 simultaneous
+        // requests on cold start (5 from loadData + 3 from RESUMED trigger)
+        if (!initialLoadDone) return
+
         viewModelScope.launch {
             val expensesDeferred    = async { getGroupExpensesUseCase(groupId) }
             val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
@@ -146,8 +158,12 @@ class GroupDetailViewModel @Inject constructor(
             _settlementActionState.value = SettlementActionState.Loading
             when (val result = settlementRepository.deleteSettlement(settlementId)) {
                 is ApiResult.Success -> {
+                    // ✅ Fix 3: removed loadData() here — calling loadData() triggered
+                    // another RESUMED refresh immediately after, causing a double load.
+                    // Instead: filter local state instantly (no flicker) then do a
+                    // lightweight refreshExpenses() to sync balances from the server.
                     _settlements.value = _settlements.value.filter { it.id != settlementId }
-                    loadData()
+                    refreshExpenses()
                     _settlementActionState.value = SettlementActionState.Deleted
                 }
                 is ApiResult.NetworkError -> _settlementActionState.value =
