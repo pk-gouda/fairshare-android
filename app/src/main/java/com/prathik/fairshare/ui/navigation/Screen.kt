@@ -17,7 +17,8 @@ sealed class Screen(val route: String) {
     object Login : Screen("login")
     object Register : Screen("register")
     object VerifyEmail : Screen("verify_email?email={email}") {
-        fun route(email: String) = "verify_email?email=$email"
+        fun route(email: String? = null) =
+            if (email != null) "verify_email?email=$email" else "verify_email"
     }
 
     object ForgotPassword : Screen("forgot_password")

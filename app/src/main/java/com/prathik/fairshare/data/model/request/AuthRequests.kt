@@ -44,3 +44,11 @@ data class ChangePasswordRequest(
     @SerialName("currentPassword") val currentPassword: String,
     @SerialName("newPassword")     val newPassword: String,
 )
+
+// ✅ M2: userId + token sent in POST body, not query params.
+// Matches POST /api/auth/verify-email on the backend.
+@Serializable
+data class VerifyEmailRequest(
+    @SerialName("userId") val userId: String,
+    @SerialName("token")  val token: String,
+)

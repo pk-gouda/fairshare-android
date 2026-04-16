@@ -5,23 +5,22 @@ import com.prathik.fairshare.data.model.request.ForgotPasswordRequest
 import com.prathik.fairshare.data.model.request.LoginRequest
 import com.prathik.fairshare.data.model.request.RegisterRequest
 import com.prathik.fairshare.data.model.request.ResetPasswordRequest
+import com.prathik.fairshare.data.model.request.VerifyEmailRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.AuthResponse
 import com.prathik.fairshare.data.model.response.UserResponse
 import retrofit2.http.Body
 import retrofit2.http.POST
-import retrofit2.http.Query
 
 interface AuthApiService {
 
     @POST("api/auth/register")
     suspend fun register(@Body request: RegisterRequest): ApiResponse<UserResponse>
 
+    // ✅ M2: changed from @Query params to @Body so the token is never
+    // logged by Nginx access logs, browser history, or Referer headers.
     @POST("api/auth/verify-email")
-    suspend fun verifyEmail(
-        @Query("userId") userId: String,
-        @Query("token") token: String,
-    ): ApiResponse<Unit>
+    suspend fun verifyEmail(@Body request: VerifyEmailRequest): ApiResponse<Unit>
 
     @POST("api/auth/login")
     suspend fun login(@Body request: LoginRequest): ApiResponse<AuthResponse>

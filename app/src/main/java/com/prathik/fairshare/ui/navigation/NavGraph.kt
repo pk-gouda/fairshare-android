@@ -8,26 +8,28 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import com.prathik.fairshare.MainActivity.Companion.extractVerifyDeepLink
+import com.prathik.fairshare.VerifyDeepLink
 import com.prathik.fairshare.ui.auth.SplashScreen
 import com.prathik.fairshare.ui.auth.LoginScreen
 import com.prathik.fairshare.ui.auth.RegisterScreen
 import com.prathik.fairshare.ui.auth.ForgotPasswordScreen
 import com.prathik.fairshare.ui.auth.VerifyEmailScreen
 import com.prathik.fairshare.ui.shell.MainShell
+
 /**
- * Wires all 39 screens into the navigation graph.
+ * Wires all screens into the navigation graph.
  *
- * Each screen has a placeholder composable for now.
- * Screens are replaced with real implementations as we build them
- * Day 10 onwards.
- *
- * Start destination is Splash — it checks IsLoggedInUseCase
- * and navigates to either Login or Groups.
+ * [verifyDeepLink] — non-null when the app was cold-started or resumed via a
+ * fairshare://verify-email deep link. Passed down to VerifyEmailScreen so it
+ * can immediately fire the verification API call instead of showing the
+ * "waiting" UI.
  */
 @Composable
 fun NavGraph(
-    navController: NavHostController,
-    modifier: Modifier = Modifier,
+    navController  : NavHostController,
+    modifier       : Modifier = Modifier,
+    verifyDeepLink : VerifyDeepLink? = null,   // ✅
 ) {
     NavHost(
         navController    = navController,
@@ -48,13 +50,22 @@ fun NavGraph(
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
                 },
+                // ✅ Deep link present — go to VerifyEmail so the user sees
+                // the verification result (success or already-verified screen)
+                // instead of being silently dropped into Groups.
+                onNavigateToVerifyEmail = {
+                    navController.navigate(Screen.VerifyEmail.route(null)) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
+                verifyDeepLink = verifyDeepLink,
             )
         }
         composable(Screen.Login.route) {
             LoginScreen(
-                onNavigateToRegister      = { navController.navigate(Screen.Register.route) },
+                onNavigateToRegister       = { navController.navigate(Screen.Register.route) },
                 onNavigateToForgotPassword = { navController.navigate(Screen.ForgotPassword.route) },
-                onNavigateToGroups        = {
+                onNavigateToGroups         = {
                     navController.navigate(Screen.Groups.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
@@ -72,17 +83,27 @@ fun NavGraph(
             )
         }
         composable(
-            route = Screen.VerifyEmail.route,
+            route     = Screen.VerifyEmail.route,
             arguments = listOf(
                 navArgument("email") {
                     type         = NavType.StringType
                     nullable     = true
                     defaultValue = null
                 }
-            )
+            ),
+            // ✅ Deep link: fairshare://verify-email?userId=xxx&token=yyy
+            // Android routes here automatically when the intent filter fires.
+            // userId + token are read from the intent by MainActivity and passed
+            // as verifyDeepLink rather than as nav arguments (since they're query
+            // params on the deep link URI, not path segments).
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "fairshare://verify-email" }
+            ),
         ) { backStackEntry ->
             VerifyEmailScreen(
                 email             = backStackEntry.arguments?.getString("email"),
+                verifyUserId      = verifyDeepLink?.userId,
+                verifyToken       = verifyDeepLink?.token,
                 onNavigateToLogin = {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Login.route) { inclusive = false }
@@ -103,43 +124,43 @@ fun NavGraph(
 
         // ── Group ─────────────────────────────────────────────────────────────
         composable(
-            route = Screen.GroupDetail.route,
+            route     = Screen.GroupDetail.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Group Detail")
         }
         composable(
-            route = Screen.GroupSettings.route,
+            route     = Screen.GroupSettings.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Group Settings")
         }
         composable(
-            route = Screen.GroupMembers.route,
+            route     = Screen.GroupMembers.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Group Members")
         }
         composable(
-            route = Screen.AddMember.route,
+            route     = Screen.AddMember.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Add Member")
         }
         composable(
-            route = Screen.WhoOwesWho.route,
+            route     = Screen.WhoOwesWho.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Who Owes Who")
         }
         composable(
-            route = Screen.TotalsSheet.route,
+            route     = Screen.TotalsSheet.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Totals Sheet")
         }
         composable(
-            route = Screen.GroupAnalytics.route,
+            route     = Screen.GroupAnalytics.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Group Analytics")
@@ -148,7 +169,7 @@ fun NavGraph(
             PlaceholderScreen("Create Group")
         }
         composable(
-            route = Screen.JoinGroup.route,
+            route     = Screen.JoinGroup.route,
             arguments = listOf(
                 navArgument("inviteCode") {
                     type         = NavType.StringType
@@ -166,11 +187,11 @@ fun NavGraph(
 
         // ── Expense ───────────────────────────────────────────────────────────
         composable(
-            route = Screen.AddExpense.route,
+            route     = Screen.AddExpense.route,
             arguments = listOf(
                 navArgument("groupId") {
-                    type     = NavType.StringType
-                    nullable = true
+                    type         = NavType.StringType
+                    nullable     = true
                     defaultValue = null
                 }
             )
@@ -178,25 +199,25 @@ fun NavGraph(
             PlaceholderScreen("Add Expense")
         }
         composable(
-            route = Screen.EditExpense.route,
+            route     = Screen.EditExpense.route,
             arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Edit Expense")
         }
         composable(
-            route = Screen.ExpenseDetail.route,
+            route     = Screen.ExpenseDetail.route,
             arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Expense Detail")
         }
         composable(
-            route = Screen.ReceiptScan.route,
+            route     = Screen.ReceiptScan.route,
             arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Receipt Scan")
         }
         composable(
-            route = Screen.ItemAssignment.route,
+            route     = Screen.ItemAssignment.route,
             arguments = listOf(navArgument("receiptId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Item Assignment")
@@ -205,18 +226,18 @@ fun NavGraph(
         composable(route = Screen.ReviewSubmit.route) { PlaceholderScreen("Review & Submit") }
 
         composable(
-            route = Screen.EditItemAssignment.route,
+            route     = Screen.EditItemAssignment.route,
             arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
         ) { PlaceholderScreen("Edit Item Assignment") }
 
         // ── Settlement ────────────────────────────────────────────────────────
         composable(
-            route = Screen.SettleUp.route,
+            route     = Screen.SettleUp.route,
             arguments = listOf(
                 navArgument("otherUserId") { type = NavType.StringType },
                 navArgument("groupId") {
-                    type     = NavType.StringType
-                    nullable = true
+                    type         = NavType.StringType
+                    nullable     = true
                     defaultValue = null
                 }
             )
@@ -224,12 +245,12 @@ fun NavGraph(
             PlaceholderScreen("Settle Up")
         }
         composable(
-            route = Screen.PartialSettle.route,
+            route     = Screen.PartialSettle.route,
             arguments = listOf(
                 navArgument("otherUserId") { type = NavType.StringType },
                 navArgument("groupId") {
-                    type     = NavType.StringType
-                    nullable = true
+                    type         = NavType.StringType
+                    nullable     = true
                     defaultValue = null
                 }
             )
@@ -237,7 +258,7 @@ fun NavGraph(
             PlaceholderScreen("Partial Settle")
         }
         composable(
-            route = Screen.SettlementHistory.route,
+            route     = Screen.SettlementHistory.route,
             arguments = listOf(navArgument("otherUserId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Settlement History")
@@ -245,19 +266,19 @@ fun NavGraph(
 
         // ── Friend ────────────────────────────────────────────────────────────
         composable(
-            route = Screen.FriendDetail.route,
+            route     = Screen.FriendDetail.route,
             arguments = listOf(navArgument("friendId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Friend Detail")
         }
         composable(
-            route = Screen.FriendSettings.route,
+            route     = Screen.FriendSettings.route,
             arguments = listOf(navArgument("friendId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Friend Settings")
         }
         composable(
-            route = Screen.FriendAnalytics.route,
+            route     = Screen.FriendAnalytics.route,
             arguments = listOf(navArgument("friendId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Friend Analytics")
@@ -282,7 +303,7 @@ fun NavGraph(
 
         // ── Search ────────────────────────────────────────────────────────────
         composable(
-            route = Screen.Search.route,
+            route     = Screen.Search.route,
             arguments = listOf(
                 navArgument("groupId") {
                     type         = NavType.StringType
@@ -296,19 +317,19 @@ fun NavGraph(
 
         // ── Recurring + Reminders ─────────────────────────────────────────────
         composable(
-            route = Screen.RecurringExpenses.route,
+            route     = Screen.RecurringExpenses.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Recurring Expenses")
         }
         composable(
-            route = Screen.Reminders.route,
+            route     = Screen.Reminders.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Reminders")
         }
         composable(
-            route = Screen.CreateReminder.route,
+            route     = Screen.CreateReminder.route,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) {
             PlaceholderScreen("Create Reminder")

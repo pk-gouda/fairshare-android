@@ -14,6 +14,7 @@ import com.prathik.fairshare.data.model.request.ForgotPasswordRequest
 import com.prathik.fairshare.data.model.request.LoginRequest
 import com.prathik.fairshare.data.model.request.RegisterRequest
 import com.prathik.fairshare.data.model.request.ResetPasswordRequest
+import com.prathik.fairshare.data.model.request.VerifyEmailRequest
 import com.prathik.fairshare.data.network.api.AuthApiService
 import com.prathik.fairshare.data.network.mapSuccess
 import com.prathik.fairshare.data.network.safeApiCall
@@ -25,12 +26,12 @@ import javax.inject.Singleton
 
 @Singleton
 class AuthRepositoryImpl @Inject constructor(
-    private val authService: AuthApiService,
-    private val tokenStore: EncryptedTokenStore,
-    private val userDao: UserDao,
-    private val groupDao: GroupDao,
-    private val expenseDao: ExpenseDao,
-    private val balanceDao: BalanceDao,
+    private val authService     : AuthApiService,
+    private val tokenStore      : EncryptedTokenStore,
+    private val userDao         : UserDao,
+    private val groupDao        : GroupDao,
+    private val expenseDao      : ExpenseDao,
+    private val balanceDao      : BalanceDao,
     private val invitedFriendDao: InvitedFriendDao,
     private val pendingActionDao: PendingActionDao,
 ) : AuthRepository {
@@ -57,7 +58,6 @@ class AuthRepositoryImpl @Inject constructor(
                 if (user != null) ApiResult.Success(user.toDomain())
                 else ApiResult.Conflict("Server returned success but no user data.")
             }
-
             else -> @Suppress("UNCHECKED_CAST") (result as ApiResult<User>)
         }
     }
@@ -75,20 +75,23 @@ class AuthRepositoryImpl @Inject constructor(
         val result = safeApiCall {
             authService.register(
                 RegisterRequest(
-                    email = email,
-                    fullName = fullName,
-                    password = password,
-                    phoneNumber = phoneNumber,
+                    email             = email,
+                    fullName          = fullName,
+                    password          = password,
+                    phoneNumber       = phoneNumber,
                     preferredCurrency = preferredCurrency,
-                    language = language,
+                    language          = language,
                 )
             )
         }
         return result.mapSuccess { it.toDomain() }
     }
 
+    // ✅ M2: now sends userId + token in the POST body via VerifyEmailRequest
     override suspend fun verifyEmail(userId: String, token: String): ApiResult<Unit> =
-        safeApiCall { authService.verifyEmail(userId, token) }.mapSuccess { }
+        safeApiCall {
+            authService.verifyEmail(VerifyEmailRequest(userId = userId, token = token))
+        }.mapSuccess { }
 
     override suspend fun forgotPassword(email: String): ApiResult<Unit> =
         safeApiCall {
@@ -141,15 +144,15 @@ class AuthRepositoryImpl @Inject constructor(
     private suspend fun cacheUser(user: User) {
         userDao.insert(
             UserEntity(
-                id = user.id,
-                email = user.email,
-                fullName = user.fullName,
-                phoneNumber = user.phoneNumber,
-                profilePictureUrl = user.profilePictureUrl,
-                preferredCurrency = user.preferredCurrency,
-                language = user.language,
+                id                  = user.id,
+                email               = user.email,
+                fullName            = user.fullName,
+                phoneNumber         = user.phoneNumber,
+                profilePictureUrl   = user.profilePictureUrl,
+                preferredCurrency   = user.preferredCurrency,
+                language            = user.language,
                 notificationEnabled = user.notificationEnabled,
-                isActive = user.isActive,
+                isActive            = user.isActive,
             )
         )
     }

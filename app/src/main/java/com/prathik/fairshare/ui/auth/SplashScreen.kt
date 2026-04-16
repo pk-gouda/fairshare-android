@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.prathik.fairshare.VerifyDeepLink
 import com.prathik.fairshare.ui.theme.Black
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.SyneFontFamily
@@ -31,15 +32,24 @@ import kotlinx.coroutines.delay
  * Splash screen — shown on app launch.
  *
  * Displays animated concentric rings + FairShare wordmark.
- * Checks IsLoggedInUseCase after a minimum 1.5s display:
- * - logged in  → navigate to Groups (clearing back stack)
- * - logged out → navigate to Login (clearing back stack)
+ * Checks IsLoggedInUseCase after a minimum 1.2s display:
+ *
+ * - Deep link present → always navigate to VerifyEmail (even if logged in),
+ *   so the user sees the verification result instead of being silently
+ *   dropped into Groups with no feedback.
+ * - logged in, no deep link  → navigate to Groups (clearing back stack)
+ * - logged out, no deep link → navigate to Login (clearing back stack)
+ *
+ * [verifyDeepLink] is non-null when the activity was (re)started via a
+ * fairshare://verify-email deep link — passed down from MainActivity.
  */
 @Composable
 fun SplashScreen(
-    onNavigateToLogin: () -> Unit,
-    onNavigateToGroups: () -> Unit,
-    viewModel: AuthViewModel = hiltViewModel(),
+    onNavigateToLogin       : () -> Unit,
+    onNavigateToGroups      : () -> Unit,
+    onNavigateToVerifyEmail : () -> Unit,
+    verifyDeepLink          : VerifyDeepLink? = null,
+    viewModel               : AuthViewModel = hiltViewModel(),
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "rings")
 
@@ -73,10 +83,16 @@ fun SplashScreen(
 
     LaunchedEffect(Unit) {
         delay(1200L)
-        if (viewModel.isLoggedIn()) {
-            onNavigateToGroups()
-        } else {
-            onNavigateToLogin()
+        when {
+            // ✅ Deep link present — always go to VerifyEmail regardless of login state.
+            // This handles the case where the user is already logged in but taps the
+            // verification link again — they should see the "Already verified" screen,
+            // not be silently dropped into Groups with no feedback.
+            verifyDeepLink != null -> onNavigateToVerifyEmail()
+
+            viewModel.isLoggedIn() -> onNavigateToGroups()
+
+            else -> onNavigateToLogin()
         }
     }
 
@@ -88,9 +104,9 @@ fun SplashScreen(
     ) {
         // Animated rings
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val cx     = size.width / 2f
-            val cy     = size.height / 2f
-            val color  = Green400
+            val cx    = size.width / 2f
+            val cy    = size.height / 2f
+            val color = Green400
 
             listOf(ring1, ring2, ring3).forEachIndexed { index, progress ->
                 val maxRadius = 280f + index * 60f

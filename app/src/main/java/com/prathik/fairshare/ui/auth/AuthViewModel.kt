@@ -8,6 +8,7 @@ import com.prathik.fairshare.domain.usecase.auth.IsLoggedInUseCase
 import com.prathik.fairshare.domain.usecase.auth.LoginUseCase
 import com.prathik.fairshare.domain.usecase.auth.LogoutUseCase
 import com.prathik.fairshare.domain.usecase.auth.RegisterUseCase
+import com.prathik.fairshare.domain.usecase.auth.VerifyEmailUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +17,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel for all auth screens — Login, Register, ForgotPassword, Splash.
+ * ViewModel for all auth screens — Login, Register, ForgotPassword, Splash, VerifyEmail.
  *
  * Holds form field state and emits AuthUiState via StateFlow.
  * All screens share one ViewModel instance scoped to the auth nav graph.
@@ -27,11 +28,12 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val loginUseCase: LoginUseCase,
-    private val registerUseCase: RegisterUseCase,
-    private val logoutUseCase: LogoutUseCase,
+    private val loginUseCase         : LoginUseCase,
+    private val registerUseCase      : RegisterUseCase,
+    private val logoutUseCase        : LogoutUseCase,
     private val forgotPasswordUseCase: ForgotPasswordUseCase,
-    private val isLoggedInUseCase: IsLoggedInUseCase,
+    private val isLoggedInUseCase    : IsLoggedInUseCase,
+    private val verifyEmailUseCase   : VerifyEmailUseCase,   // ✅
 ) : ViewModel() {
 
     // ── UI State ──────────────────────────────────────────────────────────────
@@ -40,15 +42,15 @@ class AuthViewModel @Inject constructor(
 
     // ── Form fields ───────────────────────────────────────────────────────────
     // confirmPassword removed — not required on registration in FairShare
-    private val _email = MutableStateFlow("")
+    private val _email    = MutableStateFlow("")
     private val _password = MutableStateFlow("")
     private val _fullName = MutableStateFlow("")
-    private val _phone = MutableStateFlow("")
+    private val _phone    = MutableStateFlow("")
 
-    val email: StateFlow<String> = _email.asStateFlow()
+    val email   : StateFlow<String> = _email.asStateFlow()
     val password: StateFlow<String> = _password.asStateFlow()
     val fullName: StateFlow<String> = _fullName.asStateFlow()
-    val phone: StateFlow<String> = _phone.asStateFlow()
+    val phone   : StateFlow<String> = _phone.asStateFlow()
 
     // ── Event handler ─────────────────────────────────────────────────────────
     fun onEvent(event: AuthUiEvent) {
@@ -81,12 +83,15 @@ class AuthViewModel @Inject constructor(
                 // Phone is optional — no validation errors to clear
             }
 
-            is AuthUiEvent.OnLoginClicked -> login()
-            is AuthUiEvent.OnRegisterClicked -> register()
+            is AuthUiEvent.OnLoginClicked          -> login()
+            is AuthUiEvent.OnRegisterClicked       -> register()
             is AuthUiEvent.OnForgotPasswordClicked -> forgotPassword()
-            is AuthUiEvent.OnLogoutClicked -> logout()
+            is AuthUiEvent.OnLogoutClicked         -> logout()
             is AuthUiEvent.OnResendVerificationClicked -> resendVerification()
-            is AuthUiEvent.OnResetState -> _uiState.value = AuthUiState.Idle
+            is AuthUiEvent.OnResetState            -> _uiState.value = AuthUiState.Idle
+
+            // ✅ Deep link delivered userId + token — call the verify API
+            is AuthUiEvent.OnVerifyEmail -> verifyEmail(event.userId, event.token)
         }
     }
 
@@ -108,7 +113,7 @@ class AuthViewModel @Inject constructor(
 
                 is ApiResult.ValidationError -> {
                     _uiState.value = AuthUiState.ValidationError(
-                        message = result.message,
+                        message    = result.message,
                         fieldErrors = result.errors,
                     )
                 }
@@ -139,12 +144,12 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = AuthUiState.Loading
             when (val result = registerUseCase(
-                email = _email.value,
-                fullName = _fullName.value,
-                password = _password.value,
-                phoneNumber = _phone.value.ifBlank { null },
+                email             = _email.value,
+                fullName          = _fullName.value,
+                password          = _password.value,
+                phoneNumber       = _phone.value.ifBlank { null },
                 preferredCurrency = null, // set from LocationHelper on first launch
-                language = null, // set from device locale on first launch
+                language          = null, // set from device locale on first launch
             )) {
                 is ApiResult.Success -> {
                     _uiState.value = AuthUiState.RegisterSuccess(_email.value)
@@ -152,7 +157,7 @@ class AuthViewModel @Inject constructor(
 
                 is ApiResult.ValidationError -> {
                     _uiState.value = AuthUiState.ValidationError(
-                        message = result.message,
+                        message    = result.message,
                         fieldErrors = result.errors,
                     )
                 }
@@ -184,7 +189,7 @@ class AuthViewModel @Inject constructor(
 
                 is ApiResult.ValidationError -> {
                     _uiState.value = AuthUiState.ValidationError(
-                        message = result.message,
+                        message    = result.message,
                         fieldErrors = result.errors,
                     )
                 }
@@ -215,14 +220,52 @@ class AuthViewModel @Inject constructor(
         // For now no-op — VerifyEmailScreen shows a manual "resend" button
     }
 
+    /**
+     * Called when the deep link delivers userId + token to the app.
+     * Calls POST /api/auth/verify-email and emits:
+     *   VerifyEmailSuccess — account activated, navigate to Login
+     *   VerifyEmailError   — token invalid/expired, show error
+     */
+    fun verifyEmail(userId: String, token: String) {
+        viewModelScope.launch {
+            _uiState.value = AuthUiState.VerifyEmailLoading
+            when (val result = verifyEmailUseCase(userId, token)) {
+                is ApiResult.Success -> {
+                    _uiState.value = AuthUiState.VerifyEmailSuccess
+                }
+
+                is ApiResult.Unauthorized -> {
+                    _uiState.value = AuthUiState.VerifyEmailError(
+                        "This verification link is invalid or has expired. Please register again."
+                    )
+                }
+
+                is ApiResult.Conflict -> {
+                    // Account was already verified — show dedicated "already verified" UI
+                    // so the user gets clear feedback instead of silently navigating away.
+                    _uiState.value = AuthUiState.VerifyEmailAlreadyVerified
+                }
+
+                is ApiResult.NetworkError -> {
+                    _uiState.value = AuthUiState.VerifyEmailError(
+                        "No internet connection. Please check your network and try again."
+                    )
+                }
+
+                else -> {
+                    _uiState.value = AuthUiState.VerifyEmailError(
+                        "Verification failed. Please try again or contact support."
+                    )
+                }
+            }
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
      * Returns the field error message for a given field name.
      * Used by screens to show inline errors on specific form fields.
-     *
-     * Example:
-     *   error = viewModel.getFieldError("email")
      */
     fun getFieldError(field: String): String? {
         val state = _uiState.value
@@ -231,9 +274,9 @@ class AuthViewModel @Inject constructor(
     }
 
     private fun clearFields() {
-        _email.value = ""
+        _email.value    = ""
         _password.value = ""
         _fullName.value = ""
-        _phone.value = ""
+        _phone.value    = ""
     }
 }

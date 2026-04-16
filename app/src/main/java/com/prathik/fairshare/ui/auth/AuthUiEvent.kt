@@ -30,6 +30,14 @@ sealed class AuthUiEvent {
     // ── Verification ──────────────────────────────────────────────────────────
     object OnResendVerificationClicked : AuthUiEvent()
 
+    // ✅ Triggered when deep link delivers userId + token to VerifyEmailScreen.
+    // ViewModel calls POST /api/auth/verify-email and emits VerifyEmailSuccess
+    // or VerifyEmailError based on the result.
+    data class OnVerifyEmail(
+        val userId: String,
+        val token : String,
+    ) : AuthUiEvent()
+
     // ── Reset ─────────────────────────────────────────────────────────────────
     object OnResetState : AuthUiEvent()
 }

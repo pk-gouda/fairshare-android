@@ -749,7 +749,6 @@ fun MainShell(
                 val itemAssignViewModel = hiltViewModel<ItemAssignmentViewModel>(itemAssignEntry)
 
                 val items       by itemAssignViewModel.items.collectAsState()
-                val assignments by itemAssignViewModel.assignments.collectAsState()
                 val members     by addExpenseViewModel.members.collectAsState()
                 val currency    by addExpenseViewModel.currency.collectAsState()
                 val uiState     by addExpenseViewModel.uiState.collectAsState()
@@ -765,7 +764,7 @@ fun MainShell(
                 ReviewSubmitScreen(
                     receipt     = receipt,
                     items       = items,
-                    assignments = assignments.mapValues { it.value.toList() },
+                    assignments = itemAssignViewModel.buildAssignmentsMap(),
                     members     = members,
                     currency    = currency,
                     isLoading   = uiState is com.prathik.fairshare.ui.expense.AddExpenseUiState.Loading,
@@ -793,7 +792,6 @@ fun MainShell(
                 val members  by editExpenseViewModel.members.collectAsState()
                 val currency by editExpenseViewModel.currency.collectAsState()
                 val items       by itemAssignViewModel.items.collectAsState()
-                val assignments by itemAssignViewModel.assignments.collectAsState()
                 val saveState   by itemAssignViewModel.saveState.collectAsState()
 
                 androidx.compose.runtime.LaunchedEffect(expenseId) {
@@ -812,8 +810,7 @@ fun MainShell(
                     members            = members,
                     currency           = currency,
                     onBack             = { shellNavController.popBackStack() },
-                    onDone             = { assignments ->
-                        itemAssignViewModel.setAssignmentsFromMap(assignments)
+                    onDone             = { _ ->
                         itemAssignViewModel.saveAssignments(expenseId)
                     },
                     onNavigateToReview = {},  // no review step in edit mode
