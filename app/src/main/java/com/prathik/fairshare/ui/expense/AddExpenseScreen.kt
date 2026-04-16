@@ -148,7 +148,21 @@ fun AddExpenseScreen(
         if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
             val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data!!)
             val imageUri = scanResult?.pages?.firstOrNull()?.imageUri
-            if (imageUri != null) viewModel.scanReceipt(context, imageUri)
+            if (imageUri != null) {
+                // Read bytes HERE on the main thread while the GmsDocumentScanner URI
+                // access grant is still valid. Passing the URI to a coroutine risks
+                // reading it after the grant expires, causing a silent null-stream failure.
+                try {
+                    val bytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                    if (bytes != null) {
+                        viewModel.scanReceipt(bytes)
+                    } else {
+                        viewModel.setScanError("Could not read the scanned image. Try again.")
+                    }
+                } catch (e: Exception) {
+                    viewModel.setScanError("Could not read the scanned image. Try again.")
+                }
+            }
         }
     }
 
@@ -172,6 +186,13 @@ fun AddExpenseScreen(
             is AddExpenseUiState.Success -> { onSuccess(); viewModel.resetUiState() }
             is AddExpenseUiState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetUiState() }
             else -> Unit
+        }
+    }
+
+    // Show a snackbar when receipt scan fails so the user always knows what happened
+    LaunchedEffect(receiptState) {
+        if (receiptState is ReceiptScanState.Error) {
+            snackbarHost.showSnackbar((receiptState as ReceiptScanState.Error).message)
         }
     }
 
@@ -340,11 +361,15 @@ fun AddExpenseScreen(
                     text = when (receiptState) {
                         is ReceiptScanState.Success  -> "Receipt scanned ✓"
                         is ReceiptScanState.Scanning -> "Scanning…"
+                        is ReceiptScanState.Error    -> "Scan failed — tap to retry"
                         else                         -> "Scan receipt to auto-fill"
                     },
                     fontSize   = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color      = Green400,
+                    color      = when (receiptState) {
+                        is ReceiptScanState.Error -> androidx.compose.ui.graphics.Color(0xFFFF5A5F)
+                        else                      -> Green400
+                    },
                 )
             }
 

@@ -41,6 +41,14 @@
                 <data android:scheme="fairshare" android:host="join" />
             </intent-filter>
 
+            <intent-filter android:autoVerify="true"
+                tools:ignore="AppLinkUrlError">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fairshare" android:host="login" />
+            </intent-filter>
+
 
             <intent-filter android:autoVerify="true"
                 tools:ignore="AppLinkUrlError">

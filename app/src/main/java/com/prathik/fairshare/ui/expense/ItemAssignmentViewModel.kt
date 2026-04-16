@@ -410,6 +410,55 @@ class ItemAssignmentViewModel @Inject constructor(
 
     fun resetSaveState() { _saveState.value = SaveState.Idle }
 
+    /**
+     * Compute accurate per-person dollar totals across ALL shares.
+     *
+     * This is the authoritative calculation used for:
+     *   - ReviewSubmitScreen display
+     *   - splitData sent to the backend (bypasses broken backend re-computation)
+     *
+     * For each active share key we call shareState.myAmount(userId) which
+     * already handles EQUAL/AMOUNT/PERCENT/SHARES correctly per share.
+     * We accumulate across all shares of all items.
+     *
+     * Members who end up with $0.00 are excluded — they are not participants.
+     *
+     * Returns: Map<userId, amountOwed>  (only members with amount > 0)
+     */
+    fun buildSplitData(): Map<String, Double> {
+        val totals = mutableMapOf<String, Double>()
+
+        _items.value.forEach { item ->
+            shareKeysForItem(item.id).forEach { key ->
+                val share = _shareStates.value[key] ?: return@forEach
+                // Collect all userIds who have any assignment in this share
+                val participantIds: List<String> = when (share.splitMode) {
+                    SplitMode.EQUAL   -> share.selected
+                    SplitMode.AMOUNT  -> share.amounts.filter { (_, v) -> (v.toDoubleOrNull() ?: 0.0) > 0 }.keys.toList()
+                    SplitMode.PERCENT -> share.percents.filter { (_, v) -> (v.toDoubleOrNull() ?: 0.0) > 0 }.keys.toList()
+                    SplitMode.SHARES  -> share.shares.filter { (_, v) -> (v.toDoubleOrNull() ?: 0.0) > 0 }.keys.toList()
+                }
+                participantIds.forEach { uid ->
+                    val amount = share.myAmount(uid)
+                    if (amount > 0.0) {
+                        totals[uid] = (totals[uid] ?: 0.0) + amount
+                    }
+                }
+            }
+        }
+
+        // Only return members who actually owe something
+        return totals.filter { (_, v) -> v > 0.001 }
+    }
+
+    /**
+     * Build item-level assignment map for the backend's assignItems() API.
+     * Used only in the edit-expense flow.
+     *
+     * NOTE: This unions assignees across all shares of an item — intentionally,
+     * because the backend stores one assignment list per item (not per share).
+     * Dollar amounts come from buildSplitData() instead.
+     */
     fun buildAssignmentsMap(): Map<String, List<String>> {
         val result = mutableMapOf<String, MutableSet<String>>()
         _items.value.forEach { item ->

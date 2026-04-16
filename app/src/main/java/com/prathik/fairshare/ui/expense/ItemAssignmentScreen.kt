@@ -7,13 +7,13 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,14 +81,13 @@ import com.prathik.fairshare.ui.theme.TextTertiary
 import com.prathik.fairshare.util.MoneyUtils
 import kotlin.math.absoluteValue
 
-// ── Design tokens (spec v7.16) ────────────────────────────────────────────────
+// ── Design tokens ─────────────────────────────────────────────────────────────
 private val Accent     = Color(0xFF00D9A3)
 private val AccentBg   = Color(0xFF00D9A3).copy(alpha = 0.08f)
 private val CardBg     = Color(0xFF121212)
 private val CardBorder = Color(0xFF2A2A2A)
 private val ErrorColor = Color(0xFFFF5A5F)
 private val PillBg     = Color(0xFFFFFFFF).copy(alpha = 0.08f)
-private val TileBg     = Color(0xFF1E1E1E)
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -105,8 +106,6 @@ fun ItemAssignmentScreen(
     val shareStates   by viewModel.shareStates.collectAsState()
     val separateItems by viewModel.separateItems.collectAsState()
     val expandedKey   by viewModel.expandedKey.collectAsState()
-
-    // ── Reactive totals — will update whenever state changes ──────────────────
     val receiptTotal  by viewModel.receiptTotal.collectAsState()
     val totalAssigned by viewModel.totalAssigned.collectAsState()
     val myTotal       by viewModel.myTotal.collectAsState()
@@ -138,12 +137,7 @@ fun ItemAssignmentScreen(
             return@Scaffold
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(pad),
-        ) {
-            // ── Sticky header ──────────────────────────────────────────────
+        Column(modifier = Modifier.fillMaxSize().padding(pad)) {
             ItemizeHeader(
                 receiptTotal  = receiptTotal,
                 totalAssigned = totalAssigned,
@@ -153,7 +147,6 @@ fun ItemAssignmentScreen(
                 onSplitAll    = { viewModel.splitRemainingEqually(members) },
             )
 
-            // ── Item list ──────────────────────────────────────────────────
             LazyColumn(
                 modifier        = Modifier.weight(1f),
                 contentPadding  = PaddingValues(
@@ -167,93 +160,53 @@ fun ItemAssignmentScreen(
                 items(items, key = { it.id }) { item ->
                     val isSeparate = item.id in separateItems
                     val qty        = item.quantity ?: 1
-                    val key0       = "${item.id}-0"
-                    val share0     = shareStates[key0]
 
-                    if (share0 != null) {
-                        ItemShareCard(
-                            item           = item,
-                            shareState     = share0,
-                            shareLabel     = if (isSeparate && qty > 1) "(Share 1 of $qty)" else null,
-                            members        = members,
-                            currency       = currency,
-                            isExpanded     = expandedKey == key0,
-                            onToggleExpand = { viewModel.toggleExpand(key0) },
-                            onTogglePerson = { uid -> viewModel.togglePerson(key0, uid) },
-                            onSelectAll    = { viewModel.selectAll(key0, members) },
-                            onClear        = { viewModel.clearShare(key0) },
-                            onSetMode      = { mode -> viewModel.setSplitMode(key0, mode) },
-                            onShowAdvanced = { viewModel.showAdvanced(key0) },
-                            onShowNormal   = { viewModel.showNormal(key0) },
-                            onSetAmount    = { uid, v -> viewModel.setAmount(key0, uid, v) },
-                            onSetPercent   = { uid, v -> viewModel.setPercent(key0, uid, v) },
-                            onSetShares    = { uid, v -> viewModel.setShares(key0, uid, v) },
-                        )
-                    }
-
-                    // Qty checkbox
-                    if (qty > 1) {
-                        val itemFirstWord = item.name.split(" ").take(2).joinToString(" ")
-                        QtyCheckRow(
-                            label   = "Assign each $itemFirstWord separately",
-                            checked = isSeparate,
-                            onCheckedChange = { checked ->
-                                if (!checked && viewModel.share1HasAssignments(item.id)) {
-                                    pendingMergeItemId = item.id
-                                } else if (checked) {
-                                    viewModel.enableSeparate(item.id)
-                                } else {
-                                    viewModel.disableSeparate(item.id)
-                                }
-                            },
-                        )
-                    }
-
-                    // Remaining share cards (shares 2..N when separate mode is on)
-                    if (isSeparate && qty > 1) {
-                        for (shareIdx in 1 until qty) {
-                            val keyN   = "${item.id}-$shareIdx"
-                            val shareN = shareStates[keyN]
-                            if (shareN != null) {
-                                Spacer(Modifier.height(Spacing.xs))
-                                ItemShareCard(
-                                    item           = item,
-                                    shareState     = shareN,
-                                    shareLabel     = "(Share ${shareIdx + 1} of $qty)",
-                                    members        = members,
-                                    currency       = currency,
-                                    isExpanded     = expandedKey == keyN,
-                                    onToggleExpand = { viewModel.toggleExpand(keyN) },
-                                    onTogglePerson = { uid -> viewModel.togglePerson(keyN, uid) },
-                                    onSelectAll    = { viewModel.selectAll(keyN, members) },
-                                    onClear        = { viewModel.clearShare(keyN) },
-                                    onSetMode      = { mode -> viewModel.setSplitMode(keyN, mode) },
-                                    onShowAdvanced = { viewModel.showAdvanced(keyN) },
-                                    onShowNormal   = { viewModel.showNormal(keyN) },
-                                    onSetAmount    = { uid, v -> viewModel.setAmount(keyN, uid, v) },
-                                    onSetPercent   = { uid, v -> viewModel.setPercent(keyN, uid, v) },
-                                    onSetShares    = { uid, v -> viewModel.setShares(keyN, uid, v) },
-                                )
+                    // Everything lives in ONE card per item
+                    ItemCard(
+                        item          = item,
+                        isSeparate    = isSeparate,
+                        qty           = qty,
+                        shareStates   = shareStates,
+                        members       = members,
+                        currency      = currency,
+                        expandedKey   = expandedKey,
+                        onToggleExpand    = { key -> viewModel.toggleExpand(key) },
+                        onTogglePerson    = { key, uid -> viewModel.togglePerson(key, uid) },
+                        onSelectAll       = { key -> viewModel.selectAll(key, members) },
+                        onClear           = { key -> viewModel.clearShare(key) },
+                        onSetMode         = { key, mode -> viewModel.setSplitMode(key, mode) },
+                        onShowAdvanced    = { key -> viewModel.showAdvanced(key) },
+                        onShowNormal      = { key -> viewModel.showNormal(key) },
+                        onSetAmount       = { key, uid, v -> viewModel.setAmount(key, uid, v) },
+                        onSetPercent      = { key, uid, v -> viewModel.setPercent(key, uid, v) },
+                        onSetShares       = { key, uid, v -> viewModel.setShares(key, uid, v) },
+                        onSeparateToggle  = { checked ->
+                            if (!checked && viewModel.share1HasAssignments(item.id)) {
+                                pendingMergeItemId = item.id
+                            } else if (checked) {
+                                viewModel.enableSeparate(item.id)
+                            } else {
+                                viewModel.disableSeparate(item.id)
                             }
-                        }
-                    }
+                        },
+                    )
                 }
             }
-
         }
     }
 
-    // Merge confirm
+    // Merge confirm dialog
     if (pendingMergeItemId != null) {
         AlertDialog(
             onDismissRequest = { pendingMergeItemId = null },
             containerColor   = Color(0xFF1C1C1C),
             title  = { Text("Merge shares?", color = TextPrimary) },
-            text   = { Text("Assignments on Share 2 will be lost.", color = TextSecondary, fontSize = 14.sp) },
+            text   = { Text("Assignments on individual shares will be lost.", color = TextSecondary, fontSize = 14.sp) },
             confirmButton = {
-                TextButton(onClick = { pendingMergeItemId?.let { viewModel.disableSeparate(it) }; pendingMergeItemId = null }) {
-                    Text("Merge", color = ErrorColor, fontWeight = FontWeight.SemiBold)
-                }
+                TextButton(onClick = {
+                    pendingMergeItemId?.let { viewModel.disableSeparate(it) }
+                    pendingMergeItemId = null
+                }) { Text("Merge", color = ErrorColor, fontWeight = FontWeight.SemiBold) }
             },
             dismissButton = {
                 TextButton(onClick = { pendingMergeItemId = null }) {
@@ -275,7 +228,7 @@ private fun ItemizeHeader(
     onAssignToMe  : () -> Unit,
     onSplitAll    : () -> Unit,
 ) {
-    val pct    by animateFloatAsState(
+    val pct by animateFloatAsState(
         if (receiptTotal > 0) (totalAssigned / receiptTotal).coerceIn(0.0, 1.0).toFloat() else 0f,
         label = "progress",
     )
@@ -303,7 +256,12 @@ private fun ItemizeHeader(
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text("Assigned", fontSize = 11.sp, color = TextTertiary)
-                Text(MoneyUtils.format(totalAssigned, currency), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Accent)
+                Text(
+                    MoneyUtils.format(totalAssigned, currency),
+                    fontSize   = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = Accent,
+                )
             }
         }
 
@@ -311,7 +269,7 @@ private fun ItemizeHeader(
 
         LinearProgressIndicator(
             progress   = { pct },
-            modifier   = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(99.dp)),
+            modifier   = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(99.dp)),
             color      = Accent,
             trackColor = Surface3,
         )
@@ -319,12 +277,16 @@ private fun ItemizeHeader(
         Spacer(Modifier.height(4.dp))
         Text(
             "${MoneyUtils.format(totalAssigned, currency)} of ${MoneyUtils.format(receiptTotal, currency)} assigned",
-            fontSize = 11.sp, color = TextTertiary,
+            fontSize = 11.sp,
+            color    = TextTertiary,
         )
         Spacer(Modifier.height(Spacing.sm))
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            BulkBtn("Assign remaining to me", !allDone, Modifier.weight(1f), onAssignToMe)
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            BulkBtn("Assign remaining to me",  !allDone, Modifier.weight(1f), onAssignToMe)
             BulkBtn("Split remaining equally", !allDone, Modifier.weight(1f), onSplitAll)
         }
 
@@ -344,19 +306,196 @@ private fun BulkBtn(text: String, enabled: Boolean, modifier: Modifier, onClick:
             .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = if (enabled) TextSecondary else TextTertiary, textAlign = TextAlign.Center, maxLines = 1)
+        Text(
+            text,
+            fontSize   = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color      = if (enabled) TextSecondary else TextTertiary,
+            textAlign  = TextAlign.Center,
+            maxLines   = 1,
+        )
     }
 }
 
-// ── Item share card ───────────────────────────────────────────────────────────
+// ── Unified item card — one card per receipt item ─────────────────────────────
+// When qty > 1, the checkbox sits right below the header row.
+// When "assign separately" is checked, all shares render inside the same card
+// separated by dividers — matching the reference design.
 
 @Composable
-private fun ItemShareCard(
-    item           : ExpenseItem,
+private fun ItemCard(
+    item             : ExpenseItem,
+    isSeparate       : Boolean,
+    qty              : Int,
+    shareStates      : Map<String, ShareUiState>,
+    members          : List<GroupMember>,
+    currency         : String,
+    expandedKey      : String?,
+    onToggleExpand   : (String) -> Unit,
+    onTogglePerson   : (String, String) -> Unit,
+    onSelectAll      : (String) -> Unit,
+    onClear          : (String) -> Unit,
+    onSetMode        : (String, SplitMode) -> Unit,
+    onShowAdvanced   : (String) -> Unit,
+    onShowNormal     : (String) -> Unit,
+    onSetAmount      : (String, String, String) -> Unit,
+    onSetPercent     : (String, String, String) -> Unit,
+    onSetShares      : (String, String, String) -> Unit,
+    onSeparateToggle : (Boolean) -> Unit,
+) {
+    // Border: green when fully assigned, orange when partial, subtle when untouched
+    val shareCount0  = if (isSeparate && qty > 1) qty else 1
+    val allComplete  = (0 until shareCount0).all { i ->
+        shareStates["${item.id}-$i"]?.isComplete() == true
+    }
+    val anyAssigned  = (0 until shareCount0).any { i ->
+        (shareStates["${item.id}-$i"]?.assignedAmount() ?: 0.0) > 0.0
+    }
+    val borderColor  = when {
+        allComplete -> Accent
+        anyAssigned -> Orange400
+        else        -> CardBorder
+    }
+    val borderWidth  = if (anyAssigned || allComplete) 1.5.dp else 0.5.dp
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.xl))
+            .background(CardBg)
+            .border(borderWidth, borderColor, RoundedCornerShape(Radius.xl)),
+    ) {
+        // ── Item header: name + qty badge + total price ───────────────────
+        // Tapping the header area opens/closes Share 0 (the first/only share section)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggleExpand("${item.id}-0") }
+                .padding(horizontal = Spacing.md)
+                .padding(top = Spacing.md, bottom = Spacing.sm),
+        ) {
+            Row(
+                modifier          = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text       = item.name,
+                        fontSize   = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color      = TextPrimary,
+                        // Full name wraps — no ellipsis
+                    )
+                    // Sub line: "5 × $9.45" for multi-qty items
+                    val sub = when {
+                        qty > 1 -> "$qty × ${MoneyUtils.format(item.price, currency)}"
+                        else    -> ""
+                    }
+                    if (sub.isNotEmpty()) {
+                        Text(sub, fontSize = 13.sp, color = TextTertiary)
+                    }
+                }
+                Spacer(Modifier.width(Spacing.sm))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text       = MoneyUtils.format(item.totalPrice, currency),
+                        fontSize   = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = TextPrimary,
+                    )
+                    if (qty > 1) {
+                        // "N items" badge
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF2A2A2A))
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        ) {
+                            Text(
+                                text     = "$qty items",
+                                fontSize = 11.sp,
+                                color    = TextTertiary,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── Checkbox: "Assign each X separately" — right below header ──
+            if (qty > 1) {
+                Spacer(Modifier.height(Spacing.sm))
+                Row(
+                    modifier          = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSeparateToggle(!isSeparate) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked         = isSeparate,
+                        onCheckedChange = onSeparateToggle,
+                        colors          = CheckboxDefaults.colors(
+                            checkedColor   = Accent,
+                            uncheckedColor = TextTertiary,
+                            checkmarkColor = Color.Black,
+                        ),
+                    )
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text(
+                        text     = "Assign each item separately",
+                        fontSize = 14.sp,
+                        color    = if (isSeparate) TextPrimary else TextTertiary,
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider(color = CardBorder, thickness = 0.5.dp)
+
+        // ── Share sections ────────────────────────────────────────────────
+        val shareCount = if (isSeparate && qty > 1) qty else 1
+
+        for (shareIdx in 0 until shareCount) {
+            val key        = "${item.id}-$shareIdx"
+            val shareState = shareStates[key] ?: continue
+            val isExpanded = expandedKey == key
+            val shareLabel = if (isSeparate && qty > 1) "Share ${shareIdx + 1}" else null
+
+            if (shareIdx > 0) {
+                HorizontalDivider(color = CardBorder, thickness = 0.5.dp)
+            }
+
+            ShareSection(
+                shareState     = shareState,
+                shareLabel     = shareLabel,
+                sharePrice     = shareState.amount,
+                currency       = currency,
+                members        = members,
+                isExpanded     = isExpanded,
+                onToggleExpand = { onToggleExpand(key) },
+                onTogglePerson = { uid -> onTogglePerson(key, uid) },
+                onSelectAll    = { onSelectAll(key) },
+                onClear        = { onClear(key) },
+                onSetMode      = { mode -> onSetMode(key, mode) },
+                onShowAdvanced = { onShowAdvanced(key) },
+                onShowNormal   = { onShowNormal(key) },
+                onSetAmount    = { uid, v -> onSetAmount(key, uid, v) },
+                onSetPercent   = { uid, v -> onSetPercent(key, uid, v) },
+                onSetShares    = { uid, v -> onSetShares(key, uid, v) },
+            )
+        }
+    }
+}
+
+// ── Share section — one per share inside ItemCard ─────────────────────────────
+
+@Composable
+private fun ShareSection(
     shareState     : ShareUiState,
-    shareLabel     : String?,
-    members        : List<GroupMember>,
+    shareLabel     : String?,      // "Share 1", "Share 2", or null for unsplit items
+    sharePrice     : Double,
     currency       : String,
+    members        : List<GroupMember>,
     isExpanded     : Boolean,
     onToggleExpand : () -> Unit,
     onTogglePerson : (String) -> Unit,
@@ -374,121 +513,102 @@ private fun ItemShareCard(
     val isAssigned    = shareState.assignedAmount() > 0
     val isComplete    = shareState.isComplete()
 
+    // ── Collapsed row ─────────────────────────────────────────────────────
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(CardBg)
-            .border(0.5.dp, CardBorder, RoundedCornerShape(Radius.xl)),
+            .clickable { onToggleExpand() }
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
     ) {
-        // Collapsed header
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onToggleExpand() }
-                .padding(horizontal = Spacing.md, vertical = Spacing.md),
-        ) {
-            // Name + price row — no SpaceBetween, explicit weights to avoid layout conflicts
+        // Share label + price on same row (only when separate mode)
+        if (shareLabel != null) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    // Item name
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF1C1C1C))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
                     Text(
-                        text       = item.name,
-                        fontSize   = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color      = TextPrimary,
-                        maxLines   = 1,
-                        overflow   = TextOverflow.Ellipsis,
+                        text       = shareLabel,
+                        fontSize   = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color      = TextSecondary,
                     )
-                    // Share badge — on its own line, accent colour
-                    if (shareLabel != null) {
-                        Text(
-                            text       = shareLabel,
-                            fontSize   = 11.sp,
-                            color      = Accent,
-                            fontWeight = FontWeight.Medium,
-                            maxLines   = 1,
-                        )
-                    }
-                    // Sub line: "×5 • $9.45 each" or "$11.21 per share"
-                    val sub = when {
-                        shareLabel != null ->
-                            "${MoneyUtils.format(shareState.amount, currency)} per share"
-                        (item.quantity ?: 1) > 1 ->
-                            "×${item.quantity} • ${MoneyUtils.format(item.price, currency)} each"
-                        else -> ""
-                    }
-                    if (sub.isNotEmpty()) {
-                        Text(sub, fontSize = 12.sp, color = TextTertiary)
-                    }
                 }
-                Spacer(Modifier.width(Spacing.sm))
-                // Price — fixed natural width, never competes with the name column
                 Text(
-                    text       = MoneyUtils.format(shareState.amount, currency),
-                    fontSize   = 17.sp,
-                    fontWeight = FontWeight.Bold,
+                    text       = MoneyUtils.format(sharePrice, currency),
+                    fontSize   = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color      = TextPrimary,
                 )
             }
-
             Spacer(Modifier.height(Spacing.sm))
-            HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-            Spacer(Modifier.height(Spacing.sm))
-
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text     = summaryText,
-                    fontSize = 12.sp,
-                    color    = when { isComplete -> Accent; isAssigned -> Orange400; else -> TextTertiary },
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Icon(
-                    imageVector        = Icons.Outlined.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint               = TextTertiary,
-                    modifier           = Modifier.size(18.dp).rotate(chevronAngle),
-                )
-            }
         }
 
-        // Expanded content
-        AnimatedVisibility(visible = isExpanded, enter = expandVertically(), exit = shrinkVertically()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = Spacing.md, end = Spacing.md, bottom = Spacing.md),
-            ) {
-                if (!shareState.isAdvanced) {
-                    NormalModeContent(
-                        shareState     = shareState,
-                        members        = members,
-                        currency       = currency,
-                        onTogglePerson = onTogglePerson,
-                        onSelectAll    = onSelectAll,
-                        onClear        = onClear,
-                        onShowAdvanced = onShowAdvanced,
-                    )
-                } else {
-                    AdvancedModeContent(
-                        shareState     = shareState,
-                        members        = members,
-                        currency       = currency,
-                        onSetMode      = onSetMode,
-                        onTogglePerson = onTogglePerson,
-                        onSelectAll    = onSelectAll,
-                        onClear        = onClear,
-                        onSetAmount    = onSetAmount,
-                        onSetPercent   = onSetPercent,
-                        onSetShares    = onSetShares,
-                        onShowNormal   = onShowNormal,
-                    )
-                }
+        // Summary + chevron
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text     = if (!isAssigned) "+ Add people" else summaryText,
+                fontSize = 13.sp,
+                fontWeight = if (!isAssigned) FontWeight.Medium else FontWeight.Normal,
+                color    = when {
+                    !isAssigned -> Accent.copy(alpha = 0.7f)
+                    isComplete  -> Accent
+                    else        -> Orange400
+                },
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector        = Icons.Outlined.KeyboardArrowDown,
+                contentDescription = null,
+                tint               = TextTertiary,
+                modifier           = Modifier.size(18.dp).rotate(chevronAngle),
+            )
+        }
+    }
+
+    // ── Expanded content ──────────────────────────────────────────────────
+    AnimatedVisibility(
+        visible = isExpanded,
+        enter   = expandVertically(),
+        exit    = shrinkVertically(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = Spacing.md, end = Spacing.md, bottom = Spacing.md),
+        ) {
+            if (!shareState.isAdvanced) {
+                NormalModeContent(
+                    shareState     = shareState,
+                    members        = members,
+                    currency       = currency,
+                    onTogglePerson = onTogglePerson,
+                    onSelectAll    = onSelectAll,
+                    onClear        = onClear,
+                    onShowAdvanced = onShowAdvanced,
+                )
+            } else {
+                AdvancedModeContent(
+                    shareState     = shareState,
+                    members        = members,
+                    currency       = currency,
+                    onSetMode      = onSetMode,
+                    onTogglePerson = onTogglePerson,
+                    onSelectAll    = onSelectAll,
+                    onClear        = onClear,
+                    onSetAmount    = onSetAmount,
+                    onSetPercent   = onSetPercent,
+                    onSetShares    = onSetShares,
+                    onShowNormal   = onShowNormal,
+                )
             }
         }
     }
@@ -506,45 +626,54 @@ private fun NormalModeContent(
     onClear        : () -> Unit,
     onShowAdvanced : () -> Unit,
 ) {
-    // Prompt + All/Clear row
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    // "Tap people to split equally:"  with  All / Clear  text links on the right
+    Row(
+        modifier          = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
             text     = "Tap people to split equally:",
             fontSize = 12.sp,
             color    = TextTertiary,
             modifier = Modifier.weight(1f),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+        Text(
+            text       = "All",
+            fontSize   = 12.sp,
+            color      = Accent,
+            fontWeight = FontWeight.Medium,
+            modifier   = Modifier
+                .clickable { onSelectAll() }
+                .padding(horizontal = Spacing.sm, vertical = 4.dp),
+        )
+        if (shareState.selected.isNotEmpty()) {
             Text(
-                text     = "All",
+                text     = "Clear",
                 fontSize = 12.sp,
-                color    = Accent,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable { onSelectAll() }.padding(4.dp),
+                color    = TextTertiary,
+                modifier = Modifier
+                    .clickable { onClear() }
+                    .padding(end = 4.dp, top = 4.dp, bottom = 4.dp),
             )
-            if (shareState.selected.isNotEmpty()) {
-                Text(
-                    text     = "Clear",
-                    fontSize = 12.sp,
-                    color    = TextTertiary,
-                    modifier = Modifier.clickable { onClear() }.padding(4.dp),
-                )
-            }
         }
     }
 
     Spacer(Modifier.height(Spacing.sm))
 
-    AvatarTileGrid(members = members, selected = shareState.selected, onTogglePerson = onTogglePerson)
+    // Horizontal scrolling circles with first-name labels underneath
+    AvatarRow(
+        members        = members,
+        selected       = shareState.selected,
+        onTogglePerson = onTogglePerson,
+    )
 
     Spacer(Modifier.height(Spacing.sm))
 
-    CalcBar(text = shareState.calcText(currency), isWarn = shareState.selected.isEmpty(), isError = false)
-
-    Spacer(Modifier.height(Spacing.sm))
-
+    // "Advanced splitting →" — no CalcBar here, summary line already shows the split
     Row(
-        modifier = Modifier.clickable { onShowAdvanced() }.padding(vertical = 4.dp),
+        modifier          = Modifier
+            .clickable { onShowAdvanced() }
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("Advanced splitting", fontSize = 12.sp, color = Accent)
@@ -568,57 +697,79 @@ private fun AdvancedModeContent(
     onSetShares    : (String, String) -> Unit,
     onShowNormal   : () -> Unit,
 ) {
-    // Pills
+    // 4 pills
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf(SplitMode.EQUAL to "Equally", SplitMode.AMOUNT to "Amount",
-            SplitMode.PERCENT to "Percent", SplitMode.SHARES to "Shares")
-            .forEach { (mode, label) ->
-                val active = shareState.splitMode == mode
-                Box(
-                    modifier = Modifier.weight(1f).height(32.dp)
-                        .clip(RoundedCornerShape(Radius.sm))
-                        .background(if (active) Accent else PillBg)
-                        .clickable { onSetMode(mode) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(label, fontSize = 12.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, color = if (active) Color.Black else TextTertiary)
-                }
+        listOf(
+            SplitMode.EQUAL   to "Equally",
+            SplitMode.AMOUNT  to "Amount",
+            SplitMode.PERCENT to "Percent",
+            SplitMode.SHARES  to "Shares",
+        ).forEach { (mode, label) ->
+            val active = shareState.splitMode == mode
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .background(if (active) Accent else PillBg)
+                    .clickable { onSetMode(mode) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    fontSize   = 12.sp,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                    color      = if (active) Color.Black else TextTertiary,
+                )
             }
+        }
     }
 
     Spacer(Modifier.height(Spacing.sm))
 
     when (shareState.splitMode) {
         SplitMode.EQUAL -> {
-            // All/Clear row
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Tap people to split equally:", fontSize = 12.sp, color = TextTertiary, modifier = Modifier.weight(1f))
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                    Text("All", fontSize = 12.sp, color = Accent, fontWeight = FontWeight.Medium, modifier = Modifier.clickable { onSelectAll() }.padding(4.dp))
-                    if (shareState.selected.isNotEmpty())
-                        Text("Clear", fontSize = 12.sp, color = TextTertiary, modifier = Modifier.clickable { onClear() }.padding(4.dp))
+                Text(
+                    "All",
+                    fontSize   = 12.sp,
+                    color      = Accent,
+                    fontWeight = FontWeight.Medium,
+                    modifier   = Modifier.clickable { onSelectAll() }.padding(horizontal = Spacing.sm, vertical = 4.dp),
+                )
+                if (shareState.selected.isNotEmpty()) {
+                    Text(
+                        "Clear",
+                        fontSize = 12.sp,
+                        color    = TextTertiary,
+                        modifier = Modifier.clickable { onClear() }.padding(end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    )
                 }
             }
             Spacer(Modifier.height(Spacing.sm))
-            AvatarTileGrid(members = members, selected = shareState.selected, onTogglePerson = onTogglePerson)
+            AvatarRow(members = members, selected = shareState.selected, onTogglePerson = onTogglePerson)
         }
-        SplitMode.AMOUNT  -> PersonInputRows(members, shareState.amounts,  "₹", "", KeyboardType.Decimal, onSetAmount)
-        SplitMode.PERCENT -> PersonInputRows(members, shareState.percents, "", "%", KeyboardType.Decimal, onSetPercent)
-        SplitMode.SHARES  -> PersonInputRows(members, shareState.shares,   "", "x", KeyboardType.Number,  onSetShares)
+        SplitMode.AMOUNT  -> PersonInputRows(members, shareState.amounts,  "₹", "",  KeyboardType.Decimal, onSetAmount)
+        SplitMode.PERCENT -> PersonInputRows(members, shareState.percents, "",  "%", KeyboardType.Decimal, onSetPercent)
+        SplitMode.SHARES  -> PersonInputRows(members, shareState.shares,   "",  "x", KeyboardType.Number,  onSetShares)
+    }
+
+    // Validation status bar — only shown for Amount/Percent/Shares
+    if (shareState.splitMode != SplitMode.EQUAL) {
+        Spacer(Modifier.height(Spacing.sm))
+        AdvStatusBar(
+            text    = shareState.advStatusText(currency),
+            isWarn  = shareState.advStatusIsWarn(),
+            isError = shareState.advStatusIsError(),
+        )
     }
 
     Spacer(Modifier.height(Spacing.sm))
 
-    CalcBar(
-        text    = shareState.advStatusText(currency),
-        isWarn  = shareState.advStatusIsWarn(),
-        isError = shareState.advStatusIsError(),
-    )
-
-    Spacer(Modifier.height(Spacing.sm))
-
+    // ← Back to simple
     Row(
-        modifier = Modifier.clickable { onShowNormal() }.padding(vertical = 4.dp),
+        modifier          = Modifier.clickable { onShowNormal() }.padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Outlined.KeyboardArrowRight, null, tint = TextTertiary, modifier = Modifier.size(14.dp).rotate(180f))
@@ -626,41 +777,101 @@ private fun AdvancedModeContent(
     }
 }
 
-// ── Avatar tile grid — 3-col square tiles ─────────────────────────────────────
+// ── Avatar horizontal row with first-name labels ──────────────────────────────
+// Replaces the old 3-col square grid.
+// Each avatar is a 44dp circle with a 6-char truncated first name underneath.
+// Row scrolls horizontally if members overflow (e.g. 8+ people).
 
 @Composable
-private fun AvatarTileGrid(
+private fun AvatarRow(
     members        : List<GroupMember>,
     selected       : List<String>,
     onTogglePerson : (String) -> Unit,
 ) {
-    members.chunked(3).forEach { row ->
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            row.forEach { member ->
-                val isSel     = member.userId in selected
-                val initials  = member.fullName.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
-                val avatarCol = AvatarColors[member.userId.hashCode().and(0x7FFFFFFF) % AvatarColors.size]
+    Row(
+        modifier              = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        members.forEach { member ->
+            val isSel     = member.userId in selected
+            val initials  = member.fullName
+                .split(" ")
+                .filter { it.isNotBlank() }
+                .take(2)
+                .joinToString("") { it.first().uppercase() }
+            val firstName = member.fullName.split(" ").firstOrNull()?.take(9) ?: initials
+            val avatarCol = AvatarColors[member.userId.hashCode().and(0x7FFFFFFF) % AvatarColors.size]
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier            = Modifier
+                    .clickable { onTogglePerson(member.userId) }
+                    .padding(2.dp),
+            ) {
                 Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(Radius.lg))
-                        .background(if (isSel) avatarCol else TileBg)
-                        .then(if (isSel) Modifier.border(2.dp, Accent, RoundedCornerShape(Radius.lg)) else Modifier)
-                        .clickable { onTogglePerson(member.userId) },
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(if (isSel) avatarCol else Color(0xFF2A2A2A))
+                        .then(
+                            if (isSel) Modifier.border(2.dp, Accent, CircleShape) else Modifier
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(initials, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSel) Color.White else TextTertiary)
+                    Text(
+                        text       = initials,
+                        fontSize   = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = if (isSel) Color.White else TextTertiary,
+                    )
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text      = firstName,
+                    fontSize  = 10.sp,
+                    color     = if (isSel) Accent else TextTertiary,
+                    textAlign = TextAlign.Center,
+                    maxLines  = 1,
+                    modifier  = Modifier.width(44.dp),
+                )
             }
-            // Fill empty slots in last row
-            repeat(3 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
         }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
-// ── Per-person input rows ─────────────────────────────────────────────────────
+// ── Advanced status bar (Amount / Percent / Shares validation) ────────────────
+
+@Composable
+private fun AdvStatusBar(text: String, isWarn: Boolean, isError: Boolean) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.lg))
+            .background(
+                when {
+                    isError -> ErrorColor.copy(alpha = 0.08f)
+                    isWarn  -> Orange400.copy(alpha = 0.08f)
+                    else    -> AccentBg
+                }
+            )
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+    ) {
+        Text(
+            text       = text,
+            fontSize   = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color      = when {
+                isError -> ErrorColor
+                isWarn  -> Orange400
+                else    -> Accent
+            },
+        )
+    }
+}
+
+// ── Per-person input rows (Amount / Percent / Shares) ─────────────────────────
 
 @Composable
 private fun PersonInputRows(
@@ -676,6 +887,7 @@ private fun PersonInputRows(
             val initials  = member.fullName.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
             val avatarCol = AvatarColors[member.userId.hashCode().and(0x7FFFFFFF) % AvatarColors.size]
             val firstName = member.fullName.split(" ").firstOrNull() ?: initials
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -685,13 +897,19 @@ private fun PersonInputRows(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(99.dp)).background(avatarCol),
+                    modifier         = Modifier.size(32.dp).clip(CircleShape).background(avatarCol),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(initials, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
                 Spacer(Modifier.width(Spacing.sm))
-                Text(firstName, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = TextSecondary, modifier = Modifier.weight(1f))
+                Text(
+                    firstName,
+                    fontSize   = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color      = TextSecondary,
+                    modifier   = Modifier.weight(1f),
+                )
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(Radius.sm))
@@ -702,13 +920,13 @@ private fun PersonInputRows(
                 ) {
                     if (prefix.isNotEmpty()) Text(prefix, fontSize = 12.sp, color = TextTertiary)
                     BasicTextField(
-                        value         = values[member.userId] ?: "",
-                        onValueChange = { onValueChange(member.userId, it) },
-                        textStyle     = TextStyle(fontSize = 13.sp, color = TextPrimary, textAlign = TextAlign.Center),
-                        singleLine    = true,
-                        cursorBrush   = SolidColor(Accent),
+                        value           = values[member.userId] ?: "",
+                        onValueChange   = { onValueChange(member.userId, it) },
+                        textStyle       = TextStyle(fontSize = 13.sp, color = TextPrimary, textAlign = TextAlign.Center),
+                        singleLine      = true,
+                        cursorBrush     = SolidColor(Accent),
                         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-                        modifier      = Modifier.width(56.dp),
+                        modifier        = Modifier.width(56.dp),
                     ) { inner ->
                         Box(contentAlignment = Alignment.Center) {
                             if ((values[member.userId] ?: "").isEmpty())
@@ -723,45 +941,17 @@ private fun PersonInputRows(
     }
 }
 
-// ── Calc bar ──────────────────────────────────────────────────────────────────
 
-@Composable
-private fun CalcBar(text: String, isWarn: Boolean, isError: Boolean) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.lg))
-            .background(when { isError -> ErrorColor.copy(alpha = 0.08f); isWarn -> Orange400.copy(alpha = 0.08f); else -> AccentBg })
-            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-    ) {
-        Text(text, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = when { isError -> ErrorColor; isWarn -> Orange400; else -> Accent })
-    }
-}
-
-// ── Qty separate checkbox ─────────────────────────────────────────────────────
-
-@Composable
-private fun QtyCheckRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg).padding(bottom = 4.dp).clickable { onCheckedChange(!checked) },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(
-            checked         = checked,
-            onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(checkedColor = Accent, uncheckedColor = TextTertiary, checkmarkColor = Color.Black),
-        )
-        Spacer(Modifier.width(Spacing.xs))
-        Text(label, fontSize = 12.sp, color = TextTertiary)
-    }
-}
 
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ItemizeFooter(myTotal: Double, currency: String, allDone: Boolean, onDone: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().background(Surface0.copy(alpha = 0.95f)).padding(horizontal = Spacing.lg, vertical = Spacing.md),
+        modifier              = Modifier
+            .fillMaxWidth()
+            .background(Surface0.copy(alpha = 0.95f))
+            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment     = Alignment.CenterVertically,
     ) {
@@ -770,13 +960,21 @@ private fun ItemizeFooter(myTotal: Double, currency: String, allDone: Boolean, o
             Text(MoneyUtils.format(myTotal, currency), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Accent)
         }
         Button(
-            onClick  = onDone,
-            enabled  = allDone,
-            shape    = RoundedCornerShape(Radius.lg),
-            colors   = ButtonDefaults.buttonColors(containerColor = Accent, disabledContainerColor = Surface3),
+            onClick        = onDone,
+            enabled        = allDone,
+            shape          = RoundedCornerShape(Radius.lg),
+            colors         = ButtonDefaults.buttonColors(
+                containerColor         = Accent,
+                disabledContainerColor = Surface3,
+            ),
             contentPadding = PaddingValues(horizontal = 28.dp, vertical = 13.dp),
         ) {
-            Text("Done", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (allDone) Color.Black else TextTertiary)
+            Text(
+                "Done",
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color      = if (allDone) Color.Black else TextTertiary,
+            )
         }
     }
 }

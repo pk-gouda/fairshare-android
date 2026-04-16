@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -103,6 +104,8 @@ fun GroupSettingsScreen(
     val claimState       by viewModel.claimState.collectAsState()
     val yourGroupBalance: Double? by viewModel.yourGroupBalance.collectAsState()
     val editName         by viewModel.editName.collectAsState()
+    val simplifyDebts    by viewModel.simplifyDebts.collectAsState()
+    val muteNotifications by viewModel.muteNotifications.collectAsState()
 
     val snackbarHost = remember { SnackbarHostState() }
     val clipboard    = LocalClipboardManager.current
@@ -457,6 +460,126 @@ fun GroupSettingsScreen(
                                 Text("Remind", fontSize = 13.sp, color = TextSecondary)
                             }
                             else -> {}
+                        }
+                    }
+                }
+            }
+
+            SectionDivider()
+
+            // ── Preferences ───────────────────────────────────────────────────
+            Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+                Text(
+                    text          = "Preferences",
+                    fontSize      = 11.sp,
+                    fontWeight    = FontWeight.Medium,
+                    color         = TextSecondary,
+                    letterSpacing = 1.sp,
+                    modifier      = Modifier.padding(bottom = Spacing.sm),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.xl))
+                        .background(Surface2)
+                        .border(1.dp, Surface4, RoundedCornerShape(Radius.xl)),
+                ) {
+                    // ── Simplify debts toggle ─────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = isAdmin) {
+                                val newValue = !simplifyDebts
+                                viewModel.onSimplifyDebtsToggled()
+                                viewModel.saveSimplifyDebts(newValue)
+                            }
+                            .padding(horizontal = Spacing.md, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = Spacing.md)) {
+                            Text("Simplify debts", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                            Text(
+                                "Reduce the number of payments needed to settle all debts",
+                                fontSize = 12.sp, color = TextSecondary, lineHeight = 16.sp,
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked         = simplifyDebts,
+                            onCheckedChange = if (isAdmin) { value ->
+                                viewModel.onSimplifyDebtsToggled()
+                                viewModel.saveSimplifyDebts(value)
+                            } else null,
+                            enabled = isAdmin,
+                            colors  = androidx.compose.material3.SwitchDefaults.colors(
+                                checkedThumbColor  = Surface0,
+                                checkedTrackColor  = Green400,
+                            ),
+                        )
+                    }
+
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+
+                    // ── Mute notifications toggle ─────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.onMuteNotificationsToggled() }
+                            .padding(horizontal = Spacing.md, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = Spacing.md)) {
+                            Text("Mute notifications", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                            Text(
+                                "Stop receiving notifications for this group",
+                                fontSize = 12.sp, color = TextSecondary, lineHeight = 16.sp,
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked         = muteNotifications,
+                            onCheckedChange = { viewModel.onMuteNotificationsToggled() },
+                            colors          = androidx.compose.material3.SwitchDefaults.colors(
+                                checkedThumbColor  = Surface0,
+                                checkedTrackColor  = Green400,
+                            ),
+                        )
+                    }
+
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+
+                    // ── Default currency ──────────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { /* TODO: open currency picker */ }
+                            .padding(horizontal = Spacing.md, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Default currency", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                            Text(
+                                "Currency used for new expenses in this group",
+                                fontSize = 12.sp, color = TextSecondary, lineHeight = 16.sp,
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text       = "USD", // TODO: add defaultCurrency to Group model
+                                fontSize   = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color      = TextSecondary,
+                            )
+                            Icon(
+                                imageVector        = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = null,
+                                tint               = TextTertiary,
+                                modifier           = Modifier.size(12.dp),
+                            )
                         }
                     }
                 }

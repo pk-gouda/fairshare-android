@@ -729,7 +729,41 @@ fun MainShell(
                     currency  = currency,
                     onBack               = { shellNavController.popBackStack() },
                     onDone               = { assignments ->
-                        addExpenseViewModel.setItemAssignments(assignments)
+                        val rawSplitData = itemAssignViewModel.buildSplitData()
+
+                        // ✅ Distribute tax + fees proportionally before sending to backend.
+                        // buildSplitData() returns raw item prices only. The grand total
+                        // (receipt.totalAmount) includes tax/fees. Each person pays
+                        // tax/fees proportional to their item share.
+                        // We round to 2dp and fix any residual on the last entry so the
+                        // sum equals receipt.totalAmount exactly — avoiding backend rejection.
+                        val receipt = (addExpenseViewModel.receiptState.value
+                                as? com.prathik.fairshare.ui.expense.ReceiptScanState.Success)?.receipt
+                        val adjustedSplitData: Map<String, Double> = if (receipt != null) {
+                            val itemSubtotal = rawSplitData.values.sum()
+                            val extraTotal   = receipt.totalAmount - itemSubtotal
+                            if (extraTotal != 0.0 && itemSubtotal > 0.0) {
+                                val entries = rawSplitData.entries.toList()
+                                val rounded = entries.map { (uid, itemAmount) ->
+                                    val proportion = itemAmount / itemSubtotal
+                                    val adjusted   = itemAmount + (extraTotal * proportion)
+                                    uid to (Math.round(adjusted * 100) / 100.0)
+                                }.toMutableList()
+                                // Fix rounding residual on last entry
+                                val roundedSum = rounded.sumOf { it.second }
+                                val residual   = Math.round((receipt.totalAmount - roundedSum) * 100) / 100.0
+                                if (residual != 0.0 && rounded.isNotEmpty()) {
+                                    val last = rounded.last()
+                                    rounded[rounded.lastIndex] = last.first to (last.second + residual)
+                                }
+                                rounded.toMap()
+                            } else rawSplitData
+                        } else rawSplitData
+
+                        addExpenseViewModel.setItemAssignments(
+                            assignments = assignments,
+                            splitData   = adjustedSplitData,
+                        )
                     },
                     onNavigateToReview   = {
                         shellNavController.navigate(Screen.ReviewSubmit.route)
@@ -762,14 +796,14 @@ fun MainShell(
                 }
 
                 ReviewSubmitScreen(
-                    receipt     = receipt,
-                    items       = items,
-                    assignments = itemAssignViewModel.buildAssignmentsMap(),
-                    members     = members,
-                    currency    = currency,
-                    isLoading   = uiState is com.prathik.fairshare.ui.expense.AddExpenseUiState.Loading,
-                    onBack      = { shellNavController.popBackStack() },
-                    onSubmit    = { addExpenseViewModel.submit() },
+                    receipt    = receipt,
+                    items      = items,
+                    splitData  = itemAssignViewModel.buildSplitData(),
+                    members    = members,
+                    currency   = currency,
+                    isLoading  = uiState is com.prathik.fairshare.ui.expense.AddExpenseUiState.Loading,
+                    onBack     = { shellNavController.popBackStack() },
+                    onSubmit   = { addExpenseViewModel.submit() },
                 )
 
                 // Navigate away on success

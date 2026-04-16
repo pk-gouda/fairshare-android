@@ -49,6 +49,7 @@ fun SplashScreen(
     onNavigateToGroups      : () -> Unit,
     onNavigateToVerifyEmail : () -> Unit,
     verifyDeepLink          : VerifyDeepLink? = null,
+    loginDeepLink           : Boolean = false,
     viewModel               : AuthViewModel = hiltViewModel(),
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "rings")
@@ -84,11 +85,13 @@ fun SplashScreen(
     LaunchedEffect(Unit) {
         delay(1200L)
         when {
-            // ✅ Deep link present — always go to VerifyEmail regardless of login state.
-            // This handles the case where the user is already logged in but taps the
-            // verification link again — they should see the "Already verified" screen,
-            // not be silently dropped into Groups with no feedback.
+            // ✅ Verify deep link — always go to VerifyEmail regardless of login state.
             verifyDeepLink != null -> onNavigateToVerifyEmail()
+
+            // ✅ Login deep link — go straight to Login (from reset-password.html).
+            // Skips the isLoggedIn check so a logged-in user who just reset their
+            // password still lands on Login to sign in with their new password.
+            loginDeepLink -> onNavigateToLogin()
 
             viewModel.isLoggedIn() -> onNavigateToGroups()
 

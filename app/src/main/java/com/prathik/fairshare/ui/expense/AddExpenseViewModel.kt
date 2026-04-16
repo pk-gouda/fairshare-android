@@ -24,20 +24,6 @@ import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import javax.inject.Inject
 
-/**
- * ViewModel for AddExpenseScreen.
- *
- * Manages all form state: description, amount, currency, group,
- * split type, payers, splits, category, notes, date, receipt.
- * Also manages Transfer tab state.
- *
- * groupId is optional — passed from GroupDetail when adding
- * an expense within a specific group. Null when adding globally.
- *
- * Currency defaults to user's preferredCurrency from EncryptedTokenStore.
- * Current user is set as default payer when members load.
- * Category auto-detects from description keywords.
- */
 @HiltViewModel
 class AddExpenseViewModel @Inject constructor(
     private val createExpenseUseCase: CreateExpenseUseCase,
@@ -49,18 +35,14 @@ class AddExpenseViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    // Optional groupId from nav argument — non-blank only
     val preselectedGroupId: String? = savedStateHandle.get<String>("groupId")
         ?.takeIf { it.isNotBlank() }
 
-    // Optional friendId from nav argument — pre-selects friend in split
     val preselectedFriendId: String? = savedStateHandle.get<String>("friendId")
         ?.takeIf { it.isNotBlank() }
 
-    // Current user ID — used to default payer to "You"
     val currentUserId: String? = tokenStore.getUserId()
 
-    // ── Tab state ─────────────────────────────────────────────────────────────
     private val _activeTab = MutableStateFlow(ExpenseTab.EXPENSE)
     val activeTab: StateFlow<ExpenseTab> = _activeTab.asStateFlow()
 
@@ -68,14 +50,12 @@ class AddExpenseViewModel @Inject constructor(
         _activeTab.value = tab
     }
 
-    // ── Form state (shared between tabs) ──────────────────────────────────────
     private val _description = MutableStateFlow("")
     val description: StateFlow<String> = _description.asStateFlow()
 
     private val _amount = MutableStateFlow("")
     val amount: StateFlow<String> = _amount.asStateFlow()
 
-    // Currency defaults to user's preferred currency from token store
     private val _currency = MutableStateFlow(tokenStore.getPreferredCurrency())
     val currency: StateFlow<String> = _currency.asStateFlow()
 
@@ -85,11 +65,9 @@ class AddExpenseViewModel @Inject constructor(
     private val _splitType = MutableStateFlow(SplitType.EQUAL)
     val splitType: StateFlow<SplitType> = _splitType.asStateFlow()
 
-    // Category — null means "Auto-detect" mode
     private val _category = MutableStateFlow<ExpenseCategory?>(null)
     val category: StateFlow<ExpenseCategory?> = _category.asStateFlow()
 
-    // Whether category was manually set (overrides auto-detect)
     private var categoryManuallySet = false
 
     private val _notes = MutableStateFlow("")
@@ -98,35 +76,26 @@ class AddExpenseViewModel @Inject constructor(
     private val _expenseDate = MutableStateFlow(LocalDateTime.now().toString())
     val expenseDate: StateFlow<String> = _expenseDate.asStateFlow()
 
-    // payerId → amount they paid
     private val _payerData = MutableStateFlow<Map<String, Double>>(emptyMap())
     val payerData: StateFlow<Map<String, Double>> = _payerData.asStateFlow()
 
-    // userId → their share
     private val _splitData = MutableStateFlow<Map<String, Double>>(emptyMap())
     val splitData: StateFlow<Map<String, Double>> = _splitData.asStateFlow()
 
-    // Members excluded from the EQUAL split — empty = all included
     private val _equalExcluded = MutableStateFlow<Set<String>>(emptySet())
     val equalExcluded: StateFlow<Set<String>> = _equalExcluded.asStateFlow()
 
     fun onToggleEqualMember(userId: String) {
         val current = _equalExcluded.value.toMutableSet()
         if (current.contains(userId)) current.remove(userId) else current.add(userId)
-        // Always keep at least one member included
         val includedCount = (_members.value.size - current.size)
         if (includedCount < 1) return
         _equalExcluded.value = current
         recalculateSplits()
     }
 
-    // The pointer value used when computing the EQUAL split preview.
-    // Sent to the backend so offline-created expenses produce the same
-    // distribution when they sync, regardless of pointer drift.
     private var _pointerAtCreation: Int? = null
 
-    // ── Transfer tab state ────────────────────────────────────────────────────
-    // fromUserId defaults to current user
     private val _transferFromId = MutableStateFlow(currentUserId)
     val transferFromId: StateFlow<String?> = _transferFromId.asStateFlow()
 
@@ -141,33 +110,43 @@ class AddExpenseViewModel @Inject constructor(
         _transferToId.value = userId
     }
 
-    // ── Groups + Members ──────────────────────────────────────────────────────
     private val _groups = MutableStateFlow<List<Group>>(emptyList())
     val groups: StateFlow<List<Group>> = _groups.asStateFlow()
 
     private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
     val members: StateFlow<List<GroupMember>> = _members.asStateFlow()
 
-    // ── Receipt state ─────────────────────────────────────────────────────────
     private val _receiptState = MutableStateFlow<ReceiptScanState>(ReceiptScanState.Idle)
     val receiptState: StateFlow<ReceiptScanState> = _receiptState.asStateFlow()
 
     private var scannedReceiptId: String? = null
     val currentReceiptId: String? get() = scannedReceiptId
 
-    // itemId → list of userIds assigned to that item
+    // itemId → list of userIds assigned to that item (for backend item-linking)
     private val _itemAssignments = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val itemAssignments: StateFlow<Map<String, List<String>>> = _itemAssignments.asStateFlow()
 
-    fun setItemAssignments(assignments: Map<String, List<String>>) {
+    // Accurate per-person dollar amounts from item assignment screen.
+    // Sent as splitData to bypass the backend's broken all-member auto-computation.
+    private val _itemSplitData = MutableStateFlow<Map<String, Double>>(emptyMap())
+
+    /**
+     * Called from ItemAssignmentScreen onDone.
+     * assignments → item-level user lists for backend item-linking
+     * splitData   → accurate per-person dollar totals; sent as splitData to backend
+     *               so only assigned members appear in the expense split.
+     */
+    fun setItemAssignments(
+        assignments: Map<String, List<String>>,
+        splitData: Map<String, Double>,
+    ) {
         _itemAssignments.value = assignments
+        _itemSplitData.value = splitData
     }
 
-    // ── UI State ──────────────────────────────────────────────────────────────
     private val _uiState = MutableStateFlow<AddExpenseUiState>(AddExpenseUiState.Idle)
     val uiState: StateFlow<AddExpenseUiState> = _uiState.asStateFlow()
 
-    // Pre-selected friend when coming from FriendDetail (direct expense)
     private val _preselectedFriend = MutableStateFlow<Friend?>(null)
     val preselectedFriend: StateFlow<Friend?> = _preselectedFriend.asStateFlow()
 
@@ -177,7 +156,6 @@ class AddExpenseViewModel @Inject constructor(
         preselectedFriendId?.let { loadFriendAsSplitParticipant(it) }
     }
 
-    // Pre-select a friend as the split participant for direct expenses from FriendDetail
     private fun loadFriendAsSplitParticipant(friendId: String) {
         viewModelScope.launch {
             when (val result = getFriendsUseCase()) {
@@ -186,39 +164,35 @@ class AddExpenseViewModel @Inject constructor(
                     val currentId = currentUserId ?: return@launch
                     _preselectedFriend.value = friend
 
-                    // Synthesize virtual GroupMember objects for you + friend
-                    // so the existing SplitPreviewCard and PayerSheet work unchanged
                     val now = java.time.LocalDateTime.now().toString()
                     val youAsMember = com.prathik.fairshare.domain.model.GroupMember(
-                        id                = currentId,
-                        userId            = currentId,
-                        fullName          = "You",
-                        email             = "",
+                        id = currentId,
+                        userId = currentId,
+                        fullName = "You",
+                        email = "",
                         profilePictureUrl = null,
-                        joinedAt          = now,
+                        joinedAt = now,
                     )
                     val friendAsMember = com.prathik.fairshare.domain.model.GroupMember(
-                        id                = friendId,
-                        userId            = friendId,
-                        fullName          = friend.fullName,
-                        email             = friend.email,
+                        id = friendId,
+                        userId = friendId,
+                        fullName = friend.fullName,
+                        email = friend.email,
                         profilePictureUrl = friend.profilePictureUrl,
-                        joinedAt          = now,
+                        joinedAt = now,
                     )
-                    _members.value   = listOf(youAsMember, friendAsMember)
+                    _members.value = listOf(youAsMember, friendAsMember)
                     _payerData.value = mapOf(currentId to 0.0)
                     recalculateSplits()
                 }
+
                 else -> Unit
             }
         }
     }
 
-    // ── Form field updates ────────────────────────────────────────────────────
-
     fun onDescriptionChanged(value: String) {
         _description.value = value
-        // Auto-detect category from keywords — only if not manually set
         if (!categoryManuallySet) {
             _category.value = detectCategory(value)
         }
@@ -249,18 +223,13 @@ class AddExpenseViewModel @Inject constructor(
     fun onSplitTypeChanged(value: SplitType) {
         val previous = _splitType.value
         _splitType.value = value
-
-        // Clear stale splitData when switching types so old amounts don't bleed through
         if (previous != value) {
             if (previous == SplitType.EQUAL && value != SplitType.EQUAL) {
-                // Equal dollar amounts are meaningless as %, shares, or exact amounts
                 _splitData.value = emptyMap()
             } else if (previous != SplitType.EQUAL && value != SplitType.EQUAL) {
-                // Switching between non-equal types (e.g. % → shares) — also clear
                 _splitData.value = emptyMap()
             }
         }
-
         recalculateSplits()
     }
 
@@ -281,28 +250,36 @@ class AddExpenseViewModel @Inject constructor(
         }
     }
 
-    // Called when user finishes editing split sheet — replaces entire splitData at once
     fun onSplitDataConfirmed(newSplitData: Map<String, Double>) {
         _splitData.value = newSplitData
     }
 
-    // ── Category auto-detection ───────────────────────────────────────────────
-
-    /**
-     * Detects expense category from description keywords.
-     * Returns null if no keyword matches (shows "Auto-detect" in UI).
-     */
     private fun detectCategory(description: String): ExpenseCategory? {
         val lower = description.lowercase()
         return when {
             lower.containsAny(
-                "dinner", "lunch", "breakfast", "restaurant", "food",
-                "cafe", "coffee", "eat", "pizza", "burger", "sushi"
+                "dinner",
+                "lunch",
+                "breakfast",
+                "restaurant",
+                "food",
+                "cafe",
+                "coffee",
+                "eat",
+                "pizza",
+                "burger",
+                "sushi"
             ) -> ExpenseCategory.DINING_OUT
 
             lower.containsAny(
-                "grocery", "groceries", "walmart", "target",
-                "supermarket", "vegetables", "fruit", "milk"
+                "grocery",
+                "groceries",
+                "walmart",
+                "target",
+                "supermarket",
+                "vegetables",
+                "fruit",
+                "milk"
             ) -> ExpenseCategory.GROCERIES
 
             lower.containsAny(
@@ -335,8 +312,13 @@ class AddExpenseViewModel @Inject constructor(
             ) -> ExpenseCategory.TV_PHONE_INTERNET
 
             lower.containsAny(
-                "movie", "netflix", "hulu", "cinema", "theatre",
-                "amazon prime", "disney"
+                "movie",
+                "netflix",
+                "hulu",
+                "cinema",
+                "theatre",
+                "amazon prime",
+                "disney"
             ) -> ExpenseCategory.MOVIES
 
             lower.containsAny("parking", "park") -> ExpenseCategory.PARKING
@@ -349,40 +331,58 @@ class AddExpenseViewModel @Inject constructor(
             ) -> ExpenseCategory.HOTEL
 
             lower.containsAny(
-                "flight", "plane", "airline", "airport",
-                "indigo", "air india"
+                "flight",
+                "plane",
+                "airline",
+                "airport",
+                "indigo",
+                "air india"
             ) -> ExpenseCategory.PLANE
 
             lower.containsAny(
-                "medical", "doctor", "hospital", "pharmacy",
-                "medicine", "clinic"
+                "medical",
+                "doctor",
+                "hospital",
+                "pharmacy",
+                "medicine",
+                "clinic"
             ) -> ExpenseCategory.MEDICAL
 
             lower.containsAny(
-                "gym", "sport", "football", "cricket",
-                "badminton", "fitness"
+                "gym",
+                "sport",
+                "football",
+                "cricket",
+                "badminton",
+                "fitness"
             ) -> ExpenseCategory.SPORTS
 
             lower.containsAny("gift", "birthday", "present") -> ExpenseCategory.GIFTS
             lower.containsAny(
-                "beer", "wine", "alcohol", "bar", "pub",
-                "whiskey", "vodka"
+                "beer",
+                "wine",
+                "alcohol",
+                "bar",
+                "pub",
+                "whiskey",
+                "vodka"
             ) -> ExpenseCategory.LIQUOR
 
             lower.containsAny("pet", "dog", "cat", "vet") -> ExpenseCategory.PETS
             lower.containsAny(
-                "cloth", "shirt", "shoes", "fashion",
-                "zara", "h&m"
+                "cloth",
+                "shirt",
+                "shoes",
+                "fashion",
+                "zara",
+                "h&m"
             ) -> ExpenseCategory.CLOTHING
 
-            else -> null // no match — show "Auto-detect"
+            else -> null
         }
     }
 
-    private fun String.containsAny(vararg keywords: String) =
-        keywords.any { this.contains(it) }
-
-    // ── Data loading ──────────────────────────────────────────────────────────
+    private fun String.containsAny(vararg keywords: String) = keywords.any { this.contains(it) }
 
     private fun loadGroups() {
         viewModelScope.launch {
@@ -398,14 +398,11 @@ class AddExpenseViewModel @Inject constructor(
             when (val result = getGroupMembersUseCase(groupId)) {
                 is ApiResult.Success -> {
                     _members.value = result.data
-
-                    // Default payer to current user if they're a member
                     val total = _amount.value.toDoubleOrNull() ?: 0.0
                     val currentUserMember = result.data.find { it.userId == currentUserId }
                     if (currentUserMember != null && _payerData.value.isEmpty()) {
                         _payerData.value = mapOf(currentUserMember.userId to total)
                     }
-
                     recalculateSplits()
                 }
 
@@ -414,18 +411,11 @@ class AddExpenseViewModel @Inject constructor(
         }
     }
 
-    // ── Split calculation ─────────────────────────────────────────────────────
-
-    /**
-     * Recalculates split amounts when amount, splitType, or members change.
-     * Only auto-calculates for EQUAL split — other types are set manually.
-     */
     private fun recalculateSplits() {
         val total = _amount.value.toDoubleOrNull() ?: return
         val members = _members.value
         if (members.isEmpty()) return
 
-        // Update payer amount if only current user is payer
         val uid = currentUserId ?: return
         if (_payerData.value.size == 1 && _payerData.value.containsKey(uid)) {
             _payerData.value = mapOf(uid to total)
@@ -440,18 +430,13 @@ class AddExpenseViewModel @Inject constructor(
                 val shareCents = totalCents / included.size
                 val remainderCents = totalCents - (shareCents * included.size)
 
-                // Use group.lastRemainderIndex as the rotation start so the preview
-                // matches what the backend will save. The backend uses joinedAt ASC order
-                // and the member list from the API is already in that order.
-                // For non-group expenses, start at 0 (sequential, consistent with backend).
                 val pointer = _groups.value
                     .find { it.id == _selectedGroupId.value }
                     ?.lastRemainderIndex ?: 0
                 val startIndex = if (remainderCents > 0 && included.isNotEmpty())
                     pointer % included.size else 0
-                _pointerAtCreation = pointer  // captured for offline sync
+                _pointerAtCreation = pointer
 
-                // Rotate list from startIndex — first `remainderCents` members get +1 cent
                 val rotated = included.drop(startIndex) + included.take(startIndex)
 
                 _splitData.value = rotated.mapIndexed { index, member ->
@@ -461,37 +446,39 @@ class AddExpenseViewModel @Inject constructor(
                 }.toMap()
             }
 
-            SplitType.UNEQUAL,
-            SplitType.PERCENTAGE,
-            SplitType.SHARES -> {
-                // Manual — user sets values in bottom sheet
+            SplitType.UNEQUAL, SplitType.PERCENTAGE, SplitType.SHARES -> { /* manual */
             }
         }
     }
 
-    // ── Receipt scan ──────────────────────────────────────────────────────────
-
-    /**
-     * Scans a receipt from a URI returned by GmsDocumentScanner.
-     * Compresses to max 1000px wide / JPEG 75% before sending (per handoff spec).
-     */
-    fun scanReceipt(context: android.content.Context, uri: android.net.Uri) {
+    fun scanReceipt(imageBytes: ByteArray) {
         viewModelScope.launch {
             _receiptState.value = ReceiptScanState.Scanning
-
             try {
-                // Decode and compress
-                val inputStream = context.contentResolver.openInputStream(uri)
-                var bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-                if (bitmap.width > 1000) {
-                    val ratio = 1000f / bitmap.width
-                    val h = (bitmap.height * ratio).toInt()
-                    bitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 1000, h, true)
+                val base64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    var bitmap = android.graphics.BitmapFactory.decodeByteArray(
+                        imageBytes,
+                        0,
+                        imageBytes.size
+                    )
+                    if (bitmap == null) return@withContext null
+                    if (bitmap.width > 1000) {
+                        val ratio = 1000f / bitmap.width
+                        val h = (bitmap.height * ratio).toInt()
+                        bitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 1000, h, true)
+                    }
+                    val outputStream = java.io.ByteArrayOutputStream()
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, outputStream)
+                    android.util.Base64.encodeToString(
+                        outputStream.toByteArray(),
+                        android.util.Base64.NO_WRAP
+                    )
                 }
-                val outputStream = java.io.ByteArrayOutputStream()
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, outputStream)
-                val base64 = android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.NO_WRAP)
-
+                if (base64 == null) {
+                    _receiptState.value =
+                        ReceiptScanState.Error("Could not decode image. Try scanning again.")
+                    return@launch
+                }
                 when (val result = scanReceiptUseCase(
                     imageBase64 = base64,
                     mimeType = "image/jpeg",
@@ -501,7 +488,9 @@ class AddExpenseViewModel @Inject constructor(
                         val receipt = result.data
                         scannedReceiptId = receipt.id
                         receipt.merchantName?.let { _description.value = it }
-                        receipt.totalAmount.let { _amount.value = it.toString() }
+                        if (receipt.totalAmount > 0) {
+                            _amount.value = receipt.totalAmount.toString()
+                        }
                         receipt.receiptDate?.let { date ->
                             _expenseDate.value = if (date.length == 10) "${date}T00:00:00" else date
                         }
@@ -509,29 +498,30 @@ class AddExpenseViewModel @Inject constructor(
                         _receiptState.value = ReceiptScanState.Success(receipt)
                         recalculateSplits()
                     }
+
                     is ApiResult.NetworkError -> {
-                        _receiptState.value = ReceiptScanState.Error("No internet connection.")
+                        _receiptState.value =
+                            ReceiptScanState.Error("No internet connection. Check your network and try again.")
                     }
+
                     else -> {
-                        _receiptState.value = ReceiptScanState.Error(
-                            "Failed to scan receipt. Try again or enter manually."
-                        )
+                        _receiptState.value =
+                            ReceiptScanState.Error("Receipt scan failed. Try again or enter the amount manually.")
                     }
                 }
             } catch (e: Exception) {
-                _receiptState.value = ReceiptScanState.Error("Could not read image. Try again.")
+                _receiptState.value =
+                    ReceiptScanState.Error("Something went wrong scanning the receipt. Try again.")
             }
         }
     }
 
-    // ── Submit expense ────────────────────────────────────────────────────────
+    fun setScanError(message: String) {
+        _receiptState.value = ReceiptScanState.Error(message)
+    }
 
     fun submit() {
-        if (_activeTab.value == ExpenseTab.TRANSFER) {
-            submitTransfer()
-        } else {
-            submitExpense()
-        }
+        if (_activeTab.value == ExpenseTab.TRANSFER) submitTransfer() else submitExpense()
     }
 
     private fun submitExpense() {
@@ -539,7 +529,6 @@ class AddExpenseViewModel @Inject constructor(
         val description = _description.value.trim()
         val amount = _amount.value.toDoubleOrNull()
 
-        // groupId is null for direct friend expenses — that's valid
         if (description.isBlank()) {
             _uiState.value = AddExpenseUiState.Error("Please enter a description."); return
         }
@@ -549,12 +538,22 @@ class AddExpenseViewModel @Inject constructor(
         if (_payerData.value.isEmpty()) {
             _uiState.value = AddExpenseUiState.Error("Please select who paid."); return
         }
-        // Skip splitData check when itemAssignments present — backend computes splits from items
-        if (_splitData.value.isEmpty() && _itemAssignments.value.isEmpty()) {
+
+        // Determine the split data to send:
+        // - If item assignments were done, use the accurate per-person amounts from the
+        //   assignment screen. This prevents the backend from falling back to splitting
+        //   equally among ALL group members (which would include unassigned members).
+        // - Otherwise use the manual _splitData (equal/unequal/percent/shares).
+        val effectiveSplitData: Map<String, Double>? = when {
+            _itemSplitData.value.isNotEmpty() -> _itemSplitData.value
+            _splitData.value.isNotEmpty() -> _splitData.value
+            else -> null
+        }
+
+        if (effectiveSplitData == null && _itemAssignments.value.isEmpty()) {
             _uiState.value = AddExpenseUiState.Error("Please set how to split."); return
         }
 
-        // Use detected or manually set category, fall back to GENERAL
         val finalCategory = _category.value ?: ExpenseCategory.GENERAL
 
         viewModelScope.launch {
@@ -564,15 +563,18 @@ class AddExpenseViewModel @Inject constructor(
                 description = description,
                 totalAmount = amount,
                 currency = _currency.value,
-                splitType = _splitType.value,
+                // ✅ Force UNEQUAL when item assignments are used so the backend
+                // uses the exact per-person amounts from effectiveSplitData instead of
+                // recalculating equal splits from scratch (which ignores splitData values).
+                splitType = if (_itemSplitData.value.isNotEmpty()) SplitType.UNEQUAL else _splitType.value,
                 category = finalCategory,
                 notes = _notes.value.ifBlank { null },
                 expenseDate = _expenseDate.value,
                 payerData = _payerData.value,
-                splitData        = _splitData.value,
-                receiptId        = scannedReceiptId,
+                splitData = effectiveSplitData,
+                receiptId = scannedReceiptId,
                 remainderPointer = _pointerAtCreation,
-                itemAssignments  = _itemAssignments.value.ifEmpty { null },
+                itemAssignments = _itemAssignments.value.ifEmpty { null },
             )) {
                 is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
                 is ApiResult.NetworkError -> _uiState.value =
@@ -590,7 +592,6 @@ class AddExpenseViewModel @Inject constructor(
         val toId = _transferToId.value
         val amount = _amount.value.toDoubleOrNull()
 
-        // groupId is null for direct friend transfers — that's valid
         if (fromId == null) {
             _uiState.value = AddExpenseUiState.Error("Please select who is paying."); return
         }
@@ -634,8 +635,6 @@ class AddExpenseViewModel @Inject constructor(
         _uiState.value = AddExpenseUiState.Idle
     }
 }
-
-// ── Enums + UI States ─────────────────────────────────────────────────────────
 
 enum class ExpenseTab { EXPENSE, TRANSFER }
 

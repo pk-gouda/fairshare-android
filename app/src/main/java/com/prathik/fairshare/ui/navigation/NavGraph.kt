@@ -29,7 +29,8 @@ import com.prathik.fairshare.ui.shell.MainShell
 fun NavGraph(
     navController  : NavHostController,
     modifier       : Modifier = Modifier,
-    verifyDeepLink : VerifyDeepLink? = null,   // ✅
+    verifyDeepLink : VerifyDeepLink? = null,
+    loginDeepLink  : Boolean = false,
 ) {
     NavHost(
         navController    = navController,
@@ -50,15 +51,13 @@ fun NavGraph(
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
                 },
-                // ✅ Deep link present — go to VerifyEmail so the user sees
-                // the verification result (success or already-verified screen)
-                // instead of being silently dropped into Groups.
                 onNavigateToVerifyEmail = {
                     navController.navigate(Screen.VerifyEmail.route(null)) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
                 },
                 verifyDeepLink = verifyDeepLink,
+                loginDeepLink  = loginDeepLink,
             )
         }
         composable(Screen.Login.route) {

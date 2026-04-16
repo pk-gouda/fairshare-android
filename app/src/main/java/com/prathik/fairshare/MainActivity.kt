@@ -7,13 +7,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.navigation.compose.rememberNavController
 import com.prathik.fairshare.ui.navigation.NavGraph
-import com.prathik.fairshare.ui.navigation.Screen
 import com.prathik.fairshare.ui.theme.FairShareTheme
 import com.prathik.fairshare.ui.theme.Surface0
 import dagger.hilt.android.AndroidEntryPoint
@@ -32,37 +28,35 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
 
-                    // ✅ Read deep link on cold start.
-                    // If the activity was launched via fairshare://verify-email,
-                    // extract userId + token and pass to NavGraph so it can
-                    // navigate to the VerifyEmailScreen in "verifying" mode.
-                    val startDeepLink = remember { extractVerifyDeepLink(intent) }
+                    // ✅ Read deep links on cold start / recreate().
+                    // verifyDeepLink — fairshare://verify-email?userId=xxx&token=yyy
+                    // loginDeepLink  — fairshare://login (from reset-password.html)
+                    val startVerifyDeepLink = remember { extractVerifyDeepLink(intent) }
+                    val startLoginDeepLink  = remember { isLoginDeepLink(intent) }
 
                     NavGraph(
                         navController  = navController,
-                        verifyDeepLink = startDeepLink,
+                        verifyDeepLink = startVerifyDeepLink,
+                        loginDeepLink  = startLoginDeepLink,
                     )
                 }
             }
         }
     }
 
-    // ✅ Called when the app is already running (singleTask) and the user
-    // taps the verification link while the app is in the background.
-    // android:launchMode="singleTask" in the manifest ensures this fires
-    // instead of creating a new activity instance.
+    // ✅ Called when the app is already running (singleTask) and a deep link
+    // arrives while the app is in the background. recreate() re-reads the
+    // new intent and lets NavGraph route correctly.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // The NavGraph will re-read the intent next composition via
-        // a side-effect in the VerifyEmailScreen deep link handler.
-        // For simplicity we recreate — singleTask guarantees no stack loss.
         recreate()
     }
 
     companion object {
+
         /**
-         * Extracts userId and token from a fairshare://verify-email deep link intent.
+         * Extracts userId + token from a fairshare://verify-email deep link.
          * Returns null if the intent is not a verification link.
          */
         fun extractVerifyDeepLink(intent: Intent?): VerifyDeepLink? {
@@ -72,13 +66,21 @@ class MainActivity : ComponentActivity() {
             val token  = data.getQueryParameter("token")  ?: return null
             return VerifyDeepLink(userId, token)
         }
+
+        /**
+         * Returns true if the intent is a fairshare://login deep link.
+         * Fired by reset-password.html after a successful password reset
+         * so the user lands on LoginScreen instead of Splash.
+         */
+        fun isLoginDeepLink(intent: Intent?): Boolean {
+            val data = intent?.data ?: return false
+            return data.scheme == "fairshare" && data.host == "login"
+        }
     }
 }
 
 /**
  * Carries the userId + token extracted from a fairshare://verify-email deep link.
- * Passed from MainActivity down to NavGraph so the VerifyEmailScreen can
- * immediately call the verify API instead of waiting for user action.
  */
 data class VerifyDeepLink(
     val userId: String,
