@@ -30,14 +30,14 @@ class GroupRepositoryImpl @Inject constructor(
 ) : GroupRepository {
 
     override suspend fun getMyGroups(): ApiResult<List<Group>> {
-        val cached = groupDao.getAll()
-        if (cached.isNotEmpty()) {
-            // Serve cache instantly — fire background refresh without blocking
-            CoroutineScope(Dispatchers.IO).launch { refreshGroupsFromNetwork() }
-            return ApiResult.Success(cached.map { it.toDomain() })
+        // Always fetch from network to ensure new/deleted groups appear immediately.
+        val result = refreshGroupsFromNetwork()
+        // Fall back to cache if network fails
+        if (result is ApiResult.NetworkError) {
+            val cached = groupDao.getAll()
+            if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
         }
-        // No cache — must wait for network
-        return refreshGroupsFromNetwork()
+        return result
     }
 
     private suspend fun refreshGroupsFromNetwork(): ApiResult<List<Group>> {
@@ -51,18 +51,14 @@ class GroupRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getGroup(groupId: String): ApiResult<Group> {
-        // Return cached group immediately if available
-        val cached = groupDao.getById(groupId)
-        if (cached != null) {
-            // Refresh in background
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                val result = safeApiCall { groupService.getGroup(groupId) }
-                if (result is ApiResult.Success) groupDao.insert(result.data.toEntity())
-            }
-            return ApiResult.Success(cached.toDomain())
-        }
+        // Always fetch from network to reflect latest group state.
         val result = safeApiCall { groupService.getGroup(groupId) }
         if (result is ApiResult.Success) groupDao.insert(result.data.toEntity())
+        // Fall back to cache if network fails
+        if (result is ApiResult.NetworkError) {
+            val cached = groupDao.getById(groupId)
+            if (cached != null) return ApiResult.Success(cached.toDomain())
+        }
         return result.mapSuccess { it.toDomain() }
     }
 

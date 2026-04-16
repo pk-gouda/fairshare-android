@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsPrimaryButton
+import com.prathik.fairshare.ui.components.FsPasswordField
 import com.prathik.fairshare.ui.components.FsTextField
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.Green400
@@ -69,7 +70,7 @@ fun EditProfileScreen(
     val editingField     by viewModel.editingField.collectAsState()
     val emailChangeState by viewModel.emailChangeState.collectAsState()
     val pendingNewEmail  by viewModel.pendingNewEmail.collectAsState()
-    val verificationToken by viewModel.verificationToken.collectAsState()
+    val currentPassword  by viewModel.currentPassword.collectAsState()
     val isLoading        by viewModel.isLoading.collectAsState()
     val actionState      by viewModel.actionState.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
@@ -159,64 +160,40 @@ fun EditProfileScreen(
                     isEditing = editingField == EditingField.EMAIL,
                     onEditClick = { viewModel.startEditing(EditingField.EMAIL) },
                     editContent = {
-                        when (emailChangeState) {
-                            is EmailChangeState.Idle -> {
-                                Text(
-                                    text     = "Enter new email — we'll send a verification link",
-                                    fontSize = 12.sp,
-                                    color    = TextTertiary,
-                                    modifier = Modifier.padding(bottom = Spacing.sm),
-                                )
-                                FsTextField(
-                                    value         = pendingNewEmail,
-                                    onValueChange = { viewModel.onPendingEmailChanged(it) },
-                                    label         = "New email address",
-                                    keyboardType  = KeyboardType.Email,
-                                    imeAction     = ImeAction.Done,
-                                    keyboardActions = KeyboardActions(onDone = { viewModel.requestEmailChange() }),
-                                    modifier      = Modifier.fillMaxWidth(),
-                                )
-                                Spacer(modifier = Modifier.height(Spacing.sm))
-                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                    TextButton(onClick = { viewModel.cancelEmailChange() }) {
-                                        Text("Cancel", color = TextSecondary)
-                                    }
-                                    FsPrimaryButton(
-                                        text      = "Send verification",
-                                        onClick   = { viewModel.requestEmailChange() },
-                                        isLoading = isLoading,
-                                        modifier  = Modifier.weight(1f),
-                                    )
-                                }
+                        Text(
+                            text     = "Confirm your password to change email",
+                            fontSize = 12.sp,
+                            color    = TextTertiary,
+                            modifier = Modifier.padding(bottom = Spacing.sm),
+                        )
+                        FsPasswordField(
+                            value         = currentPassword,
+                            onValueChange = { viewModel.onCurrentPasswordChanged(it) },
+                            label         = "Current password",
+                            imeAction     = ImeAction.Next,
+                            modifier      = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.sm))
+                        FsTextField(
+                            value         = pendingNewEmail,
+                            onValueChange = { viewModel.onPendingEmailChanged(it) },
+                            label         = "New email address",
+                            keyboardType  = KeyboardType.Email,
+                            imeAction     = ImeAction.Done,
+                            keyboardActions = KeyboardActions(onDone = { viewModel.requestEmailChange() }),
+                            modifier      = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.sm))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            TextButton(onClick = { viewModel.cancelEmailChange() }) {
+                                Text("Cancel", color = TextSecondary)
                             }
-                            is EmailChangeState.AwaitingVerification -> {
-                                Text(
-                                    text     = "Enter the verification token sent to $pendingNewEmail",
-                                    fontSize = 12.sp,
-                                    color    = TextTertiary,
-                                    modifier = Modifier.padding(bottom = Spacing.sm),
-                                )
-                                FsTextField(
-                                    value         = verificationToken,
-                                    onValueChange = { viewModel.onVerificationTokenChanged(it) },
-                                    label         = "Verification token",
-                                    imeAction     = ImeAction.Done,
-                                    keyboardActions = KeyboardActions(onDone = { viewModel.confirmEmailChange() }),
-                                    modifier      = Modifier.fillMaxWidth(),
-                                )
-                                Spacer(modifier = Modifier.height(Spacing.sm))
-                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                    TextButton(onClick = { viewModel.cancelEmailChange() }) {
-                                        Text("Cancel", color = TextSecondary)
-                                    }
-                                    FsPrimaryButton(
-                                        text      = "Confirm",
-                                        onClick   = { viewModel.confirmEmailChange() },
-                                        isLoading = isLoading,
-                                        modifier  = Modifier.weight(1f),
-                                    )
-                                }
-                            }
+                            FsPrimaryButton(
+                                text      = "Send verification",
+                                onClick   = { viewModel.requestEmailChange() },
+                                isLoading = isLoading,
+                                modifier  = Modifier.weight(1f),
+                            )
                         }
                     },
                 )

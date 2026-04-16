@@ -30,25 +30,20 @@ class ExpenseRepositoryImpl @Inject constructor(
 ) : ExpenseRepository {
 
     override suspend fun getGroupExpenses(groupId: String): ApiResult<List<Expense>> {
-        val cached = expenseDao.getByGroupId(groupId)
-        if (cached.isNotEmpty()) {
-            // Serve cache instantly, refresh in background
-            CoroutineScope(Dispatchers.IO).launch {
-                val result = safeApiCall { expenseService.getGroupExpenses(groupId) }
-                if (result is ApiResult.Success) {
-                    val entities = result.data.map { it.toEntity() }
-                    expenseDao.deleteByGroupId(groupId)
-                    expenseDao.insertAll(entities)
-                }
-            }
-            return ApiResult.Success(cached.map { it.toDomain() })
-        }
-        // No cache — wait for network
+        // Always fetch from network first so the UI never shows stale data
+        // after creating/editing an expense. The background fire-and-forget
+        // pattern caused new expenses to be invisible until the next cold load.
         val result = safeApiCall { expenseService.getGroupExpenses(groupId) }
         if (result is ApiResult.Success) {
             val entities = result.data.map { it.toEntity() }
             expenseDao.deleteByGroupId(groupId)
             expenseDao.insertAll(entities)
+            return ApiResult.Success(result.data.map { it.toDomain() })
+        }
+        // Network failed — fall back to cache so the screen isn't empty
+        val cached = expenseDao.getByGroupId(groupId)
+        if (cached.isNotEmpty()) {
+            return ApiResult.Success(cached.map { it.toDomain() })
         }
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }

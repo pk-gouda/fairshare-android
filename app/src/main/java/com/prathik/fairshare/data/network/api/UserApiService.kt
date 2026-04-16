@@ -33,7 +33,7 @@ interface UserApiService {
     suspend fun updateProfile(@Body request: UpdateProfileRequest): ApiResponse<UserResponse>
 
     @POST("api/users/me/change-email")
-    suspend fun requestEmailChange(@Body body: Map<String, String>): ApiResponse<Map<String, String>>
+    suspend fun requestEmailChange(@Body body: Map<String, String>): ApiResponse<Unit>
 
     @POST("api/users/me/verify-email-change")
     suspend fun verifyEmailChange(@Query("token") token: String): ApiResponse<Unit>

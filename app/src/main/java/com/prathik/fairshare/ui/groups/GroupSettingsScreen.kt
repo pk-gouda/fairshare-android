@@ -94,6 +94,7 @@ fun GroupSettingsScreen(
     onNavigateToAnalytics: (String) -> Unit = {},
     onNavigateToRecurring: (String) -> Unit = {},
     onNavigateToReminders: (String) -> Unit = {},
+    onNavigateToCurrency : (currentCurrency: String) -> Unit = {},
     viewModel            : GroupSettingsViewModel = hiltViewModel(),
 ) {
     val group            by viewModel.group.collectAsState()
@@ -141,6 +142,38 @@ fun GroupSettingsScreen(
             is ClaimActionState.Success -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
             is ClaimActionState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
             else -> Unit
+        }
+    }
+
+    // ── Linking overlay — shown while placeholder assignment is in progress ──
+    if (claimState is ClaimActionState.Loading) {
+        Box(
+            modifier         = Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
+                .then(Modifier), // absorb all touches
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Spacing.md),
+            ) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    color    = Green400,
+                    modifier = Modifier.size(48.dp),
+                )
+                Text(
+                    text      = "Linking member…",
+                    fontSize  = 15.sp,
+                    color     = androidx.compose.ui.graphics.Color.White,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text      = "Updating balances across all expenses",
+                    fontSize  = 12.sp,
+                    color     = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.6f),
+                )
+            }
         }
     }
 
@@ -263,6 +296,10 @@ fun GroupSettingsScreen(
 
     // ── Assign sheet ──────────────────────────────────────────────────────────
     showAssignSheet?.let { member ->
+        // Refresh friends every time the sheet opens to avoid stale empty list
+        androidx.compose.runtime.LaunchedEffect(member) {
+            viewModel.refreshFriends()
+        }
         androidx.compose.material3.ModalBottomSheet(
             onDismissRequest = { showAssignSheet = null },
             containerColor   = Surface2,
@@ -284,7 +321,19 @@ fun GroupSettingsScreen(
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                 val realMemberIds = members.filter { !it.email.startsWith("placeholder+") }.map { it.userId }.toSet()
                 val assignable    = friends.filter { it.id !in realMemberIds }
-                if (assignable.isNotEmpty()) {
+                if (friends.isEmpty()) {
+                    // Friends still loading — show spinner
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            color    = Green400,
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                } else if (assignable.isNotEmpty()) {
                     assignable.forEach { friend ->
                         Row(
                             modifier = Modifier
@@ -298,6 +347,19 @@ fun GroupSettingsScreen(
                             Text(friend.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.weight(1f))
                         }
                         HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                    }
+                } else {
+                    // Friends loaded but all are already in the group
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "No friends to assign — add them to FairShare first",
+                            fontSize = 13.sp, color = TextSecondary,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = Spacing.lg),
+                        )
                     }
                 }
                 Row(
@@ -552,7 +614,7 @@ fun GroupSettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { /* TODO: open currency picker */ }
+                            .clickable { onNavigateToCurrency("USD") }
                             .padding(horizontal = Spacing.md, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,

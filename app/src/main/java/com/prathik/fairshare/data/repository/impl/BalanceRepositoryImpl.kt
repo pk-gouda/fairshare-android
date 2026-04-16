@@ -26,18 +26,14 @@ class BalanceRepositoryImpl @Inject constructor(
     override suspend fun getAllBalances(): ApiResult<List<Balance>> {
         val userId = tokenStore.getUserId()
 
-        // Return cached balances immediately if available
-        if (userId != null) {
+        // Always fetch from network — balance accuracy is critical.
+        val result = refreshBalances(userId)
+        // Fall back to cache if network fails
+        if (result is ApiResult.NetworkError && userId != null) {
             val cached = balanceDao.getByUserId(userId)
-            if (cached.isNotEmpty()) {
-                // Refresh in background
-                CoroutineScope(Dispatchers.IO).launch { refreshBalances(userId) }
-                return ApiResult.Success(cached.map { it.toDomain() })
-            }
+            if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
         }
-
-        // No cache — must wait for network
-        return refreshBalances(userId)
+        return result
     }
 
     private suspend fun refreshBalances(userId: String?): ApiResult<List<Balance>> {

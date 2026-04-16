@@ -9,7 +9,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.prathik.fairshare.MainActivity.Companion.extractVerifyDeepLink
+import com.prathik.fairshare.MainActivity.Companion.extractEmailChangeToken
 import com.prathik.fairshare.VerifyDeepLink
+import com.prathik.fairshare.ui.account.ConfirmEmailChangeScreen
 import com.prathik.fairshare.ui.auth.SplashScreen
 import com.prathik.fairshare.ui.auth.LoginScreen
 import com.prathik.fairshare.ui.auth.RegisterScreen
@@ -27,10 +29,11 @@ import com.prathik.fairshare.ui.shell.MainShell
  */
 @Composable
 fun NavGraph(
-    navController  : NavHostController,
-    modifier       : Modifier = Modifier,
-    verifyDeepLink : VerifyDeepLink? = null,
-    loginDeepLink  : Boolean = false,
+    navController    : NavHostController,
+    modifier         : Modifier = Modifier,
+    verifyDeepLink   : VerifyDeepLink? = null,
+    loginDeepLink    : Boolean = false,
+    emailChangeToken : String? = null,
 ) {
     NavHost(
         navController    = navController,
@@ -56,8 +59,14 @@ fun NavGraph(
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
                 },
-                verifyDeepLink = verifyDeepLink,
-                loginDeepLink  = loginDeepLink,
+                onNavigateToConfirmEmailChange = {
+                    navController.navigate(Screen.ConfirmEmailChange.route(emailChangeToken ?: "")) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
+                verifyDeepLink   = verifyDeepLink,
+                loginDeepLink    = loginDeepLink,
+                emailChangeToken = emailChangeToken,
             )
         }
         composable(Screen.Login.route) {
@@ -118,7 +127,7 @@ fun NavGraph(
 
         // ── Main tabs ─────────────────────────────────────────────────────────
         composable(Screen.Groups.route) {
-            MainShell(rootNavController = navController)
+            MainShell(rootNavController = navController, emailChangeToken = emailChangeToken)
         }
 
         // ── Group ─────────────────────────────────────────────────────────────
@@ -287,6 +296,31 @@ fun NavGraph(
         }
 
         // ── Account ───────────────────────────────────────────────────────────
+        composable(
+            route     = Screen.ConfirmEmailChange.route,
+            arguments = listOf(
+                navArgument("token") {
+                    type         = NavType.StringType
+                    nullable     = true
+                    defaultValue = null
+                }
+            ),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "fairshare://confirm-email-change?token={token}" }
+            ),
+        ) { backStackEntry ->
+            val tokenFromNav  = backStackEntry.arguments?.getString("token")
+            val token = emailChangeToken ?: tokenFromNav
+            ConfirmEmailChangeScreen(
+                token         = token,
+                onDone        = {
+                    navController.navigate(Screen.Groups.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
+        }
+
         composable(Screen.EditProfile.route) {
             PlaceholderScreen("Edit Profile")
         }

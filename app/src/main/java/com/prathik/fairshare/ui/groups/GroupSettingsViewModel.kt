@@ -82,7 +82,7 @@ class GroupSettingsViewModel @Inject constructor(
         loadFriends()
     }
 
-    private fun loadFriends() {
+    fun refreshFriends() {
         viewModelScope.launch {
             when (val r = friendRepository.getFriends()) {
                 is ApiResult.Success -> _friends.value = r.data
@@ -90,6 +90,8 @@ class GroupSettingsViewModel @Inject constructor(
             }
         }
     }
+
+    private fun loadFriends() = refreshFriends()
 
     fun loadData() {
         viewModelScope.launch { loadDataInternal() }

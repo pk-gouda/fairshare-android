@@ -123,9 +123,11 @@ class GroupDetailViewModel @Inject constructor(
     }
 
     fun refreshExpenses() {
-        // ✅ Fix 1: skip if loadData() is still in-flight — avoids 8 simultaneous
-        // requests on cold start (5 from loadData + 3 from RESUMED trigger)
-        if (!initialLoadDone) return
+        // Only skip if we've never loaded at all (app cold start) — loadData() handles that.
+        // Do NOT skip on subsequent resumes — this ensures new expenses appear immediately
+        // when returning from AddExpense without waiting for another loadData() cycle.
+        if (_groupState.value is GroupDetailUiState.Loading &&
+            _expensesState.value is ExpensesUiState.Loading) return
 
         viewModelScope.launch {
             val expensesDeferred    = async { getGroupExpensesUseCase(groupId) }

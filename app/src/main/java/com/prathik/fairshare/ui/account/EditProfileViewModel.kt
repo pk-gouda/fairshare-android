@@ -41,8 +41,8 @@ class EditProfileViewModel @Inject constructor(
     private val _pendingNewEmail = MutableStateFlow("")
     val pendingNewEmail: StateFlow<String> = _pendingNewEmail.asStateFlow()
 
-    private val _verificationToken = MutableStateFlow("")
-    val verificationToken: StateFlow<String> = _verificationToken.asStateFlow()
+    private val _currentPassword = MutableStateFlow("")
+    val currentPassword: StateFlow<String> = _currentPassword.asStateFlow()
 
     // ── Loading / action ──────────────────────────────────────────────────────
     private val _isLoading = MutableStateFlow(false)
@@ -75,7 +75,7 @@ class EditProfileViewModel @Inject constructor(
     fun onFullNameChanged(value: String)  { _fullName.value = value }
     fun onPhoneChanged(value: String)     { _phoneNumber.value = value }
     fun onPendingEmailChanged(value: String) { _pendingNewEmail.value = value }
-    fun onVerificationTokenChanged(value: String) { _verificationToken.value = value }
+    fun onCurrentPasswordChanged(value: String) { _currentPassword.value = value }
 
     // ── Save name ─────────────────────────────────────────────────────────────
     fun saveName() {
@@ -114,57 +114,42 @@ class EditProfileViewModel @Inject constructor(
 
     // ── Email change flow ─────────────────────────────────────────────────────
     fun requestEmailChange() {
-        val newEmail = _pendingNewEmail.value.trim()
+        val newEmail  = _pendingNewEmail.value.trim()
+        val password  = _currentPassword.value
         if (newEmail.isBlank() || !newEmail.contains("@")) {
             _actionState.value = EditProfileActionState.Error("Enter a valid email address")
             return
         }
+        if (password.isBlank()) {
+            _actionState.value = EditProfileActionState.Error("Enter your current password to continue")
+            return
+        }
         viewModelScope.launch {
             _isLoading.value = true
-            when (val result = userRepository.requestEmailChange(newEmail)) {
+            when (userRepository.requestEmailChange(newEmail, password)) {
                 is ApiResult.Success -> {
-                    // Backend returns token directly (SES not wired yet)
-                    // In production this would be empty and user checks their email
-                    _verificationToken.value = result.data
-                    _emailChangeState.value = EmailChangeState.AwaitingVerification
-                    _actionState.value = EditProfileActionState.Success("Verification sent to $newEmail")
+                    // Collapse the form — user taps the link in their email to confirm.
+                    // No token entry needed; the deep link handles it automatically.
+                    _emailChangeState.value = EmailChangeState.Idle
+                    _editingField.value     = null
+                    _pendingNewEmail.value  = ""
+                    _currentPassword.value  = ""
+                    _actionState.value      = EditProfileActionState.Success(
+                        "Check your inbox at $newEmail and tap the confirmation link.")
                 }
-                is ApiResult.Conflict -> _actionState.value = EditProfileActionState.Error("Email already in use")
+                is ApiResult.Unauthorized -> _actionState.value = EditProfileActionState.Error("Incorrect password")
+                is ApiResult.Conflict     -> _actionState.value = EditProfileActionState.Error("Email already in use")
                 else -> _actionState.value = EditProfileActionState.Error("Failed to send verification")
             }
             _isLoading.value = false
         }
     }
 
-    fun confirmEmailChange() {
-        val token = _verificationToken.value.trim()
-        if (token.isBlank()) {
-            _actionState.value = EditProfileActionState.Error("Enter the verification token")
-            return
-        }
-        viewModelScope.launch {
-            _isLoading.value = true
-            when (userRepository.verifyEmailChange(token)) {
-                is ApiResult.Success -> {
-                    _email.value            = _pendingNewEmail.value.trim()
-                    _pendingNewEmail.value  = ""
-                    _verificationToken.value = ""
-                    _emailChangeState.value = EmailChangeState.Idle
-                    _editingField.value     = null
-                    _actionState.value      = EditProfileActionState.Success("Email updated successfully")
-                }
-                is ApiResult.Unauthorized -> _actionState.value = EditProfileActionState.Error("Invalid or expired token")
-                else -> _actionState.value = EditProfileActionState.Error("Verification failed")
-            }
-            _isLoading.value = false
-        }
-    }
-
     fun cancelEmailChange() {
-        _emailChangeState.value  = EmailChangeState.Idle
-        _pendingNewEmail.value   = ""
-        _verificationToken.value = ""
-        _editingField.value      = null
+        _emailChangeState.value = EmailChangeState.Idle
+        _pendingNewEmail.value  = ""
+        _currentPassword.value  = ""
+        _editingField.value     = null
     }
 
     fun resetActionState() { _actionState.value = EditProfileActionState.Idle }
@@ -173,8 +158,7 @@ class EditProfileViewModel @Inject constructor(
 enum class EditingField { NAME, PHONE, EMAIL }
 
 sealed class EmailChangeState {
-    object Idle                : EmailChangeState()
-    object AwaitingVerification: EmailChangeState()
+    object Idle : EmailChangeState()
 }
 
 sealed class EditProfileActionState {

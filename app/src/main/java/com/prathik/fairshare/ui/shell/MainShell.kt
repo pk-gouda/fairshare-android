@@ -60,6 +60,7 @@ import com.prathik.fairshare.ui.expense.ReviewSubmitScreen
 import com.prathik.fairshare.ui.groups.GroupBalancesScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
+import com.prathik.fairshare.ui.groups.GroupSettingsViewModel
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.friends.FriendsScreen
 import com.prathik.fairshare.ui.friends.AddFriendScreen
@@ -124,8 +125,9 @@ data class BottomNavItem(
  */
 @Composable
 fun MainShell(
-    rootNavController: NavController,
-    viewModel: MainShellViewModel = hiltViewModel(),
+    rootNavController : NavController,
+    emailChangeToken  : String? = null,
+    viewModel         : MainShellViewModel = hiltViewModel(),
 ) {
     val unreadCount by viewModel.unreadCount.collectAsState()
 
@@ -158,6 +160,17 @@ fun MainShell(
 
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
     val shellNavController = rememberNavController()
+
+    // ── Handle email change deep link when app is already open ────────────────
+    // When user taps "Confirm New Email" while app is running, onNewIntent fires
+    // and MainShell recomposes with a non-null emailChangeToken.
+    LaunchedEffect(emailChangeToken) {
+        if (!emailChangeToken.isNullOrBlank()) {
+            shellNavController.navigate(Screen.ConfirmEmailChange.route(emailChangeToken)) {
+                launchSingleTop = true
+            }
+        }
+    }
 
     // Keep selectedTabIndex in sync with the actual back stack
     val currentBackStackEntry by shellNavController.currentBackStackEntryAsState()
@@ -468,6 +481,9 @@ fun MainShell(
                     onNavigateToReminders = { gId ->
                         shellNavController.navigate(Screen.Reminders.route(gId))
                     },
+                    onNavigateToCurrency = { _ ->
+                        shellNavController.navigate(Screen.CurrencySelect.route)
+                    },
                 )
             }
 
@@ -619,7 +635,7 @@ fun MainShell(
                 )
             }
             composable(Screen.CurrencySelect.route) { backStackEntry ->
-                // Check if we came from AddExpense or EditExpense
+                // Check if we came from AddExpense, EditExpense, or GroupSettings
                 val fromAddExpense = remember(backStackEntry) {
                     try {
                         shellNavController.getBackStackEntry(Screen.AddExpense.route)
@@ -631,6 +647,14 @@ fun MainShell(
                 val fromEditExpense = remember(backStackEntry) {
                     try {
                         shellNavController.getBackStackEntry(Screen.EditExpense.route)
+                        true
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+                val fromGroupSettings = remember(backStackEntry) {
+                    try {
+                        shellNavController.getBackStackEntry(Screen.GroupSettings.route)
                         true
                     } catch (e: Exception) {
                         false
@@ -657,6 +681,19 @@ fun MainShell(
                     CurrencySelectScreen(
                         currentCurrency = currency,
                         onSelect = { selected -> editExpenseViewModel.onCurrencyChanged(selected) },
+                        onBack = { shellNavController.popBackStack() },
+                    )
+                } else if (fromGroupSettings) {
+                    val parentEntry = remember(backStackEntry) {
+                        shellNavController.getBackStackEntry(Screen.GroupSettings.route)
+                    }
+                    val groupSettingsViewModel = hiltViewModel<GroupSettingsViewModel>(parentEntry)
+                    CurrencySelectScreen(
+                        currentCurrency = "USD",
+                        onSelect = { selected ->
+                            // TODO: wire to group defaultCurrency when Group model supports it
+                            shellNavController.popBackStack()
+                        },
                         onBack = { shellNavController.popBackStack() },
                     )
                 } else {
@@ -790,10 +827,17 @@ fun MainShell(
 
                 val receipt = (receiptState as? com.prathik.fairshare.ui.expense.ReceiptScanState.Success)?.receipt
 
-                if (receipt == null) {
+                // Only pop back if not already navigating away on success.
+                // Without this guard, the ViewModel being destroyed resets receiptState
+                // to null, triggering a second popBackStack that removes GroupDetail too.
+                if (receipt == null &&
+                    uiState !is com.prathik.fairshare.ui.expense.AddExpenseUiState.Success &&
+                    uiState !is com.prathik.fairshare.ui.expense.AddExpenseUiState.Loading) {
                     shellNavController.popBackStack()
                     return@composable
                 }
+
+                if (receipt == null) return@composable
 
                 ReviewSubmitScreen(
                     receipt    = receipt,
@@ -949,6 +993,11 @@ fun MainShell(
                     onNavigateToGroup = { groupId ->
                         shellNavController.navigate(Screen.GroupDetail.route(groupId))
                     },
+                    onNavigateToGroupsTab = {
+                        shellNavController.navigate(Screen.Groups.route) {
+                            popUpTo(Screen.Groups.route) { inclusive = false }
+                        }
+                    },
                     onNavigateToAnalytics = {
                         shellNavController.navigate(Screen.FriendAnalytics.route(friendId))
                     },
@@ -1022,7 +1071,33 @@ fun MainShell(
             }
             composable(Screen.ChangePassword.route) {
                 ChangePasswordScreen(
-                    onBack = { shellNavController.popBackStack() },
+                    onBack      = { shellNavController.popBackStack() },
+                    onLoggedOut = {
+                        rootNavController.navigate(Screen.Login.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                )
+            }
+            composable(
+                route = Screen.ConfirmEmailChange.route,
+                arguments = listOf(
+                    androidx.navigation.navArgument("token") {
+                        type         = androidx.navigation.NavType.StringType
+                        nullable     = true
+                        defaultValue = null
+                    }
+                ),
+            ) { backStackEntry ->
+                val tokenFromNav = backStackEntry.arguments?.getString("token")
+                val token = emailChangeToken ?: tokenFromNav
+                com.prathik.fairshare.ui.account.ConfirmEmailChangeScreen(
+                    token  = token,
+                    onDone = {
+                        shellNavController.navigate(Screen.Groups.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
                 )
             }
             composable(Screen.MyAnalytics.route) {

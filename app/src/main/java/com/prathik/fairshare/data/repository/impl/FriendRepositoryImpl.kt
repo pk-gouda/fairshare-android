@@ -25,13 +25,14 @@ class FriendRepositoryImpl @Inject constructor(
 ) : FriendRepository {
 
     override suspend fun getFriends(): ApiResult<List<Friend>> {
-        val cached = friendDao.getAll()
-        if (cached.isNotEmpty()) {
-            // Serve cache immediately, refresh in background
-            CoroutineScope(Dispatchers.IO).launch { refreshFriendsFromNetwork() }
-            return ApiResult.Success(cached.map { it.toFriend() })
+        // Always fetch from network to ensure newly added/removed friends appear immediately.
+        val result = refreshFriendsFromNetwork()
+        // Fall back to cache if network fails
+        if (result is ApiResult.NetworkError) {
+            val cached = friendDao.getAll()
+            if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toFriend() })
         }
-        return refreshFriendsFromNetwork()
+        return result
     }
 
     private suspend fun refreshFriendsFromNetwork(): ApiResult<List<Friend>> {

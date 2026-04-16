@@ -143,6 +143,10 @@ sealed class Screen(val route: String) {
     object ScanQrCode : Screen("scan_qr_code")
 
     // ── Account ───────────────────────────────────────────────────────────────
+    object ConfirmEmailChange : Screen("confirm_email_change?token={token}") {
+        fun route(token: String) = "confirm_email_change?token=$token"
+    }
+
     object EditProfile : Screen("edit_profile")
     object ChangePassword : Screen("change_password")
     object MyAnalytics : Screen("my_analytics")

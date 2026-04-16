@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.repository.AuthRepository
+import com.prathik.fairshare.domain.usecase.auth.LogoutUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ChangePasswordViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val logoutUseCase : LogoutUseCase,
 ) : ViewModel() {
 
     private val _currentPassword = MutableStateFlow("")
@@ -62,7 +64,11 @@ class ChangePasswordViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             when (authRepository.changePassword(_currentPassword.value, _newPassword.value)) {
-                is ApiResult.Success    -> _actionState.value = ChangePasswordActionState.Success("Password updated")
+                is ApiResult.Success    -> {
+                    // Clear local tokens — current device must re-authenticate
+                    logoutUseCase()
+                    _actionState.value = ChangePasswordActionState.Success("Password updated")
+                }
                 is ApiResult.Unauthorized -> {
                     _currentPasswordError.value = "Current password is incorrect"
                 }
@@ -76,7 +82,8 @@ class ChangePasswordViewModel @Inject constructor(
 }
 
 sealed class ChangePasswordActionState {
-    object Idle : ChangePasswordActionState()
+    object Idle         : ChangePasswordActionState()
+    object LoggedOut    : ChangePasswordActionState()
     data class Success(val message: String) : ChangePasswordActionState()
     data class Error(val message: String)   : ChangePasswordActionState()
 }

@@ -45,12 +45,14 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun SplashScreen(
-    onNavigateToLogin       : () -> Unit,
-    onNavigateToGroups      : () -> Unit,
-    onNavigateToVerifyEmail : () -> Unit,
-    verifyDeepLink          : VerifyDeepLink? = null,
-    loginDeepLink           : Boolean = false,
-    viewModel               : AuthViewModel = hiltViewModel(),
+    onNavigateToLogin            : () -> Unit,
+    onNavigateToGroups           : () -> Unit,
+    onNavigateToVerifyEmail      : () -> Unit,
+    onNavigateToConfirmEmailChange: () -> Unit,
+    verifyDeepLink               : VerifyDeepLink? = null,
+    loginDeepLink                : Boolean = false,
+    emailChangeToken             : String? = null,
+    viewModel                    : AuthViewModel = hiltViewModel(),
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "rings")
 
@@ -85,12 +87,13 @@ fun SplashScreen(
     LaunchedEffect(Unit) {
         delay(1200L)
         when {
-            // ✅ Verify deep link — always go to VerifyEmail regardless of login state.
+            // Email change confirmation deep link — go directly to confirm screen.
+            !emailChangeToken.isNullOrBlank() -> onNavigateToConfirmEmailChange()
+
+            // Verify deep link — always go to VerifyEmail regardless of login state.
             verifyDeepLink != null -> onNavigateToVerifyEmail()
 
-            // ✅ Login deep link — go straight to Login (from reset-password.html).
-            // Skips the isLoggedIn check so a logged-in user who just reset their
-            // password still lands on Login to sign in with their new password.
+            // Login deep link — go straight to Login (from reset-password.html).
             loginDeepLink -> onNavigateToLogin()
 
             viewModel.isLoggedIn() -> onNavigateToGroups()

@@ -101,9 +101,13 @@ class UserRepositoryImpl @Inject constructor(
         safeApiCall { userService.searchByEmail(email) }
             .mapSuccess { it.toDomain() }
 
-    override suspend fun requestEmailChange(newEmail: String): ApiResult<String> =
-        safeApiCall { userService.requestEmailChange(mapOf("newEmail" to newEmail)) }
-            .mapSuccess { it["token"] ?: "" }
+    override suspend fun requestEmailChange(newEmail: String, currentPassword: String): ApiResult<String> =
+        safeApiCall {
+            userService.requestEmailChange(mapOf(
+                "newEmail" to newEmail,
+                "currentPassword" to currentPassword
+            ))
+        }.mapSuccess { "" } // Response body ignored — token is emailed, not returned
 
     override suspend fun verifyEmailChange(token: String): ApiResult<Unit> =
         safeApiCall { userService.verifyEmailChange(token) }.mapSuccess { }

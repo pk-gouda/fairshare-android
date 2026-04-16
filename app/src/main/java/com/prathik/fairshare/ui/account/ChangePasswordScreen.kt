@@ -28,7 +28,8 @@ import com.prathik.fairshare.ui.theme.Surface0
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChangePasswordScreen(
-    onBack   : () -> Unit,
+    onBack      : () -> Unit,
+    onLoggedOut : () -> Unit = {},
     viewModel: ChangePasswordViewModel = hiltViewModel(),
 ) {
     val currentPassword    by viewModel.currentPassword.collectAsState()
@@ -46,7 +47,7 @@ fun ChangePasswordScreen(
             is ChangePasswordActionState.Success -> {
                 snackbarHost.showSnackbar(s.message)
                 viewModel.resetActionState()
-                onBack()
+                onLoggedOut()
             }
             is ChangePasswordActionState.Error -> {
                 snackbarHost.showSnackbar(s.message)

@@ -71,7 +71,7 @@ interface UserRepository {
      * Requests an email change. Backend sends a verification token to the new email.
      * Returns the token directly in dev (SES not wired yet).
      */
-    suspend fun requestEmailChange(newEmail: String): ApiResult<String>
+    suspend fun requestEmailChange(newEmail: String, currentPassword: String): ApiResult<String>
 
     /**
      * Confirms an email change using the verification token sent to the new email.

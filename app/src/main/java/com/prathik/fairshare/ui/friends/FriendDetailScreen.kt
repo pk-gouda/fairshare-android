@@ -136,6 +136,7 @@ fun FriendDetailScreen(
     onNavigateToSearch    : () -> Unit,
     onNavigateToSettlement: (String) -> Unit = {},
     onNavigateToGroup     : (String) -> Unit = {},
+    onNavigateToGroupsTab : () -> Unit = {},
     onNavigateToAnalytics : () -> Unit = {},
     viewModel             : FriendDetailViewModel = hiltViewModel(),
 ) {
@@ -323,7 +324,7 @@ fun FriendDetailScreen(
                                             friendName        = friendName,
                                             friendState       = friendState,
                                             onAddExpense      = onNavigateToAddExpense,
-                                            onNavigateToGroup = {},
+                                            onNavigateToGroup = onNavigateToGroupsTab,
                                         )
                                     }
                                 } else {
@@ -898,7 +899,7 @@ private fun FriendActionBar(
             }
 
             // Charts + History
-            listOf("Charts" to onNavigateToAnalytics, "History" to {}).forEach { (label, action) ->
+            listOf("Charts" to onNavigateToAnalytics).forEach { (label, action) ->
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier

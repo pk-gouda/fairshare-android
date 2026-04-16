@@ -207,6 +207,10 @@ class ItemAssignmentViewModel @Inject constructor(
     // ── Load ──────────────────────────────────────────────────────────────────
 
     fun loadItems(receiptId: String) {
+        // ✅ Skip if items are already loaded for this receipt — preserves user's
+        // assignments when navigating back from ReviewSubmit to ItemAssignment.
+        if (_items.value.isNotEmpty()) return
+
         viewModelScope.launch {
             _isLoading.value = true
             when (val result = safeApiCall { receiptApiService.getReceiptItems(receiptId) }) {

@@ -491,9 +491,9 @@ class AddExpenseViewModel @Inject constructor(
                         if (receipt.totalAmount > 0) {
                             _amount.value = receipt.totalAmount.toString()
                         }
-                        receipt.receiptDate?.let { date ->
-                            _expenseDate.value = if (date.length == 10) "${date}T00:00:00" else date
-                        }
+                        // Always use today's date — the receipt date is when the
+                        // merchant printed the receipt, not when the expense was split.
+                        _expenseDate.value = java.time.LocalDateTime.now().toString()
                         receipt.currency?.let { _currency.value = it }
                         _receiptState.value = ReceiptScanState.Success(receipt)
                         recalculateSplits()
