@@ -223,6 +223,65 @@ class FriendDetailViewModel @Inject constructor(
     fun resetActionState() {
         _actionState.value = FriendDetailActionState.Idle
     }
+
+    // ── Splitwise import from FriendDetail ────────────────────────────────────
+
+    val currentUserFullName: String get() = tokenStore.getFullName()
+
+    private val _importState = MutableStateFlow<SplitwiseImportState>(SplitwiseImportState.Idle)
+    val importState: StateFlow<SplitwiseImportState> = _importState.asStateFlow()
+
+    private val _csvMemberNames = MutableStateFlow<List<String>>(emptyList())
+    val csvMemberNames: StateFlow<List<String>> = _csvMemberNames.asStateFlow()
+
+    fun parseCsvNames(csvContent: String) {
+        val header = csvContent.lines().firstOrNull {
+            it.contains(",") && !it.startsWith("Note") && !it.isBlank()
+                    && it.contains("Date", ignoreCase = true)
+        } ?: return
+        val cols = header.split(",").map { it.trim().removeSurrounding("\"") }
+        if (cols.size > 5) {
+            _csvMemberNames.value = cols.drop(5)
+                .filter { it.isNotBlank() && !it.contains("(removed)", ignoreCase = true) }
+        }
+    }
+
+    fun clearCsvNames() { _csvMemberNames.value = emptyList() }
+
+    fun resetImportState() { _importState.value = SplitwiseImportState.Idle }
+
+    /**
+     * Imports a friend-level Splitwise CSV and automatically links the other
+     * person's placeholder to this friend's FairShare account — no manual step needed.
+     */
+    fun importFromSplitwise(csvContent: String, importerCsvName: String) {
+        viewModelScope.launch {
+            _importState.value = SplitwiseImportState.Loading
+            when (val result = importRepository.importFriend(csvContent, importerCsvName)) {
+                is ApiResult.Success -> {
+                    val data = result.data
+                    val expensesCreated    = (data["expensesCreated"] as? Int) ?: 0
+                    val settlementsCreated = (data["settlementsCreated"] as? Int) ?: 0
+
+                    // Auto-link the other person's placeholder to this friend
+                    @Suppress("UNCHECKED_CAST")
+                    val members = data["members"] as? List<Map<String, String>> ?: emptyList()
+                    val unclaimed = members.firstOrNull { it["status"] == "UNCLAIMED" }
+                    val placeholderUserId = unclaimed?.get("placeholderUserId")
+                    if (!placeholderUserId.isNullOrBlank()) {
+                        importRepository.assignFriendPlaceholder(placeholderUserId, friendId)
+                    }
+
+                    _importState.value = SplitwiseImportState.Success(expensesCreated, settlementsCreated)
+                    refreshExpenses()
+                }
+                is ApiResult.NetworkError ->
+                    _importState.value = SplitwiseImportState.Error("No internet connection.")
+                else ->
+                    _importState.value = SplitwiseImportState.Error("Import failed. Please check the CSV and try again.")
+            }
+        }
+    }
 }
 
 sealed class FriendExpensesState {
@@ -236,4 +295,11 @@ sealed class FriendDetailActionState {
     data class Success(val message: String) : FriendDetailActionState()
     data class Error(val message: String) : FriendDetailActionState()
     data class LinkedToFriend(val realFriendId: String) : FriendDetailActionState()
+}
+
+sealed class SplitwiseImportState {
+    object Idle    : SplitwiseImportState()
+    object Loading : SplitwiseImportState()
+    data class Success(val expensesCreated: Int, val settlementsCreated: Int) : SplitwiseImportState()
+    data class Error(val message: String) : SplitwiseImportState()
 }

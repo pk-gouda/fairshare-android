@@ -75,6 +75,10 @@ import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsLoadingScreen
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.prathik.fairshare.ui.components.FsPrimaryButton
+import com.prathik.fairshare.ui.components.FsSecondaryButton
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -155,6 +159,36 @@ fun FriendDetailScreen(
     var showLinkSheet    by remember { mutableStateOf(false) }
     var showPayerSheet   by remember { mutableStateOf(false) }
 
+    // ── Splitwise import flow ─────────────────────────────────────────────────
+    var showImportInstructionsSheet by remember { mutableStateOf(false) }
+    var showImportWhoAreYouSheet    by remember { mutableStateOf(false) }
+    var showImportDisclaimerSheet   by remember { mutableStateOf(false) }
+    var pendingImportCsv            by remember { mutableStateOf<String?>(null) }
+    var pendingImporterName         by remember { mutableStateOf<String?>(null) }
+    val csvMemberNames              by viewModel.csvMemberNames.collectAsState()
+    val importState                 by viewModel.importState.collectAsState()
+    val importContext               = androidx.compose.ui.platform.LocalContext.current
+
+    val importFilePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val csv = try {
+                importContext.contentResolver.openInputStream(it)
+                    ?.bufferedReader()?.readText()
+                    ?.replace("\r\n", "\n")
+                    ?.replace("\r", "\n")
+            } catch (e: Exception) { null }
+            if (csv != null) {
+                pendingImportCsv = csv
+                viewModel.parseCsvNames(csv)
+                showImportInstructionsSheet = false
+                showImportWhoAreYouSheet = true
+            }
+        }
+    }
+
+
     val groupBalanceSum = groupBalances.filter { it.groupId != null }.sumOf { it.amount }
     val nonGroupBalance = netBalance - groupBalanceSum
 
@@ -191,6 +225,21 @@ fun FriendDetailScreen(
         }
     }
 
+    LaunchedEffect(importState) {
+        when (val s = importState) {
+            is SplitwiseImportState.Success -> {
+                snackbarHost.showSnackbar("Imported ${s.expensesCreated} expenses ✓")
+                viewModel.resetImportState()
+            }
+            is SplitwiseImportState.Error -> {
+                snackbarHost.showSnackbar(s.message)
+                viewModel.resetImportState()
+            }
+            else -> Unit
+        }
+    }
+
+
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -224,6 +273,227 @@ fun FriendDetailScreen(
             val settled = settlements.sumOf { it.amount }
             val total   = settled + (-netBalance)
             if (total > 0) (settled / total).toFloat().coerceIn(0f, 0.99f) else 0f
+        }
+    }
+
+
+    // ── Splitwise import: Step 1 — Instructions ───────────────────────────────
+    if (showImportInstructionsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showImportInstructionsSheet = false },
+            sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor   = Surface2,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = 40.dp),
+            ) {
+                Text(
+                    text       = "Import from Splitwise",
+                    fontSize   = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(vertical = Spacing.md),
+                )
+                Text(
+                    text     = "This imports your shared Splitwise history with $friendName into FairShare.",
+                    fontSize = 14.sp,
+                    color    = TextSecondary,
+                )
+                Spacer(modifier = Modifier.height(Spacing.lg))
+                listOf(
+                    "1" to "Open Splitwise on web or mobile",
+                    "2" to "Go to your friendship with $friendName",
+                    "3" to "Tap Settings → Export to CSV",
+                    "4" to "Save the file and come back here",
+                ).forEach { (step, text) ->
+                    Row(
+                        modifier          = Modifier.padding(vertical = Spacing.sm),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(Green400.copy(alpha = 0.15f)),
+                        ) {
+                            Text(step, fontSize = 12.sp, color = Green400, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(text, fontSize = 14.sp, color = TextSecondary, modifier = Modifier.weight(1f))
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.xl))
+                FsPrimaryButton(
+                    text     = "Choose CSV file",
+                    onClick  = { importFilePicker.launch(arrayOf("text/*", "text/csv", "*/*")) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                FsSecondaryButton(
+                    text     = "Cancel",
+                    onClick  = { showImportInstructionsSheet = false },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+
+    // ── Splitwise import: Step 2 — Which one is you? ──────────────────────────
+    if (showImportWhoAreYouSheet && csvMemberNames.isNotEmpty()) {
+        val myName = viewModel.currentUserFullName
+        ModalBottomSheet(
+            onDismissRequest = {
+                showImportWhoAreYouSheet = false
+                viewModel.clearCsvNames()
+                pendingImportCsv = null
+            },
+            sheetState     = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Surface2,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 40.dp)) {
+                Text(
+                    text       = "Which one is you?",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
+                if (myName.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg)
+                            .padding(bottom = Spacing.sm)
+                            .clip(RoundedCornerShape(Radius.lg))
+                            .background(Green400.copy(alpha = 0.08f))
+                            .padding(Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("You are signed in as ", fontSize = 13.sp, color = TextSecondary)
+                        Text(myName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Green400)
+                    }
+                }
+                Text(
+                    text     = "Your Splitwise name may differ from your FairShare name.",
+                    fontSize = 13.sp,
+                    color    = TextSecondary,
+                    modifier = Modifier
+                        .padding(horizontal = Spacing.lg)
+                        .padding(bottom = Spacing.md),
+                )
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                csvMemberNames.forEach { name ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                pendingImporterName = name
+                                showImportWhoAreYouSheet = false
+                                viewModel.clearCsvNames()
+                                showImportDisclaimerSheet = true
+                            }
+                            .padding(horizontal = Spacing.lg, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier         = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Surface4),
+                        ) {
+                            Text(
+                                name.firstOrNull()?.uppercase() ?: "?",
+                                fontSize   = 16.sp,
+                                color      = TextPrimary,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                            color = TextPrimary, modifier = Modifier.weight(1f))
+                        Text("→", fontSize = 18.sp, color = TextTertiary)
+                    }
+                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                }
+            }
+        }
+    }
+
+    // ── Splitwise import: Step 3 — Disclaimer ────────────────────────────────
+    if (showImportDisclaimerSheet) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showImportDisclaimerSheet = false
+                pendingImportCsv = null
+                pendingImporterName = null
+            },
+            sheetState     = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Surface2,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = 40.dp),
+            ) {
+                Text(
+                    text       = "Before you import",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary,
+                    modifier   = Modifier.padding(vertical = Spacing.md),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.xl))
+                        .background(Surface3)
+                        .padding(Spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    listOf(
+                        "All expenses from this CSV will be added to your history with $friendName.",
+                        "Imported expenses cannot be deleted — they are permanent.",
+                        "Importing the same CSV twice will create duplicate expenses.",
+                        "Payments in the CSV will be recorded as settlements.",
+                    ).forEach { text ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text("•  ", fontSize = 14.sp, color = Green400)
+                            Text(text, fontSize = 13.sp, color = TextSecondary, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.xl))
+                FsPrimaryButton(
+                    text    = "I understand, import now",
+                    onClick = {
+                        val csv  = pendingImportCsv
+                        val name = pendingImporterName
+                        showImportDisclaimerSheet = false
+                        pendingImportCsv    = null
+                        pendingImporterName = null
+                        if (csv != null && name != null) {
+                            viewModel.importFromSplitwise(csv, name)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                FsSecondaryButton(
+                    text     = "Cancel",
+                    onClick  = {
+                        showImportDisclaimerSheet = false
+                        pendingImportCsv    = null
+                        pendingImporterName = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 
@@ -293,6 +563,7 @@ fun FriendDetailScreen(
                             FriendActionBar(
                                 onSettleUp            = handleSettle,
                                 onNavigateToAnalytics = onNavigateToAnalytics,
+                                onImportSplitwise     = { showImportInstructionsSheet = true },
                                 friendState           = friendState,
                             )
                         }
@@ -855,6 +1126,7 @@ private fun FriendStickyBalanceBar(
 private fun FriendActionBar(
     onSettleUp           : () -> Unit,
     onNavigateToAnalytics: () -> Unit,
+    onImportSplitwise    : () -> Unit = {},
     friendState          : FriendUiState = FriendUiState.BRAND_NEW,
 ) {
     // Per-spec rules (see Summary of Rules):
@@ -916,6 +1188,19 @@ private fun FriendActionBar(
                     Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                         color = if (secondaryEnabled) Color(0xFFE8ECF2) else Color(0xFF6B7280))
                 }
+            }
+
+            // Import from Splitwise — always visible
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier
+                    .clip(RoundedCornerShape(Radius.full))
+                    .background(Color(0xFF151A21))
+                    .clickable { onImportSplitwise() }
+                    .padding(horizontal = Spacing.md, vertical = 10.dp),
+            ) {
+                Text("Import", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFE8ECF2))
             }
         }
 
