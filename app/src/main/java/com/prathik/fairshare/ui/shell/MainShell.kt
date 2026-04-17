@@ -1001,6 +1001,13 @@ fun MainShell(
                     onNavigateToAnalytics = {
                         shellNavController.navigate(Screen.FriendAnalytics.route(friendId))
                     },
+                    onNavigateToRealFriend = { realFriendId ->
+                        // Pop the placeholder's FriendDetail off the back stack and
+                        // navigate to the real friend's screen so back takes user to Friends tab
+                        shellNavController.navigate(Screen.FriendDetail.route(realFriendId)) {
+                            popUpTo(Screen.FriendDetail.route(friendId)) { inclusive = true }
+                        }
+                    },
                 )
             }
 

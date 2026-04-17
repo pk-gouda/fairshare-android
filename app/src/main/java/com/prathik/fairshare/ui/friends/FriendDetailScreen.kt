@@ -138,6 +138,7 @@ fun FriendDetailScreen(
     onNavigateToGroup     : (String) -> Unit = {},
     onNavigateToGroupsTab : () -> Unit = {},
     onNavigateToAnalytics : () -> Unit = {},
+    onNavigateToRealFriend: (String) -> Unit = {},
     viewModel             : FriendDetailViewModel = hiltViewModel(),
 ) {
     val isLoading     by viewModel.isLoading.collectAsState()
@@ -180,8 +181,12 @@ fun FriendDetailScreen(
 
     LaunchedEffect(actionState) {
         when (val s = actionState) {
-            is FriendDetailActionState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
-            is FriendDetailActionState.Success -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
+            is FriendDetailActionState.Error        -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
+            is FriendDetailActionState.Success      -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
+            is FriendDetailActionState.LinkedToFriend -> {
+                viewModel.resetActionState()
+                onNavigateToRealFriend(s.realFriendId)
+            }
             else -> Unit
         }
     }

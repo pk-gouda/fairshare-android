@@ -89,10 +89,16 @@ class GroupRepositoryImpl @Inject constructor(
         name: String?,
         description: String?,
         simplifyDebts: Boolean?,
-    ): ApiResult<Group> =
-        safeApiCall {
+    ): ApiResult<Group> {
+        // Use raw response to cache before mapping — avoids a second network call
+        val raw = safeApiCall {
             groupService.updateGroup(groupId, UpdateGroupRequest(name, description, simplifyDebts))
-        }.mapSuccess { it.toDomain() }
+        }
+        if (raw is ApiResult.Success) {
+            groupDao.insert(raw.data.toEntity())
+        }
+        return raw.mapSuccess { it.toDomain() }
+    }
 
     override suspend fun deleteGroup(groupId: String): ApiResult<Unit> {
         val result = safeApiCall { groupService.deleteGroup(groupId) }.mapSuccess { }

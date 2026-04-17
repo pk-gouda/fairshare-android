@@ -122,11 +122,9 @@ fun GroupSettingsScreen(
     val isAdmin = group?.createdById == viewModel.currentUserId
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.loadData()
-        }
-    }
+    // GroupSettings loads once on init — no live refresh needed.
+    // Refreshing on every resume caused race conditions with saveSimplifyDebts:
+    // loadData() would overwrite the optimistic toggle state mid-flight.
 
     LaunchedEffect(actionState) {
         when (val s = actionState) {
@@ -551,9 +549,7 @@ fun GroupSettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(enabled = isAdmin) {
-                                val newValue = !simplifyDebts
-                                viewModel.onSimplifyDebtsToggled()
-                                viewModel.saveSimplifyDebts(newValue)
+                                viewModel.saveSimplifyDebts(!simplifyDebts)
                             }
                             .padding(horizontal = Spacing.md, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -569,7 +565,6 @@ fun GroupSettingsScreen(
                         androidx.compose.material3.Switch(
                             checked         = simplifyDebts,
                             onCheckedChange = if (isAdmin) { value ->
-                                viewModel.onSimplifyDebtsToggled()
                                 viewModel.saveSimplifyDebts(value)
                             } else null,
                             enabled = isAdmin,

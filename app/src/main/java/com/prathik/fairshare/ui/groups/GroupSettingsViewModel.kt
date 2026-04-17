@@ -142,13 +142,27 @@ class GroupSettingsViewModel @Inject constructor(
     }
 
     fun saveSimplifyDebts(value: Boolean) {
+        // Optimistically update local state immediately for snappy UI
+        _simplifyDebts.value = value
         viewModelScope.launch {
-            updateGroupUseCase(
+            val result = updateGroupUseCase(
                 groupId       = groupId,
                 name          = null,
                 description   = null,
                 simplifyDebts = value,
             )
+            when (result) {
+                is ApiResult.Success -> {
+                    // Use the server's confirmed value directly — no extra network call
+                    _simplifyDebts.value = result.data.simplifyDebts
+                    _group.value = result.data
+                }
+                else -> {
+                    // Revert on failure
+                    _simplifyDebts.value = !value
+                    _actionState.value = GroupSettingsActionState.Error("Failed to update. Please try again.")
+                }
+            }
         }
     }
 

@@ -65,19 +65,22 @@ object NetworkModule {
             }
         }
 
-        // TODO: Day 28 — Add certificate pinning before beta release.
-        // Steps:
-        // 1. Set up HTTPS + domain (api.fairshare.app) on AWS
-        // 2. Extract SHA-256 pin:
-        //    openssl s_client -connect api.fairshare.app:443 | openssl x509 -noout -fingerprint -sha256
-        // 3. Add backup pin from a second cert or CA pin
-        // 4. Replace this comment with:
-        //    .certificatePinner(
-        //        CertificatePinner.Builder()
-        //            .add("api.fairshare.app", "sha256/PRIMARY_PIN_HERE")
-        //            .add("api.fairshare.app", "sha256/BACKUP_PIN_HERE")
-        //            .build()
-        //    )
+        // Certificate pinning — prevents MITM attacks with rogue CA certs.
+        // Pin = SHA-256 of the server's public key (survives cert renewal if same key pair).
+        // Backup pin = Let's Encrypt R11 intermediate CA — ensures a new cert from the same
+        // CA works during key rotation.
+        // To regenerate the primary pin:
+        //   echo | openssl s_client -connect fairshareapp.app:443 | openssl x509 -noout -pubkey |
+        //   openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
+        val certificatePinner = if (!BuildConfig.DEBUG) {
+            okhttp3.CertificatePinner.Builder()
+                .add("fairshareapp.app", "sha256/GmujlwppudxgbKOQC7L/j9hbiO6tJ/7NpR7A3hcJVoI=")
+                // Let's Encrypt R11 intermediate CA backup pin
+                .add("fairshareapp.app", "sha256/jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=")
+                .build()
+        } else {
+            null // Disable pinning in debug so Charles/Proxyman can be used
+        }
 
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
@@ -86,6 +89,7 @@ object NetworkModule {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)   // 2 min — import can take 48s+ for large CSVs
             .writeTimeout(60, TimeUnit.SECONDS)   // 1 min — large CSV body upload
+            .apply { if (certificatePinner != null) certificatePinner(certificatePinner) }
             .build()
     }
 

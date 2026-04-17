@@ -208,8 +208,9 @@ class FriendDetailViewModel @Inject constructor(
         viewModelScope.launch {
             when (importRepository.assignFriendPlaceholder(placeholderUserId, friendUserId)) {
                 is ApiResult.Success -> {
-                    _actionState.value = FriendDetailActionState.Success("Friend linked successfully")
-                    refreshExpenses()
+                    // Navigate to the real friend's detail screen instead of staying
+                    // on the now-deactivated placeholder screen
+                    _actionState.value = FriendDetailActionState.LinkedToFriend(friendUserId)
                 }
                 is ApiResult.NetworkError ->
                     _actionState.value = FriendDetailActionState.Error("No internet connection.")
@@ -234,4 +235,5 @@ sealed class FriendDetailActionState {
     object Idle : FriendDetailActionState()
     data class Success(val message: String) : FriendDetailActionState()
     data class Error(val message: String) : FriendDetailActionState()
+    data class LinkedToFriend(val realFriendId: String) : FriendDetailActionState()
 }
