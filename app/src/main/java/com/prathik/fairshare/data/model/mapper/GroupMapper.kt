@@ -30,6 +30,7 @@ fun GroupResponse.toDomain(): Group = Group(
     tripEndDate      = tripEndDate,
     createdAt           = createdAt,
     lastRemainderIndex  = lastRemainderIndex,
+    defaultCurrency     = defaultCurrency,
 )
 
 fun GroupMemberResponse.toDomain(): GroupMember = GroupMember(

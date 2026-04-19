@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.prathik.fairshare.domain.model.BalanceCurrencyEntry
 
 @HiltViewModel
 class FriendsViewModel @Inject constructor(
@@ -28,8 +29,13 @@ class FriendsViewModel @Inject constructor(
     private val _friends = MutableStateFlow<List<Friend>>(emptyList())
     val friends: StateFlow<List<Friend>> = _friends.asStateFlow()
 
-    private val _balanceMap = MutableStateFlow<Map<String, Double>>(emptyMap())
-    val balanceMap: StateFlow<Map<String, Double>> = _balanceMap.asStateFlow()
+    // Map<friendId, List<Pair<amount, currency>>> — one entry per currency
+    private val _balanceMap = MutableStateFlow<Map<String, List<Pair<Double, String>>>>(emptyMap())
+    val balanceMap: StateFlow<Map<String, List<Pair<Double, String>>>> = _balanceMap.asStateFlow()
+
+    // Multi-currency entries for the net balance bar
+    private val _balanceEntries = MutableStateFlow<List<BalanceCurrencyEntry>>(emptyList())
+    val balanceEntries: StateFlow<List<BalanceCurrencyEntry>> = _balanceEntries.asStateFlow()
 
     private val _owedToYou = MutableStateFlow(0.0)
     val owedToYou: StateFlow<Double> = _owedToYou.asStateFlow()
@@ -71,8 +77,22 @@ class FriendsViewModel @Inject constructor(
                 when (val result = getAllBalancesUseCase()) {
                     is ApiResult.Success -> {
                         val balances = result.data
-                        _balanceMap.value = balances.groupBy { it.otherUserId }
-                            .mapValues { (_, list) -> list.sumOf { it.amount } }
+                        // Per-friend: take the dominant currency (largest abs amount)
+                        _balanceMap.value = balances
+                            .groupBy { it.otherUserId }
+                            .mapValues { (_, list) ->
+                                // One Pair per currency — never sum across currencies
+                                list.groupBy { it.currency }
+                                    .map { (cur, entries) -> Pair(entries.sumOf { it.amount }, cur) }
+                                    .filter { it.first != 0.0 }
+                            }
+                        // Per-currency entries for multi-currency net bar
+                        val byCurrency = balances.groupBy { it.currency }
+                        _balanceEntries.value = byCurrency.map { (currency, list) ->
+                            val owedToMe = list.filter { it.amount > 0 }.sumOf { it.amount }
+                            val youOwe   = list.filter { it.amount < 0 }.sumOf { -it.amount }
+                            BalanceCurrencyEntry(currency, owedToMe, youOwe, owedToMe - youOwe)
+                        }.filter { it.owedToMe > 0.0 || it.youOwe > 0.0 }
                         _owedToYou.value = balances.filter { it.amount > 0 }.sumOf { it.amount }
                         _youOwe.value    = balances.filter { it.amount < 0 }.sumOf { -it.amount }
                     }

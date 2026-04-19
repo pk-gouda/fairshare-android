@@ -25,5 +25,7 @@ data class GroupEntity(
     val isArchived: Boolean,
     val memberCount: Int,
     val createdAt: String,
+    val lastRemainderIndex: Int = 0,
+    val defaultCurrency: String = "USD",
     val cachedAt: Long = System.currentTimeMillis(),
 )

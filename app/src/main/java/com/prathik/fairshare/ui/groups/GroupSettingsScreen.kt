@@ -94,6 +94,7 @@ fun GroupSettingsScreen(
     onNavigateToAnalytics: (String) -> Unit = {},
     onNavigateToRecurring: (String) -> Unit = {},
     onNavigateToReminders: (String) -> Unit = {},
+    defaultCurrency      : String = "USD",
     onNavigateToCurrency : (currentCurrency: String) -> Unit = {},
     viewModel            : GroupSettingsViewModel = hiltViewModel(),
 ) {
@@ -609,7 +610,7 @@ fun GroupSettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onNavigateToCurrency("USD") }
+                            .clickable { onNavigateToCurrency(defaultCurrency) }
                             .padding(horizontal = Spacing.md, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -626,7 +627,7 @@ fun GroupSettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                text       = "USD", // TODO: add defaultCurrency to Group model
+                                text       = defaultCurrency,
                                 fontSize   = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color      = TextSecondary,

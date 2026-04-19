@@ -21,4 +21,5 @@ data class Group(
     val tripEndDate: String?,
     val createdAt: String,
     val lastRemainderIndex: Int = 0,
+    val defaultCurrency: String = "USD",
 ) : Parcelable

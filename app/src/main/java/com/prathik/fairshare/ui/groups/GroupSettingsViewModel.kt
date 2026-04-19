@@ -74,6 +74,9 @@ class GroupSettingsViewModel @Inject constructor(
     private val _simplifyDebts = MutableStateFlow(false)
     val simplifyDebts: StateFlow<Boolean> = _simplifyDebts.asStateFlow()
 
+    private val _defaultCurrency = MutableStateFlow("USD")
+    val defaultCurrency: StateFlow<String> = _defaultCurrency.asStateFlow()
+
     private val _muteNotifications = MutableStateFlow(false)
     val muteNotifications: StateFlow<Boolean> = _muteNotifications.asStateFlow()
 
@@ -106,6 +109,7 @@ class GroupSettingsViewModel @Inject constructor(
             _group.value = groupResult.data
             _editName.value = groupResult.data.name
             _simplifyDebts.value = groupResult.data.simplifyDebts
+            _defaultCurrency.value = groupResult.data.defaultCurrency
         }
         if (membersResult is ApiResult.Success) {
             _members.value = membersResult.data
@@ -119,6 +123,20 @@ class GroupSettingsViewModel @Inject constructor(
 
     fun onNameChanged(value: String) { _editName.value = value }
     fun onSimplifyDebtsToggled()     { _simplifyDebts.value = !_simplifyDebts.value }
+
+    fun saveDefaultCurrency(currency: String) {
+        if (currency == _defaultCurrency.value) return
+        _defaultCurrency.value = currency
+        viewModelScope.launch {
+            updateGroupUseCase(
+                groupId         = groupId,
+                name            = null,
+                description     = null,
+                simplifyDebts   = null,
+                defaultCurrency = currency,
+            )
+        }
+    }
     fun onMuteNotificationsToggled() { _muteNotifications.value = !_muteNotifications.value }
 
     fun saveGroupName() {
@@ -156,6 +174,8 @@ class GroupSettingsViewModel @Inject constructor(
                     // Use the server's confirmed value directly — no extra network call
                     _simplifyDebts.value = result.data.simplifyDebts
                     _group.value = result.data
+                    val message = if (value) "Simplify debts turned on" else "Simplify debts turned off"
+                    _actionState.value = GroupSettingsActionState.Success(message)
                 }
                 else -> {
                     // Revert on failure

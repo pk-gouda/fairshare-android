@@ -443,8 +443,8 @@ fun MainShell(
                     onNavigateToAddMember = { gId ->
                         shellNavController.navigate(Screen.AddMember.route(gId))
                     },
-                    onNavigateToSettle = { otherUserId, payerId, payerName ->
-                        shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId, payerId, payerName))
+                    onNavigateToSettle = { otherUserId, payerId, payerName, currency ->
+                        shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId, payerId, payerName, currency))
                     },
                     onNavigateToSettlement = { settlementId ->
                         shellNavController.navigate(Screen.SettlementDetail.route(settlementId))
@@ -461,8 +461,11 @@ fun MainShell(
                 route = Screen.GroupSettings.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
+                val groupSettingsVm = hiltViewModel<GroupSettingsViewModel>()
+                val defaultCurrency by groupSettingsVm.defaultCurrency.collectAsState()
                 GroupSettingsScreen(
                     onBack = { shellNavController.popBackStack() },
+                    defaultCurrency = defaultCurrency,
                     onNavigateToAddMember = { gId ->
                         shellNavController.navigate(Screen.AddMember.route(gId))
                     },
@@ -688,10 +691,11 @@ fun MainShell(
                         shellNavController.getBackStackEntry(Screen.GroupSettings.route)
                     }
                     val groupSettingsViewModel = hiltViewModel<GroupSettingsViewModel>(parentEntry)
+                    val currentCurrency by groupSettingsViewModel.defaultCurrency.collectAsState()
                     CurrencySelectScreen(
-                        currentCurrency = "USD",
+                        currentCurrency = currentCurrency,
                         onSelect = { selected ->
-                            // TODO: wire to group defaultCurrency when Group model supports it
+                            groupSettingsViewModel.saveDefaultCurrency(selected)
                             shellNavController.popBackStack()
                         },
                         onBack = { shellNavController.popBackStack() },
@@ -906,6 +910,11 @@ fun MainShell(
                         defaultValue = null
                     },
                     navArgument("payerId") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                    navArgument("currency") {
                         type = NavType.StringType
                         nullable = true
                         defaultValue = null

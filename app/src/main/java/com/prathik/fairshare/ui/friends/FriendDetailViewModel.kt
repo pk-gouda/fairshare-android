@@ -56,6 +56,10 @@ class FriendDetailViewModel @Inject constructor(
     private val _currency = MutableStateFlow("USD")
     val currency: StateFlow<String> = _currency.asStateFlow()
 
+    /** Raw per-currency balance entries — used for multi-currency balance bar display. */
+    private val _userBalances = MutableStateFlow<List<Balance>>(emptyList())
+    val userBalances: StateFlow<List<Balance>> = _userBalances.asStateFlow()
+
     // Per-group balance breakdown — shown in the balance card, not as expense rows
     private val _groupBalances = MutableStateFlow<List<Balance>>(emptyList())
     val groupBalances: StateFlow<List<Balance>> = _groupBalances.asStateFlow()
@@ -117,6 +121,8 @@ class FriendDetailViewModel @Inject constructor(
             // value can be stale until the background refresh completes.
             when (val result = balancesDeferred.await()) {
                 is ApiResult.Success -> {
+                    _userBalances.value = result.data
+                    _userBalances.value = result.data
                     _netBalance.value = result.data.sumOf { it.amount }
                     _currency.value   = result.data.firstOrNull()?.currency ?: "USD"
                 }
@@ -156,6 +162,7 @@ class FriendDetailViewModel @Inject constructor(
             // Refresh net balance — always fresh from network (no cache)
             when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
                 is ApiResult.Success -> {
+                    _userBalances.value = result.data
                     _netBalance.value = result.data.sumOf { it.amount }
                     _currency.value   = result.data.firstOrNull()?.currency ?: "USD"
                 }

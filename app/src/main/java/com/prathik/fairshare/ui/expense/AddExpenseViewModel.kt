@@ -29,6 +29,7 @@ class AddExpenseViewModel @Inject constructor(
     private val createExpenseUseCase: CreateExpenseUseCase,
     private val getGroupsUseCase: GetGroupsUseCase,
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
+    private val getGroupBalancesUseCase: com.prathik.fairshare.domain.usecase.group.GetGroupBalancesUseCase,
     private val getFriendsUseCase: GetFriendsUseCase,
     private val scanReceiptUseCase: ScanReceiptUseCase,
     private val tokenStore: EncryptedTokenStore,
@@ -152,8 +153,31 @@ class AddExpenseViewModel @Inject constructor(
 
     init {
         loadGroups()
-        preselectedGroupId?.let { loadMembers(it) }
+        preselectedGroupId?.let {
+            loadMembers(it)
+            loadGroupCurrency(it)
+        }
         preselectedFriendId?.let { loadFriendAsSplitParticipant(it) }
+    }
+
+    /**
+     * When launched from a group context, set currency to match the group's
+     * existing expenses (from balance currency). Falls back to device locale
+     * currency if no balances exist yet (new group with no expenses).
+     */
+    private fun loadGroupCurrency(groupId: String) {
+        viewModelScope.launch {
+            when (val result = getGroupBalancesUseCase(groupId)) {
+                is ApiResult.Success -> {
+                    val groupCurrency = result.data.firstOrNull()?.currency
+                    if (groupCurrency != null) {
+                        _currency.value = groupCurrency
+                    }
+                    // If no balances yet, keep device locale currency from tokenStore
+                }
+                else -> Unit // Keep existing currency on error
+            }
+        }
     }
 
     private fun loadFriendAsSplitParticipant(friendId: String) {
@@ -236,6 +260,7 @@ class AddExpenseViewModel @Inject constructor(
     fun onGroupSelected(groupId: String) {
         _selectedGroupId.value = groupId
         loadMembers(groupId)
+        loadGroupCurrency(groupId)
     }
 
     fun onPayerChanged(userId: String, amount: Double) {

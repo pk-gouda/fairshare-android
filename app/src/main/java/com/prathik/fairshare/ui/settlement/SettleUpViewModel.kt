@@ -29,6 +29,8 @@ class SettleUpViewModel @Inject constructor(
     val groupId        : String? = savedStateHandle.get<String>("groupId")?.takeIf { it.isNotBlank() }
     val overridePayerId  : String? = savedStateHandle.get<String>("payerId")?.takeIf { it.isNotBlank() }
     val overridePayerName: String? = savedStateHandle.get<String>("payerName")?.takeIf { it.isNotBlank() }
+    /** Optional currency filter — set when user picks a specific currency entry in the settle sheet. */
+    val selectedCurrency : String? = savedStateHandle.get<String>("currency")?.takeIf { it.isNotBlank() }
     val currentUserId  : String? = tokenStore.getUserId()
 
     private val _notes = MutableStateFlow("")
@@ -80,6 +82,11 @@ class SettleUpViewModel @Inject constructor(
                 when (val result = balanceRepository.getBreakdownWithUser(otherUserId)) {
                     is ApiResult.Success -> {
                         val scoped = result.data.filter { it.groupId == groupId }
+                            .let { list ->
+                                // Filter by currency when user selected a specific entry
+                                if (selectedCurrency != null) list.filter { it.currency == selectedCurrency }
+                                else list
+                            }
                         if (overridePayerId == null) _balanceAmount.value = scoped.sumOf { it.amount }
                         _balanceCurrency.value = scoped.firstOrNull()?.currency
                             ?: tokenStore.getPreferredCurrency()
@@ -91,10 +98,13 @@ class SettleUpViewModel @Inject constructor(
             } else {
                 when (val result = balanceRepository.getNetBalanceWithUser(otherUserId)) {
                     is ApiResult.Success -> {
-                        if (overridePayerId == null) _balanceAmount.value = result.data.sumOf { it.amount }
-                        _balanceCurrency.value = result.data.firstOrNull()?.currency
+                        val filtered = if (selectedCurrency != null)
+                            result.data.filter { it.currency == selectedCurrency }
+                        else result.data
+                        if (overridePayerId == null) _balanceAmount.value = filtered.sumOf { it.amount }
+                        _balanceCurrency.value = filtered.firstOrNull()?.currency
                             ?: tokenStore.getPreferredCurrency()
-                        val name = result.data.firstOrNull()?.otherUserName
+                        val name = filtered.firstOrNull()?.otherUserName
                         if (!name.isNullOrBlank()) _otherUserName.value = name
                     }
                     else -> Unit

@@ -149,6 +149,7 @@ fun FriendDetailScreen(
     val friend        by viewModel.friend.collectAsState()
     val netBalance    by viewModel.netBalance.collectAsState()
     val currency      by viewModel.currency.collectAsState()
+    val userBalances  by viewModel.userBalances.collectAsState()
     val groupBalances by viewModel.groupBalances.collectAsState()
     val expensesState by viewModel.expensesState.collectAsState()
     val settlements   by viewModel.settlements.collectAsState()
@@ -539,6 +540,7 @@ fun FriendDetailScreen(
                             FriendStickyBalanceBar(
                                 netBalance  = netBalance,
                                 currency    = currency,
+                                userBalances = userBalances,
                                 groupCount  = groupCount,
                                 friendState = friendState,
                             )
@@ -638,7 +640,7 @@ fun FriendDetailScreen(
                                                 items = dayItems,
                                                 key = {
                                                     when (it) {
-                                                        is FriendTimelineItem.GroupBalanceItem  -> "gb_${it.balance.groupId}"
+                                                        is FriendTimelineItem.GroupBalanceItem  -> "gb_${it.balance.groupId}_${it.balance.currency}"
                                                         is FriendTimelineItem.DirectExpenseItem -> "ex_${it.expense.id}"
                                                         is FriendTimelineItem.SettlementItem    -> "st_${it.settlement.id}"
                                                         is FriendTimelineItem.FullySettledItem  -> "fs_${it.settlement.id}"
@@ -1060,8 +1062,9 @@ private fun FriendCoverHeader(
 
 @Composable
 private fun FriendStickyBalanceBar(
-    netBalance  : Double,
-    currency    : String,
+    netBalance   : Double,
+    currency     : String,
+    userBalances : List<com.prathik.fairshare.domain.model.Balance> = emptyList(),
     groupCount  : Int,
     friendState : FriendUiState,
 ) {
@@ -1085,9 +1088,16 @@ private fun FriendStickyBalanceBar(
                     color = Color(0xFF00C896))
             }
             FriendUiState.THEY_OWE_YOU -> {
+                val owedParts = userBalances.groupBy { it.currency }
+                    .mapValues { (_, list) -> list.sumOf { it.amount } }
+                    .filter { it.value > 0 }
+                val owedText = if (owedParts.isEmpty())
+                    MoneyUtils.format(netBalance, currency)
+                else owedParts.entries.sortedByDescending { it.value }
+                    .joinToString(" + ") { (cur, amt) -> MoneyUtils.format(amt, cur) }
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                    Text(MoneyUtils.format(netBalance, currency), fontSize = 18.sp,
+                    Text(owedText, fontSize = if (owedParts.size > 1) 14.sp else 18.sp,
                         fontWeight = FontWeight.Bold, color = Color(0xFF00C896))
                 }
                 if (groupCount > 0) {
@@ -1100,9 +1110,16 @@ private fun FriendStickyBalanceBar(
                 }
             }
             FriendUiState.YOU_OWE_THEM -> {
+                val oweParts = userBalances.groupBy { it.currency }
+                    .mapValues { (_, list) -> list.sumOf { it.amount } }
+                    .filter { it.value < 0 }
+                val oweText = if (oweParts.isEmpty())
+                    MoneyUtils.format(-netBalance, currency)
+                else oweParts.entries.sortedBy { it.value }
+                    .joinToString(" + ") { (cur, amt) -> MoneyUtils.format(-amt, cur) }
                 Column(modifier = Modifier.weight(1f)) {
                     Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                    Text(MoneyUtils.format(-netBalance, currency), fontSize = 18.sp,
+                    Text(oweText, fontSize = if (oweParts.size > 1) 14.sp else 18.sp,
                         fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
                 }
                 if (groupCount > 0) {

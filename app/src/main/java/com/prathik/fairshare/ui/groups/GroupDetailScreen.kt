@@ -181,7 +181,7 @@ fun GroupDetailScreen(
     onNavigateToExpense   : (String) -> Unit,
     onNavigateToAddExpense: (String) -> Unit,
     onNavigateToAddMember : (String) -> Unit,
-    onNavigateToSettle    : (otherUserId: String, payerId: String?, payerName: String?) -> Unit,
+    onNavigateToSettle    : (otherUserId: String, payerId: String?, payerName: String?, currency: String?) -> Unit,
     onNavigateToSettlement: (String) -> Unit = {},
     onNavigateToBalances  : () -> Unit = {},
     onNavigateToAnalytics : () -> Unit = {},
@@ -547,7 +547,7 @@ fun GroupDetailScreen(
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
-                            .clickable { showSettleSheet = false; onNavigateToSettle(balance.otherUserId, null, null) }
+                            .clickable { showSettleSheet = false; onNavigateToSettle(balance.otherUserId, null, null, balance.currency) }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -622,7 +622,7 @@ fun GroupDetailScreen(
                             .fillMaxWidth()
                             .then(if (!isPayer) Modifier.clickable {
                                 showRecipientSheet = false
-                                onNavigateToSettle(member.userId, selectedPayerId, selectedPayerName)
+                                onNavigateToSettle(member.userId, selectedPayerId, selectedPayerName, null)
                             } else Modifier)
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,

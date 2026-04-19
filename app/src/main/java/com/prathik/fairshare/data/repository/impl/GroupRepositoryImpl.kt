@@ -89,10 +89,10 @@ class GroupRepositoryImpl @Inject constructor(
         name: String?,
         description: String?,
         simplifyDebts: Boolean?,
+        defaultCurrency: String?,
     ): ApiResult<Group> {
-        // Use raw response to cache before mapping — avoids a second network call
         val raw = safeApiCall {
-            groupService.updateGroup(groupId, UpdateGroupRequest(name, description, simplifyDebts))
+            groupService.updateGroup(groupId, UpdateGroupRequest(name, description, simplifyDebts, defaultCurrency))
         }
         if (raw is ApiResult.Success) {
             groupDao.insert(raw.data.toEntity())
@@ -167,6 +167,8 @@ class GroupRepositoryImpl @Inject constructor(
         isArchived = isArchived,
         memberCount = memberCount,
         createdAt = createdAt,
+        lastRemainderIndex = lastRemainderIndex,
+        defaultCurrency    = defaultCurrency,
     )
 
     private fun GroupEntity.toDomain() = Group(
@@ -185,5 +187,7 @@ class GroupRepositoryImpl @Inject constructor(
         tripStartDate = tripStartDate,
         tripEndDate = tripEndDate,
         createdAt = createdAt,
+        lastRemainderIndex = lastRemainderIndex,
+        defaultCurrency    = defaultCurrency,
     )
 }

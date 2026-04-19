@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.prathik.fairshare.domain.model.BalanceCurrencyEntry
 
 @HiltViewModel
 class AccountViewModel @Inject constructor(
@@ -96,11 +97,19 @@ class AccountViewModel @Inject constructor(
             if (b.amount > 0) owedToMe += b.amount
             else youOwe += Math.abs(b.amount)
         }
+        // Build per-currency entries for the multi-currency summary
+        val entries = balances.groupBy { it.currency }.map { (currency, list) ->
+            BalanceCurrencyEntry(
+                currency = currency,
+                owedToMe = list.filter { it.amount > 0 }.sumOf { it.amount },
+                youOwe   = list.filter { it.amount < 0 }.sumOf { -it.amount },
+                net      = list.sumOf { it.amount },
+            )
+        }.filter { it.owedToMe > 0.0 || it.youOwe > 0.0 }
         return BalanceSummary(
-            owedToMe   = owedToMe,
-            youOwe     = youOwe,
-            netBalance = owedToMe - youOwe,
-            currency   = balances.firstOrNull()?.currency ?: "USD",
+            owedToMe = owedToMe,
+            youOwe   = youOwe,
+            entries  = entries,
         )
     }
 }

@@ -309,15 +309,17 @@ fun GroupsHomeScreen(
                         ) {
                             // ── Active groups ─────────────────────────────────
                             items(items = activeGroups, key = { it.id }) { group ->
-                                val balance = groupBalanceMap[group.id]
+                                val entries  = groupBalanceMap[group.id]
+                                val netAmt   = entries?.sumOf { it.first }
+                                val dominant = entries?.maxByOrNull { Math.abs(it.first) }
                                 val fraction: Float = when {
-                                    balance == null || balance == 0.0 -> 0f
-                                    balance > 0  -> (balance / totalOwedMe).toFloat().coerceIn(0f, 1f)
-                                    else         -> (-balance / totalOwed).toFloat().coerceIn(0f, 1f)
+                                    netAmt == null || netAmt == 0.0 -> 0f
+                                    netAmt > 0  -> (netAmt / totalOwedMe).toFloat().coerceIn(0f, 1f)
+                                    else        -> (-netAmt / totalOwed).toFloat().coerceIn(0f, 1f)
                                 }
                                 GroupCard(
                                     group    = group,
-                                    balance  = balance,
+                                    entries  = entries,
                                     fraction = fraction,
                                     onClick  = { onNavigateToGroup(group.id) },
                                 )
@@ -353,7 +355,7 @@ fun GroupsHomeScreen(
                                     items(items = archivedGroups, key = { "archived_${it.id}" }) { group ->
                                         GroupCard(
                                             group    = group,
-                                            balance  = null,
+                                            entries  = null,
                                             fraction = 0f,
                                             onClick  = { onNavigateToGroup(group.id) },
                                         )
@@ -377,27 +379,28 @@ fun GroupsHomeScreen(
 
 @Composable
 private fun NetBalanceBar(summary: BalanceSummary) {
-    val netColor = when {
-        summary.netBalance > 0 -> Green400
-        summary.netBalance < 0 -> Negative
-        else                   -> Green400
+    // Overall direction: owed to you if owedToMe > youOwe, else you owe
+    val netColor = if (summary.owedToMe >= summary.youOwe) Green400 else Negative
+    val netLabel = if (summary.owedToMe >= summary.youOwe) "Owed to you" else "You owe"
+
+    // Build display string — multi-currency like Splitwise: "₹1,000 + $174.19"
+    // Positive entries: currencies where others owe you more than you owe them
+    val owedEntries  = summary.entries.filter { it.net > 0.0 }
+    val oweEntries   = summary.entries.filter { it.net < 0.0 }
+    val displayParts = if (summary.owedToMe >= summary.youOwe) owedEntries else oweEntries
+
+    val netAmountText = if (displayParts.isEmpty()) {
+        "All settled up"
+    } else {
+        displayParts.joinToString(" + ") { MoneyUtils.format(Math.abs(it.net), it.currency) }
     }
-    val netLabel = when {
-        summary.netBalance > 0 -> "Owed to you"
-        summary.netBalance < 0 -> "You owe"
-        else                   -> "All settled 🎉"
-    }
-    val netAmount = MoneyUtils.format(
-        Math.abs(summary.netBalance),
-        summary.currency,
-    )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(Surface0)
             .border(width = 0.5.dp, color = Surface4,
-                shape = RoundedCornerShape(0.dp)) // flat border (bottom divider effect)
+                shape = RoundedCornerShape(0.dp))
             .padding(horizontal = Spacing.lg, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -411,10 +414,10 @@ private fun NetBalanceBar(summary: BalanceSummary) {
                 letterSpacing = 1.sp,
             )
             Text(
-                text = netAmount,
-                fontSize = 24.sp,
+                text = netAmountText,
+                fontSize = if (displayParts.size > 1) 18.sp else 24.sp,
                 fontWeight = FontWeight.Bold,
-                color = netColor,
+                color = if (displayParts.isEmpty()) TextTertiary else netColor,
                 lineHeight = 28.sp,
             )
         }
@@ -436,16 +439,17 @@ private fun NetBalanceBar(summary: BalanceSummary) {
 
 @Composable
 private fun GroupCard(
-    group   : Group,
-    balance : Double?,   // null=no expenses, 0.0=settled, +/-=active
-    fraction: Float,     // 0..1 arc fill on the ring
-    onClick : () -> Unit,
+    group    : Group,
+    entries  : List<Pair<Double, String>>?,  // null=no expenses; one entry per currency
+    fraction : Float,     // 0..1 arc fill on the ring
+    onClick  : () -> Unit,
 ) {
-    val isSettled = balance != null && balance == 0.0
+    val netAmt = entries?.sumOf { it.first }
+    val isSettled = entries != null && (netAmt == null || netAmt == 0.0)
     val arcColor = when {
         isSettled    -> Gold
-        balance != null && balance > 0 -> Green400
-        balance != null && balance < 0 -> Negative
+        netAmt != null && netAmt > 0 -> Green400
+        netAmt != null && netAmt < 0 -> Negative
         else         -> Color.Transparent
     }
 
@@ -499,7 +503,7 @@ private fun GroupCard(
 
         // Balance label
         when {
-            balance == null -> Text(
+            entries == null -> Text(
                 text     = "no expenses",
                 fontSize = 12.sp,
                 color    = TextTertiary,
@@ -510,22 +514,28 @@ private fun GroupCard(
                 fontWeight = FontWeight.SemiBold,
                 color      = Green400,
             )
-            balance > 0 -> Column(horizontalAlignment = Alignment.End) {
+            netAmt != null && netAmt > 0 -> Column(horizontalAlignment = Alignment.End) {
                 Text(text = "owed to you", fontSize = 10.sp, color = TextTertiary)
+                val owedText = entries.filter { it.first > 0 }
+                    .joinToString(" + ") { (amt, cur) -> MoneyUtils.format(amt, cur) }
                 Text(
-                    text = MoneyUtils.format(balance, "USD"),
-                    fontSize = 14.sp,
+                    text = owedText,
+                    fontSize = if (entries.size > 1) 11.sp else 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Green400,
+                    maxLines = 1,
                 )
             }
             else -> Column(horizontalAlignment = Alignment.End) {
                 Text(text = "you owe", fontSize = 10.sp, color = TextTertiary)
+                val oweText = entries?.filter { it.first < 0 }
+                    ?.joinToString(" + ") { (amt, cur) -> MoneyUtils.format(-amt, cur) } ?: ""
                 Text(
-                    text = MoneyUtils.format(-balance, "USD"),
-                    fontSize = 14.sp,
+                    text = oweText,
+                    fontSize = if ((entries?.size ?: 0) > 1) 11.sp else 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Negative,
+                    maxLines = 1,
                 )
             }
         }

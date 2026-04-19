@@ -21,4 +21,5 @@ data class GroupResponse(
     @SerialName("memberCount")      val memberCount: Int,
     @SerialName("createdAt")        val createdAt: String,
     @SerialName("lastRemainderIndex") val lastRemainderIndex: Int = 0,
+    @SerialName("defaultCurrency")   val defaultCurrency: String = "USD",
 )

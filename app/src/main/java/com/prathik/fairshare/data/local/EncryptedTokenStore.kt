@@ -5,6 +5,8 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import android.content.SharedPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.Currency
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -103,7 +105,24 @@ class EncryptedTokenStore @Inject constructor(
      */
     fun getAccessToken(): String? = prefs.getString(KEY_ACCESS_TOKEN, null)
     fun getRefreshToken(): String? = prefs.getString(KEY_REFRESH_TOKEN, null)
-    fun getPreferredCurrency(): String = prefs.getString(KEY_PREFERRED_CURRENCY, "USD") ?: "USD"
+    fun getPreferredCurrency(): String = prefs.getString(KEY_PREFERRED_CURRENCY, null)
+        ?: getDeviceDefaultCurrency()
+
+    /** Update preferred currency without touching any other stored values. */
+    fun savePreferredCurrency(currency: String) {
+        prefs.edit().putString(KEY_PREFERRED_CURRENCY, currency).apply()
+    }
+
+    /**
+     * Returns the currency code for the device's current locale.
+     * Falls back to "USD" if the locale has no associated currency
+     * (e.g. some regional locales or emulators with no country set).
+     */
+    private fun getDeviceDefaultCurrency(): String = try {
+        Currency.getInstance(Locale.getDefault()).currencyCode
+    } catch (e: Exception) {
+        "USD"
+    }
     fun getUserId(): String? = prefs.getString(KEY_USER_ID, null)
     fun getFullName(): String = prefs.getString(KEY_FULL_NAME, "") ?: ""
     fun isLoggedIn(): Boolean = getAccessToken() != null

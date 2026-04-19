@@ -81,6 +81,7 @@ import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
 import com.prathik.fairshare.util.MoneyUtils
+import com.prathik.fairshare.domain.model.BalanceCurrencyEntry
 
 private val Gold = Color(0xFFF59E0B)
 
@@ -107,6 +108,7 @@ fun FriendsScreen(
     val owedToYou        by viewModel.owedToYou.collectAsState()
     val youOwe           by viewModel.youOwe.collectAsState()
     val balanceMap       by viewModel.balanceMap.collectAsState()
+    val balanceEntries   by viewModel.balanceEntries.collectAsState()
     val actionState      by viewModel.actionState.collectAsState()
     val searchQuery      by viewModel.searchQuery.collectAsState()
     val friends          by viewModel.friends.collectAsState()   // collect directly — triggers recomposition instantly
@@ -127,6 +129,7 @@ fun FriendsScreen(
 
     val netBalance = owedToYou - youOwe
     val hasAnyBalance = balanceMap.isNotEmpty()
+    val hasMultiCurrency = balanceEntries.size > 1
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -256,7 +259,7 @@ fun FriendsScreen(
                     val hasFriends = filteredFriends.isNotEmpty() || nonActiveFriends.isNotEmpty()
                     if (hasFriends) {
                         FriendsNetBalanceBar(
-                            netBalance    = netBalance,
+                            entries       = balanceEntries,
                             hasAnyBalance = hasAnyBalance,
                         )
                     }
@@ -309,15 +312,16 @@ fun FriendsScreen(
                 ) {
                     // ── Active friends ────────────────────────────────────────
                     items(filteredFriends, key = { it.id }) { friend ->
-                        val balance  = balanceMap[friend.id]
+                        val entries = balanceMap[friend.id] ?: emptyList()
+                        val netAmt = entries.sumOf { it.first }
                         val fraction: Float = when {
-                            balance == null || balance == 0.0 -> 0f
-                            balance > 0 -> (balance / totalOwedMe).toFloat().coerceIn(0f, 1f)
-                            else        -> (-balance / totalOwed).toFloat().coerceIn(0f, 1f)
+                            entries.isEmpty() || netAmt == 0.0 -> 0f
+                            netAmt > 0 -> (netAmt / totalOwedMe).toFloat().coerceIn(0f, 1f)
+                            else       -> (-netAmt / totalOwed).toFloat().coerceIn(0f, 1f)
                         }
                         FriendCard(
                             friend   = friend,
-                            balance  = balance,
+                            entries  = entries,
                             fraction = fraction,
                             onClick  = { onNavigateToFriend(friend.id) },
                         )
@@ -325,10 +329,14 @@ fun FriendsScreen(
 
                     // ── Pending / Placeholder friends ─────────────────────────
                     items(nonActiveFriends, key = { "pending_${it.id}" }) { friend ->
+                        val pendingEntries = balanceMap[friend.id] ?: emptyList()
+                        val pendingAmt = pendingEntries.sumOf { it.first }
+                        val pendingCur = pendingEntries.maxByOrNull { Math.abs(it.first) }?.second ?: "USD"
                         PendingFriendCard(
-                            friend  = friend,
-                            balance = balanceMap[friend.id],
-                            onClick = { onNavigateToFriend(friend.id) },
+                            friend   = friend,
+                            balance  = if (pendingEntries.isEmpty()) null else pendingAmt,
+                            currency = pendingCur,
+                            onClick  = { onNavigateToFriend(friend.id) },
                         )
                     }
 
@@ -346,22 +354,24 @@ fun FriendsScreen(
 
 @Composable
 private fun FriendsNetBalanceBar(
-    netBalance   : Double,
-    hasAnyBalance: Boolean,   // true if any UserBalance entries exist (i.e. expenses happened)
+    entries      : List<BalanceCurrencyEntry>,
+    hasAnyBalance: Boolean,
 ) {
-    val showPill = netBalance != 0.0 || hasAnyBalance
+    val owedToMe  = entries.sumOf { it.owedToMe }
+    val youOwe    = entries.sumOf { it.youOwe }
+    val showPill  = hasAnyBalance
 
-    val netColor = when {
-        netBalance > 0 -> Green400
-        netBalance < 0 -> Negative
-        else           -> Green400   // settled → still show green
-    }
-    val pillLabel = when {
-        netBalance > 0 -> "Owed to you"
-        netBalance < 0 -> "You owe"
-        else           -> "All settled 🎉"
-    }
-    val displayAmount = MoneyUtils.format(Math.abs(netBalance), "USD")
+    val netColor  = if (owedToMe >= youOwe) Green400 else Negative
+    val pillLabel = if (owedToMe >= youOwe) "Owed to you" else "You owe"
+
+    // Build display: "₹1,000 + $174.19" for multi-currency, like Splitwise
+    val displayParts = if (owedToMe >= youOwe)
+        entries.filter { it.net > 0.0 }
+    else
+        entries.filter { it.net < 0.0 }
+
+    val displayAmount = if (displayParts.isEmpty()) MoneyUtils.format(0.0, "USD")
+    else displayParts.joinToString(" + ") { MoneyUtils.format(Math.abs(it.net), it.currency) }
 
     Row(
         modifier = Modifier
@@ -384,7 +394,7 @@ private fun FriendsNetBalanceBar(
                 // Active or all-settled: show colored amount
                 Text(
                     text       = displayAmount,
-                    fontSize   = 24.sp,
+                    fontSize   = if (displayParts.size > 1) 18.sp else 24.sp,
                     fontWeight = FontWeight.Bold,
                     color      = netColor,
                     lineHeight = 28.sp,
@@ -427,16 +437,18 @@ private fun FriendsNetBalanceBar(
 @Composable
 private fun FriendCard(
     friend  : Friend,
-    balance : Double?,   // null=no expenses, 0.0=settled, +/-=active
+    entries : List<Pair<Double, String>>, // per-currency (amount, currency) — never mixed
     fraction: Float,     // 0..1 ring fill fraction
     onClick : () -> Unit,
 ) {
-    val isSettled = balance != null && balance == 0.0
+    val netAmount = entries.sumOf { it.first }
+    val hasEntries = entries.isNotEmpty()
+    val isSettled = hasEntries && netAmount == 0.0
     val arcColor = when {
-        isSettled           -> Gold
-        balance != null && balance > 0 -> Green400
-        balance != null && balance < 0 -> Negative
-        else                -> Color.Transparent
+        isSettled    -> Gold
+        netAmount > 0 -> Green400
+        netAmount < 0 -> Negative
+        else          -> Color.Transparent
     }
 
     Row(
@@ -483,20 +495,28 @@ private fun FriendCard(
 
         // Balance label
         when {
-            balance == null -> Text("no expenses", fontSize = 12.sp, color = TextTertiary)
-            isSettled       -> Text(
+            !hasEntries -> Text("no expenses", fontSize = 12.sp, color = TextTertiary)
+            isSettled -> Text(
                 text       = "settled up",
                 fontSize   = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 color      = Green400,
             )
-            balance > 0 -> Column(horizontalAlignment = Alignment.End) {
-                Text("owes you",                           fontSize = 10.sp, color = TextTertiary)
-                Text(MoneyUtils.format(balance, "USD"),   fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Green400)
+            netAmount > 0 -> Column(horizontalAlignment = Alignment.End) {
+                Text("owes you", fontSize = 10.sp, color = TextTertiary)
+                val owedText = entries.filter { it.first > 0 }
+                    .joinToString(" + ") { (amt, cur) -> MoneyUtils.format(amt, cur) }
+                Text(owedText.ifEmpty { MoneyUtils.format(netAmount, "USD") },
+                    fontSize = if (entries.size > 1) 11.sp else 14.sp,
+                    fontWeight = FontWeight.Bold, color = Green400, maxLines = 1)
             }
             else -> Column(horizontalAlignment = Alignment.End) {
-                Text("you owe",                           fontSize = 10.sp, color = TextTertiary)
-                Text(MoneyUtils.format(-balance, "USD"),  fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Negative)
+                Text("you owe", fontSize = 10.sp, color = TextTertiary)
+                val oweText = entries.filter { it.first < 0 }
+                    .joinToString(" + ") { (amt, cur) -> MoneyUtils.format(-amt, cur) }
+                Text(oweText.ifEmpty { MoneyUtils.format(-netAmount, "USD") },
+                    fontSize = if (entries.size > 1) 11.sp else 14.sp,
+                    fontWeight = FontWeight.Bold, color = Negative, maxLines = 1)
             }
         }
     }
@@ -505,7 +525,7 @@ private fun FriendCard(
 // ── Pending / Placeholder Card ────────────────────────────────────────────────
 
 @Composable
-private fun PendingFriendCard(friend: Friend, balance: Double?, onClick: () -> Unit) {
+private fun PendingFriendCard(friend: Friend, balance: Double?, currency: String = "USD", onClick: () -> Unit) {
     val statusText = when {
         friend.isPlaceholder -> "Placeholder • Claim to link"
         friend.isInvited     -> "Invited • Waiting to accept"
@@ -563,11 +583,11 @@ private fun PendingFriendCard(friend: Friend, balance: Double?, onClick: () -> U
                 Text("no expenses", fontSize = 12.sp, color = TextTertiary)
             balance > 0 -> Column(horizontalAlignment = Alignment.End) {
                 Text("owes you",                         fontSize = 10.sp, color = TextTertiary)
-                Text(MoneyUtils.format(balance, "USD"),  fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Green400)
+                Text(MoneyUtils.format(balance, currency),  fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Green400)
             }
             else -> Column(horizontalAlignment = Alignment.End) {
                 Text("you owe",                          fontSize = 10.sp, color = TextTertiary)
-                Text(MoneyUtils.format(-balance, "USD"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Negative)
+                Text(MoneyUtils.format(-balance, currency), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Negative)
             }
         }
     }

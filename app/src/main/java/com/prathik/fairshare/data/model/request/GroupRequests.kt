@@ -13,9 +13,10 @@ data class CreateGroupRequest(
 
 @Serializable
 data class UpdateGroupRequest(
-    @SerialName("name")          val name: String? = null,
-    @SerialName("description")   val description: String? = null,
-    @SerialName("simplifyDebts") val simplifyDebts: Boolean? = null,
+    @SerialName("name")            val name: String? = null,
+    @SerialName("description")     val description: String? = null,
+    @SerialName("simplifyDebts")   val simplifyDebts: Boolean? = null,
+    @SerialName("defaultCurrency") val defaultCurrency: String? = null,
 )
 
 @Serializable

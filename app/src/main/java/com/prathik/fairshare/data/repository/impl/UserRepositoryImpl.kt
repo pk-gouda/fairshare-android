@@ -2,6 +2,7 @@ package com.prathik.fairshare.data.repository.impl
 
 import com.prathik.fairshare.data.local.UserDao
 import com.prathik.fairshare.data.local.UserEntity
+import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.UpdateProfileRequest
 import com.prathik.fairshare.data.network.api.UserApiService
@@ -20,6 +21,7 @@ import javax.inject.Singleton
 class UserRepositoryImpl @Inject constructor(
     private val userService: UserApiService,
     private val userDao: UserDao,
+    private val tokenStore: EncryptedTokenStore,
 ) : UserRepository {
 
     override suspend fun getMyProfile(): ApiResult<User> {
@@ -67,6 +69,10 @@ class UserRepositoryImpl @Inject constructor(
         }
         if (result is ApiResult.Success) {
             userDao.insert(result.data.toDomain().toEntity())
+            // Keep tokenStore in sync so AddExpenseViewModel picks up the new default
+            if (preferredCurrency != null) {
+                tokenStore.savePreferredCurrency(preferredCurrency)
+            }
         }
         return result.mapSuccess { it.toDomain() }
     }

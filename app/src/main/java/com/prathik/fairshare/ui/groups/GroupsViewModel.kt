@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.prathik.fairshare.domain.model.BalanceCurrencyEntry
 
 /**
  * ViewModel for GroupsHomeScreen.
@@ -50,8 +51,9 @@ class GroupsViewModel @Inject constructor(
     // ── Per-group balance: groupId → net amount for current user ──────────────
     // Positive = others owe you in this group, Negative = you owe in this group
     // null key not present = no expenses yet
-    private val _groupBalanceMap = MutableStateFlow<Map<String, Double>>(emptyMap())
-    val groupBalanceMap: StateFlow<Map<String, Double>> = _groupBalanceMap.asStateFlow()
+    // Map<groupId, List<Pair<amount, currency>>> — one entry per currency
+    private val _groupBalanceMap = MutableStateFlow<Map<String, List<Pair<Double, String>>>>(emptyMap())
+    val groupBalanceMap: StateFlow<Map<String, List<Pair<Double, String>>>> = _groupBalanceMap.asStateFlow()
 
     init {
         loadData()
@@ -79,7 +81,12 @@ class GroupsViewModel @Inject constructor(
                         val groupBalanceResults = result.data.map { group ->
                             async {
                                 group.id to when (val r = getGroupBalancesUseCase(group.id)) {
-                                    is ApiResult.Success -> r.data.sumOf { it.amount }
+                                    is ApiResult.Success -> {
+                                        // One entry per currency — never sum across currencies
+                                        r.data.groupBy { it.currency }
+                                            .map { (cur, list) -> Pair(list.sumOf { it.amount }, cur) }
+                                            .filter { it.first != 0.0 }
+                                    }
                                     else -> null
                                 }
                             }
@@ -119,24 +126,24 @@ class GroupsViewModel @Inject constructor(
     /**
      * Calculates net balance summary from the list of all balances.
      *
-     * owedToMe  — sum of positive balances (others owe you)
-     * youOwe    — sum of negative balances (you owe others), shown as positive
-     * netBalance — owedToMe - youOwe
+     * Groups balances by currency and computes per-currency net amounts.
+     * Matches Splitwise behavior: "₹2,455 + $352" instead of mixing currencies.
      */
     private fun calculateSummary(balances: List<Balance>): BalanceSummary {
-        var owedToMe = 0.0
-        var youOwe = 0.0
+        // Group by currency, compute owedToMe and youOwe per currency
+        val byCurrency = balances.groupBy { it.currency }
+        val entries = byCurrency.map { (currency, list) ->
+            val owedToMe = list.filter { it.amount > 0 }.sumOf { it.amount }
+            val youOwe   = list.filter { it.amount < 0 }.sumOf { -it.amount }
+            BalanceCurrencyEntry(currency, owedToMe, youOwe, owedToMe - youOwe)
+        }.filter { it.owedToMe > 0.0 || it.youOwe > 0.0 }
 
-        balances.forEach { balance ->
-            if (balance.amount > 0) owedToMe += balance.amount
-            else youOwe += Math.abs(balance.amount)
-        }
-
+        val totalOwedToMe = entries.sumOf { it.owedToMe }
+        val totalYouOwe   = entries.sumOf { it.youOwe }
         return BalanceSummary(
-            owedToMe = owedToMe,
-            youOwe = youOwe,
-            netBalance = owedToMe - youOwe,
-            currency = balances.firstOrNull()?.currency ?: "USD",
+            owedToMe = totalOwedToMe,
+            youOwe   = totalYouOwe,
+            entries  = entries,
         )
     }
 }
@@ -152,6 +159,10 @@ sealed class GroupsUiState {
 data class BalanceSummary(
     val owedToMe: Double,
     val youOwe: Double,
-    val netBalance: Double,
-    val currency: String,
-)
+    val entries: List<BalanceCurrencyEntry> = emptyList(),
+) {
+    /** True if there is any non-zero balance. */
+    val hasBalance: Boolean get() = owedToMe > 0.0 || youOwe > 0.0
+    /** Net across all currencies — only valid for single-currency display. */
+    val netBalance: Double get() = owedToMe - youOwe
+}

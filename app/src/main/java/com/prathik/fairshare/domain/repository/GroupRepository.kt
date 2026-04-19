@@ -43,6 +43,7 @@ interface GroupRepository {
         name: String?,
         description: String?,
         simplifyDebts: Boolean?,
+        defaultCurrency: String? = null,
     ): ApiResult<Group>
 
     /**

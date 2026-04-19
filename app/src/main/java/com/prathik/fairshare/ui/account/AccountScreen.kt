@@ -212,7 +212,7 @@ fun AccountScreen(
                             Text(text = "Total paid", fontSize = 11.sp, color = TextTertiary)
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text       = MoneyUtils.format(balanceSummary?.owedToMe ?: 0.0, balanceSummary?.currency ?: "USD"),
+                                text       = MoneyUtils.format(balanceSummary?.owedToMe ?: 0.0, balanceSummary?.entries?.maxByOrNull { it.owedToMe }?.currency ?: "USD"),
                                 fontSize   = 20.sp,
                                 fontWeight = FontWeight.Bold,
                                 color      = Green400,
@@ -235,7 +235,7 @@ fun AccountScreen(
                             Text(text = "Total owed", fontSize = 11.sp, color = TextTertiary)
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text       = MoneyUtils.format(balanceSummary?.youOwe ?: 0.0, balanceSummary?.currency ?: "USD"),
+                                text       = MoneyUtils.format(balanceSummary?.youOwe ?: 0.0, balanceSummary?.entries?.maxByOrNull { it.youOwe }?.currency ?: "USD"),
                                 fontSize   = 20.sp,
                                 fontWeight = FontWeight.Bold,
                                 color      = Negative,

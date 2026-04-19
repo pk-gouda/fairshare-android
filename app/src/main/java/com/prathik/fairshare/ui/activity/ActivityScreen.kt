@@ -210,8 +210,10 @@ private fun NotificationRow(
 
     val isTappable = when (notification.type) {
         NotificationType.EXPENSE_DELETED,
+        NotificationType.EXPENSE_RESTORED,
         NotificationType.SETTLEMENT_CANCELLED,
-        NotificationType.GROUP_DELETED -> false
+        NotificationType.GROUP_DELETED,
+        NotificationType.GROUP_MEMBER_REMOVED -> false
 
         else -> notification.referenceId != null
     }
@@ -225,6 +227,10 @@ private fun NotificationRow(
                     when (notification.type) {
                         NotificationType.EXPENSE_ADDED,
                         NotificationType.EXPENSE_UPDATED -> notification.referenceId?.let {
+                            onNavigateToExpense(it)
+                        }
+
+                        NotificationType.EXPENSE_RESTORED -> notification.referenceId?.let {
                             onNavigateToExpense(it)
                         }
 
@@ -318,6 +324,7 @@ private fun notificationEmoji(type: NotificationType): String = when (type) {
     NotificationType.EXPENSE_ADDED -> "🧾"
     NotificationType.EXPENSE_UPDATED -> "✏️"
     NotificationType.EXPENSE_DELETED -> "🗑️"
+    NotificationType.EXPENSE_RESTORED -> "♻️"
     NotificationType.SETTLEMENT_RECEIVED -> "💸"
     NotificationType.SETTLEMENT_CONFIRMED -> "✅"
     NotificationType.SETTLEMENT_CANCELLED -> "❌"
@@ -325,6 +332,7 @@ private fun notificationEmoji(type: NotificationType): String = when (type) {
     NotificationType.FRIEND_REQUEST_ACCEPTED -> "🤝"
     NotificationType.GROUP_INVITE_RECEIVED -> "👥"
     NotificationType.GROUP_MEMBER_JOINED -> "👥"
+    NotificationType.GROUP_MEMBER_REMOVED -> "👋"
     NotificationType.GROUP_DELETED -> "🗑️"
     NotificationType.SETTLE_UP_REMINDER -> "⏰"
 }
@@ -334,15 +342,20 @@ private fun notificationBgColor(type: NotificationType): Color = when (type) {
     NotificationType.EXPENSE_UPDATED,
     NotificationType.EXPENSE_DELETED -> Color(0xFF1A2A1A)
 
+    NotificationType.EXPENSE_RESTORED -> Color(0xFF1A2A2A)
+
     NotificationType.SETTLEMENT_RECEIVED,
     NotificationType.SETTLEMENT_CONFIRMED -> Color(0xFF1A3A1A)
 
     NotificationType.SETTLEMENT_CANCELLED -> Color(0xFF2A1A1A)
+
     NotificationType.FRIEND_REQUEST_RECEIVED,
     NotificationType.FRIEND_REQUEST_ACCEPTED -> Color(0xFF1A1A3A)
 
     NotificationType.GROUP_INVITE_RECEIVED,
     NotificationType.GROUP_MEMBER_JOINED -> Color(0xFF1A2A3A)
+
+    NotificationType.GROUP_MEMBER_REMOVED -> Color(0xFF2A2A1A)
 
     NotificationType.GROUP_DELETED -> Color(0xFF2A1A1A)
     NotificationType.SETTLE_UP_REMINDER -> Color(0xFF2A1800)
