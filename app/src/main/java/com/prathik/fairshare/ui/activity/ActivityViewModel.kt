@@ -3,7 +3,10 @@ package com.prathik.fairshare.ui.activity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.Notification
+import com.prathik.fairshare.domain.usecase.group.GetDeletedGroupsUseCase
+import com.prathik.fairshare.domain.usecase.group.RestoreGroupUseCase
 import com.prathik.fairshare.domain.usecase.notification.GetNotificationsUseCase
 import com.prathik.fairshare.domain.usecase.notification.MarkAllReadUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,6 +22,8 @@ import javax.inject.Inject
 class ActivityViewModel @Inject constructor(
     private val getNotificationsUseCase: GetNotificationsUseCase,
     private val markAllReadUseCase: MarkAllReadUseCase,
+    private val getDeletedGroupsUseCase: GetDeletedGroupsUseCase,
+    private val restoreGroupUseCase: RestoreGroupUseCase,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -30,6 +35,9 @@ class ActivityViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<ActivityActionState>(ActivityActionState.Idle)
     val actionState: StateFlow<ActivityActionState> = _actionState.asStateFlow()
 
+    private val _deletedGroups = MutableStateFlow<List<Group>>(emptyList())
+    val deletedGroups: StateFlow<List<Group>> = _deletedGroups.asStateFlow()
+
     init {
         loadData()
     }
@@ -40,6 +48,10 @@ class ActivityViewModel @Inject constructor(
             if (_notifications.value.isEmpty()) _isLoading.value = true
             when (val result = getNotificationsUseCase()) {
                 is ApiResult.Success -> _notifications.value = result.data
+                else -> Unit
+            }
+            when (val result = getDeletedGroupsUseCase()) {
+                is ApiResult.Success -> _deletedGroups.value = result.data
                 else -> Unit
             }
             _isLoading.value = false
@@ -56,6 +68,25 @@ class ActivityViewModel @Inject constructor(
                 }
 
                 else -> _actionState.value = ActivityActionState.Error("Failed to mark as read")
+            }
+        }
+    }
+
+    fun restoreGroup(groupId: String) {
+        viewModelScope.launch {
+            _actionState.value = ActivityActionState.Loading
+            when (restoreGroupUseCase(groupId)) {
+                is ApiResult.Success -> {
+                    // Remove from deleted list
+                    _deletedGroups.value = _deletedGroups.value.filter { it.id != groupId }
+                    _actionState.value = ActivityActionState.GroupRestored
+                }
+                is ApiResult.Forbidden -> _actionState.value =
+                    ActivityActionState.Error("Only the group creator can restore")
+                is ApiResult.Conflict -> _actionState.value =
+                    ActivityActionState.Error("Restore window has expired (30 days)")
+                else -> _actionState.value =
+                    ActivityActionState.Error("Failed to restore group")
             }
         }
     }
@@ -101,6 +132,8 @@ class ActivityViewModel @Inject constructor(
 
 sealed class ActivityActionState {
     object Idle : ActivityActionState()
+    object Loading : ActivityActionState()
+    object GroupRestored : ActivityActionState()
     data class Success(val message: String) : ActivityActionState()
     data class Error(val message: String) : ActivityActionState()
 }

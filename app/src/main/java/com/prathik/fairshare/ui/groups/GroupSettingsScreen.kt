@@ -25,6 +25,9 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExitToApp
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -120,7 +123,9 @@ fun GroupSettingsScreen(
     var showUnarchiveDialog by remember { mutableStateOf(false) }
     var showAssignSheet   by remember { mutableStateOf<GroupMember?>(null) }
 
-    val isAdmin = group?.createdById == viewModel.currentUserId
+    val isCreator = group?.createdById == viewModel.currentUserId
+    val isMember = group != null  // any member can perform all group actions
+    val isAdmin = isCreator  // kept for backward compat — only used for restore
 
     val lifecycleOwner = LocalLifecycleOwner.current
     // GroupSettings loads once on init — no live refresh needed.
@@ -375,7 +380,7 @@ fun GroupSettingsScreen(
             com.prathik.fairshare.ui.components.FsTopBar(
                 title  = "Group Settings",
                 onBack = onBack,
-                actions = if (isAdmin) {
+                actions = if (isCreator) {
                     {
                         androidx.compose.material3.IconButton(onClick = { showNameDialog = true }) {
                             Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = TextSecondary)
@@ -405,7 +410,7 @@ fun GroupSettingsScreen(
                         verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                     ) {
-                        // Emoji tile — tappable for admin (change photo)
+                        // Emoji tile — tappable for any member (change photo)
                         Box(modifier = Modifier.size(56.dp)) {
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -414,11 +419,11 @@ fun GroupSettingsScreen(
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(Surface2)
                                     .border(1.dp, Surface4, RoundedCornerShape(16.dp))
-                                    .then(if (isAdmin) Modifier.clickable { showNameDialog = true } else Modifier),
+                                    .then(if (isMember) Modifier.clickable { showNameDialog = true } else Modifier),
                             ) {
                                 Text(coverEmoji(g.type), fontSize = 26.sp)
                             }
-                            if (isAdmin) {
+                            if (isCreator) {
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier         = Modifier
@@ -549,7 +554,7 @@ fun GroupSettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = isAdmin) {
+                            .clickable(enabled = isMember) {
                                 viewModel.saveSimplifyDebts(!simplifyDebts)
                             }
                             .padding(horizontal = Spacing.md, vertical = 14.dp),
@@ -565,10 +570,10 @@ fun GroupSettingsScreen(
                         }
                         androidx.compose.material3.Switch(
                             checked         = simplifyDebts,
-                            onCheckedChange = if (isAdmin) { value ->
+                            onCheckedChange = if (isMember) { value ->
                                 viewModel.saveSimplifyDebts(value)
                             } else null,
-                            enabled = isAdmin,
+                            enabled = isMember,
                             colors  = androidx.compose.material3.SwitchDefaults.colors(
                                 checkedThumbColor  = Surface0,
                                 checkedTrackColor  = Green400,
@@ -645,6 +650,71 @@ fun GroupSettingsScreen(
 
             SectionDivider()
 
+            // ── Recurring & Reminders ──────────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.md)
+                    .clip(RoundedCornerShape(Radius.xl))
+                    .background(Surface2)
+                    .border(1.dp, Surface3, RoundedCornerShape(Radius.xl)),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToRecurring(viewModel.groupId) }
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Column {
+                            Text("Recurring payments", fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium, color = TextPrimary)
+                            Text("Scheduled repeating expenses", fontSize = 12.sp,
+                                color = TextTertiary)
+                        }
+                    }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null,
+                        tint = TextTertiary, modifier = Modifier.size(16.dp))
+                }
+                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToReminders(viewModel.groupId) }
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Notifications,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.md))
+                        Column {
+                            Text("Reminders", fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium, color = TextPrimary)
+                            Text("Settle-up reminders for this group", fontSize = 12.sp,
+                                color = TextTertiary)
+                        }
+                    }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null,
+                        tint = TextTertiary, modifier = Modifier.size(16.dp))
+                }
+            }
+
+            SectionDivider()
+
             // ── Members ───────────────────────────────────────────────────────
             Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
                 Row(
@@ -653,8 +723,8 @@ fun GroupSettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("Members", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                    // Add button — admin only
-                    if (isAdmin) {
+                    // Add button — any member
+                    if (isMember) {
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier         = Modifier
@@ -713,11 +783,11 @@ fun GroupSettingsScreen(
                         MemberRow(
                             member       = member,
                             isMe         = isMe,
-                            isAdmin      = isCreator,
+                            isCreator    = isCreator,
                             isPlaceholder = isPlaceholder,
-                            showControls = isAdmin && !isMe,
-                            onAssign     = if (isPlaceholder && isAdmin) { { showAssignSheet = member } } else null,
-                            onRemove     = if (!isPlaceholder && !isMe && isAdmin) { { showRemoveDialog = member } } else null,
+                            showControls = !isMe,
+                            onAssign     = if (isPlaceholder) { { showAssignSheet = member } } else null,
+                            onRemove     = if (!isPlaceholder && !isMe) { { showRemoveDialog = member } } else null,
                         )
                         if (index < members.lastIndex) {
                             HorizontalDivider(
@@ -749,7 +819,7 @@ fun GroupSettingsScreen(
                         .background(Surface2)
                         .border(1.dp, Negative.copy(alpha = 0.3f), RoundedCornerShape(Radius.xl)),
                 ) {
-                    if (isAdmin) {
+                    if (isMember) {
                         val isArchived = group?.isArchived == true
                         if (isArchived) {
                             DangerRow(
@@ -779,7 +849,7 @@ fun GroupSettingsScreen(
                         labelColor = Negative,
                         onClick  = { showLeaveDialog = true },
                     )
-                    if (isAdmin) {
+                    if (isMember) {
                         HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                         DangerRow(
                             icon     = Icons.Outlined.Delete,
@@ -817,7 +887,7 @@ private fun SectionDivider() {
 private fun MemberRow(
     member       : GroupMember,
     isMe         : Boolean,
-    isAdmin      : Boolean,
+    isCreator    : Boolean,
     isPlaceholder: Boolean,
     showControls : Boolean,
     onAssign     : (() -> Unit)?,
@@ -890,9 +960,9 @@ private fun MemberRow(
             )
         }
 
-        // Right side badge/action
+        // Right side badge/action — CREATOR badge replaces ADMIN
         when {
-            isAdmin && !isMe -> {
+            isCreator && !isMe -> {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(Radius.sm))
@@ -900,11 +970,10 @@ private fun MemberRow(
                         .border(1.dp, Green400.copy(alpha = 0.3f), RoundedCornerShape(Radius.sm))
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("ADMIN", fontSize = 9.sp, color = Green400, fontWeight = FontWeight.Bold)
+                    Text("CREATOR", fontSize = 9.sp, color = Green400, fontWeight = FontWeight.Bold)
                 }
             }
-            isAdmin && isMe -> {
-                // Show both YOU badge (already inline) and ADMIN badge
+            isCreator && isMe -> {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(Radius.sm))
@@ -912,7 +981,7 @@ private fun MemberRow(
                         .border(1.dp, Green400.copy(alpha = 0.3f), RoundedCornerShape(Radius.sm))
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("ADMIN", fontSize = 9.sp, color = Green400, fontWeight = FontWeight.Bold)
+                    Text("CREATOR", fontSize = 9.sp, color = Green400, fontWeight = FontWeight.Bold)
                 }
             }
             onAssign != null -> {

@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         InvitedFriendEntity::class,
         FriendEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -54,8 +54,71 @@ abstract class FairShareDatabase : RoomDatabase() {
             }
         }
 
-        // No MIGRATION_2_3 needed — fallbackToDestructiveMigration() handles it.
-        // BalanceEntity gained groupLastActivity TEXT NULL column.
-        // Room is a cache only — all data lives on the backend, safe to wipe.
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE balances ADD COLUMN groupLastActivity TEXT")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS groups")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS groups (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        groupImage TEXT,
+                        createdById TEXT NOT NULL,
+                        createdByName TEXT NOT NULL,
+                        tripStartDate TEXT,
+                        tripEndDate TEXT,
+                        simplifyDebts INTEGER NOT NULL,
+                        inviteCode TEXT NOT NULL,
+                        groupNotes TEXT,
+                        lastActivityDate TEXT,
+                        isArchived INTEGER NOT NULL,
+                        memberCount INTEGER NOT NULL,
+                        createdAt TEXT NOT NULL,
+                        cachedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                db.execSQL("DROP TABLE IF EXISTS balances")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS balances (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        userId TEXT NOT NULL,
+                        otherUserId TEXT NOT NULL,
+                        otherUserName TEXT NOT NULL,
+                        amount REAL NOT NULL,
+                        currency TEXT NOT NULL,
+                        groupId TEXT NOT NULL DEFAULT '',
+                        groupName TEXT,
+                        cachedAt INTEGER NOT NULL DEFAULT 0,
+                        groupLastActivity TEXT
+                    )
+                """.trimIndent())
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE groups ADD COLUMN lastRemainderIndex INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE groups ADD COLUMN defaultCurrency TEXT NOT NULL DEFAULT 'USD'")
+            }
+        }
+
+        /** 6 → 7: Add soft delete fields to groups cache. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE groups ADD COLUMN isDeleted INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE groups ADD COLUMN deletedAt TEXT")
+            }
+        }
     }
 }

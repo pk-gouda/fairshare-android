@@ -64,6 +64,12 @@ interface GroupApiService {
     @POST("api/groups/{groupId}/unarchive")
     suspend fun unarchiveGroup(@Path("groupId") groupId: String): ApiResponse<Unit>
 
+    @POST("api/groups/{groupId}/restore")
+    suspend fun restoreGroup(@Path("groupId") groupId: String): ApiResponse<GroupResponse>
+
+    @GET("api/groups/deleted")
+    suspend fun getDeletedGroups(): ApiResponse<List<GroupResponse>>
+
     @GET("api/groups/{groupId}/balances")
     suspend fun getGroupBalances(@Path("groupId") groupId: String): ApiResponse<List<BalanceResponse>>
 

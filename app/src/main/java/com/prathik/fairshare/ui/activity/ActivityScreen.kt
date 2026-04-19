@@ -1,6 +1,7 @@
 package com.prathik.fairshare.ui.activity
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,15 +37,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.domain.model.Notification
+import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.NotificationType
 import com.prathik.fairshare.ui.components.FsIconButton
 import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.Green400
+import com.prathik.fairshare.ui.theme.Negative
+import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
@@ -70,6 +75,7 @@ fun ActivityScreen(
 ) {
     val isLoading by viewModel.isLoading.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
+    val deletedGroups by viewModel.deletedGroups.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     val grouped by remember { derivedStateOf { viewModel.groupedNotifications() } }
     val hasUnread by remember { derivedStateOf { viewModel.hasUnread } }
@@ -84,6 +90,10 @@ fun ActivityScreen(
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
+            is ActivityActionState.GroupRestored -> {
+                snackbarHost.showSnackbar("Group restored"); viewModel.resetActionState()
+            }
+
             is ActivityActionState.Success -> {
                 snackbarHost.showSnackbar(state.message); viewModel.resetActionState()
             }
@@ -153,6 +163,29 @@ fun ActivityScreen(
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
 
+                // Recently Deleted section
+                if (deletedGroups.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "RECENTLY DELETED",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Negative,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                        )
+                    }
+                    items(deletedGroups, key = { group -> "deleted_${group.id}" }) { group ->
+                        DeletedGroupRow(group = group, onRestore = { viewModel.restoreGroup(group.id) })
+                        HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                            modifier = Modifier.padding(start = Spacing.lg))
+                    }
+                    item {
+                        HorizontalDivider(color = Surface4, thickness = 1.dp,
+                            modifier = Modifier.padding(vertical = Spacing.sm))
+                    }
+                }
+
                 // Ordered sections: Today → Yesterday → Earlier
                 listOf("Today", "Yesterday", "Earlier").forEach { section ->
                     val sectionItems = grouped[section] ?: return@forEach
@@ -209,12 +242,8 @@ private fun NotificationRow(
     val isUnread = !notification.isRead
 
     val isTappable = when (notification.type) {
-        NotificationType.EXPENSE_DELETED,
-        NotificationType.EXPENSE_RESTORED,
         NotificationType.SETTLEMENT_CANCELLED,
-        NotificationType.GROUP_DELETED,
         NotificationType.GROUP_MEMBER_REMOVED -> false
-
         else -> notification.referenceId != null
     }
 
@@ -244,7 +273,16 @@ private fun NotificationRow(
                         NotificationType.FRIEND_REQUEST_ACCEPTED -> onNavigateToFriend()
 
                         NotificationType.GROUP_INVITE_RECEIVED,
-                        NotificationType.GROUP_MEMBER_JOINED -> notification.referenceId?.let {
+                        NotificationType.GROUP_MEMBER_JOINED,
+                        NotificationType.GROUP_MEMBER_ADDED,
+                        NotificationType.GROUP_CREATED,
+                        NotificationType.GROUP_IMPORTED,
+                        NotificationType.GROUP_DELETED,
+                        NotificationType.GROUP_RESTORED,
+                        NotificationType.GROUP_ARCHIVED,
+                        NotificationType.GROUP_UNARCHIVED,
+                        NotificationType.SIMPLIFY_DEBTS_CHANGED,
+                        NotificationType.PLACEHOLDER_ASSIGNED -> notification.referenceId?.let {
                             onNavigateToGroup(it)
                         }
 
@@ -318,6 +356,56 @@ private fun NotificationRow(
     }
 }
 
+
+// ── Deleted Group Row ─────────────────────────────────────────────────────────
+
+@Composable
+private fun DeletedGroupRow(group: Group, onRestore: () -> Unit) {
+    val daysRemaining = group.deletedAt?.let {
+        try {
+            val deleted = java.time.Instant.parse(it)
+            val expiry = deleted.plus(30, java.time.temporal.ChronoUnit.DAYS)
+            java.time.Duration.between(java.time.Instant.now(), expiry).toDays().coerceAtLeast(0)
+        } catch (e: Exception) { 30L }
+    } ?: 30L
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF1A0D0D))
+            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Surface3),
+        ) {
+            Text(group.name.firstOrNull()?.uppercase() ?: "G",
+                fontSize = 18.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(group.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = if (daysRemaining > 0) "$daysRemaining days left to restore" else "Expires today",
+                fontSize = 12.sp, color = if (daysRemaining <= 3) Negative else TextTertiary,
+            )
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Surface2)
+                .border(1.dp, Green400.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                .clickable(onClick = onRestore)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Text("Restore", fontSize = 12.sp, color = Green400, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 private fun notificationEmoji(type: NotificationType): String = when (type) {
@@ -333,7 +421,15 @@ private fun notificationEmoji(type: NotificationType): String = when (type) {
     NotificationType.GROUP_INVITE_RECEIVED -> "👥"
     NotificationType.GROUP_MEMBER_JOINED -> "👥"
     NotificationType.GROUP_MEMBER_REMOVED -> "👋"
+    NotificationType.GROUP_MEMBER_ADDED -> "➕"
+    NotificationType.GROUP_CREATED -> "✨"
+    NotificationType.GROUP_IMPORTED -> "📥"
     NotificationType.GROUP_DELETED -> "🗑️"
+    NotificationType.GROUP_RESTORED -> "♻️"
+    NotificationType.GROUP_ARCHIVED -> "📦"
+    NotificationType.GROUP_UNARCHIVED -> "📤"
+    NotificationType.SIMPLIFY_DEBTS_CHANGED -> "⚙️"
+    NotificationType.PLACEHOLDER_ASSIGNED -> "🔗"
     NotificationType.SETTLE_UP_REMINDER -> "⏰"
 }
 
@@ -356,8 +452,15 @@ private fun notificationBgColor(type: NotificationType): Color = when (type) {
     NotificationType.GROUP_MEMBER_JOINED -> Color(0xFF1A2A3A)
 
     NotificationType.GROUP_MEMBER_REMOVED -> Color(0xFF2A2A1A)
-
+    NotificationType.GROUP_MEMBER_ADDED -> Color(0xFF1A2A3A)
+    NotificationType.GROUP_CREATED,
+    NotificationType.GROUP_IMPORTED,
+    NotificationType.GROUP_RESTORED,
+    NotificationType.GROUP_ARCHIVED,
+    NotificationType.GROUP_UNARCHIVED -> Color(0xFF1A2A3A)
     NotificationType.GROUP_DELETED -> Color(0xFF2A1A1A)
+    NotificationType.SIMPLIFY_DEBTS_CHANGED,
+    NotificationType.PLACEHOLDER_ASSIGNED -> Color(0xFF1A1A2A)
     NotificationType.SETTLE_UP_REMINDER -> Color(0xFF2A1800)
 }
 

@@ -38,10 +38,14 @@ object DatabaseModule {
             FairShareDatabase::class.java,
             "fairshare_db",
         )
-            // TODO: Before production — replace with proper Migration objects.
-            // During beta development, schema changes will wipe and recreate the DB.
-            // This is acceptable since Room is a cache — all data lives on the backend.
-            .fallbackToDestructiveMigration()
+            .addMigrations(
+                FairShareDatabase.MIGRATION_1_2,
+                FairShareDatabase.MIGRATION_2_3,
+                FairShareDatabase.MIGRATION_3_4,
+                FairShareDatabase.MIGRATION_4_5,
+                FairShareDatabase.MIGRATION_5_6,
+                FairShareDatabase.MIGRATION_6_7,
+            )
             .build()
 
     @Provides

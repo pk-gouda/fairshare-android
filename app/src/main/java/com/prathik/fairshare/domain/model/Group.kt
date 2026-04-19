@@ -22,4 +22,6 @@ data class Group(
     val createdAt: String,
     val lastRemainderIndex: Int = 0,
     val defaultCurrency: String = "USD",
+    val isDeleted: Boolean = false,
+    val deletedAt: String? = null,
 ) : Parcelable

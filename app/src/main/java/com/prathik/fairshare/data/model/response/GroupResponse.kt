@@ -22,4 +22,6 @@ data class GroupResponse(
     @SerialName("createdAt")        val createdAt: String,
     @SerialName("lastRemainderIndex") val lastRemainderIndex: Int = 0,
     @SerialName("defaultCurrency")   val defaultCurrency: String = "USD",
+    @SerialName("isDeleted")          val isDeleted: Boolean = false,
+    @SerialName("deletedAt")          val deletedAt: String? = null,
 )

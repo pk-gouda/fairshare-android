@@ -15,6 +15,7 @@ import com.prathik.fairshare.domain.usecase.expense.CreateExpenseUseCase
 import com.prathik.fairshare.domain.usecase.friend.GetFriendsUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
+import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import com.prathik.fairshare.domain.usecase.receipt.ScanReceiptUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +29,7 @@ import javax.inject.Inject
 class AddExpenseViewModel @Inject constructor(
     private val createExpenseUseCase: CreateExpenseUseCase,
     private val getGroupsUseCase: GetGroupsUseCase,
+    private val getGroupUseCase: GetGroupUseCase,
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
     private val getGroupBalancesUseCase: com.prathik.fairshare.domain.usecase.group.GetGroupBalancesUseCase,
     private val getFriendsUseCase: GetFriendsUseCase,
@@ -161,21 +163,32 @@ class AddExpenseViewModel @Inject constructor(
     }
 
     /**
-     * When launched from a group context, set currency to match the group's
-     * existing expenses (from balance currency). Falls back to device locale
-     * currency if no balances exist yet (new group with no expenses).
+     * Pre-fill currency from group.defaultCurrency — set by any member in Group Settings.
+     * Falls back to balance currency for existing multi-currency groups,
+     * then to device locale if no balances exist.
      */
     private fun loadGroupCurrency(groupId: String) {
         viewModelScope.launch {
+            // 1. Try group.defaultCurrency first (explicit user preference)
+            when (val groupResult = getGroupUseCase(groupId)) {
+                is ApiResult.Success -> {
+                    val defaultCurrency = groupResult.data.defaultCurrency
+                    if (defaultCurrency.isNotBlank()) {
+                        _currency.value = defaultCurrency
+                        return@launch
+                    }
+                }
+                else -> Unit
+            }
+            // 2. Fall back to existing balance currency
             when (val result = getGroupBalancesUseCase(groupId)) {
                 is ApiResult.Success -> {
                     val groupCurrency = result.data.firstOrNull()?.currency
                     if (groupCurrency != null) {
                         _currency.value = groupCurrency
                     }
-                    // If no balances yet, keep device locale currency from tokenStore
                 }
-                else -> Unit // Keep existing currency on error
+                else -> Unit
             }
         }
     }

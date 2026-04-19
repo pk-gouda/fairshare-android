@@ -139,6 +139,14 @@ class GroupRepositoryImpl @Inject constructor(
     override suspend fun unarchiveGroup(groupId: String): ApiResult<Unit> =
         safeApiCall { groupService.unarchiveGroup(groupId) }.mapSuccess { }
 
+    override suspend fun restoreGroup(groupId: String): ApiResult<Group> =
+        safeApiCall { groupService.restoreGroup(groupId) }
+            .mapSuccess { it.toDomainDirect() }
+
+    override suspend fun getDeletedGroups(): ApiResult<List<Group>> =
+        safeApiCall { groupService.getDeletedGroups() }
+            .mapSuccess { list -> list.map { it.toDomainDirect() } }
+
     override suspend fun getGroupBalances(groupId: String): ApiResult<List<Balance>> =
         safeApiCall { groupService.getGroupBalances(groupId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
@@ -171,6 +179,28 @@ class GroupRepositoryImpl @Inject constructor(
         defaultCurrency    = defaultCurrency,
     )
 
+    private fun com.prathik.fairshare.data.model.response.GroupResponse.toDomainDirect() = Group(
+        id = id,
+        name = name,
+        type = type.toGroupTypeSafe(),
+        createdById = createdById,
+        createdByName = createdByName,
+        inviteCode = inviteCode ?: "",
+        simplifyDebts = simplifyDebts ?: false,
+        isArchived = isArchived ?: false,
+        memberCount = memberCount ?: 0,
+        groupNotes = groupNotes,
+        groupImage = groupImage,
+        lastActivityDate = lastActivityDate,
+        tripStartDate = tripStartDate,
+        tripEndDate = tripEndDate,
+        createdAt = createdAt,
+        lastRemainderIndex = lastRemainderIndex ?: 0,
+        defaultCurrency = defaultCurrency,
+        isDeleted = isDeleted,
+        deletedAt = deletedAt,
+    )
+
     private fun GroupEntity.toDomain() = Group(
         id = id,
         name = name,
@@ -189,5 +219,7 @@ class GroupRepositoryImpl @Inject constructor(
         createdAt = createdAt,
         lastRemainderIndex = lastRemainderIndex,
         defaultCurrency    = defaultCurrency,
+        isDeleted          = isDeleted,
+        deletedAt          = deletedAt,
     )
 }

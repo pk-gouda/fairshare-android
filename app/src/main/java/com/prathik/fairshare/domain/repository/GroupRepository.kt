@@ -87,6 +87,8 @@ interface GroupRepository {
      * Unarchives a previously archived group.
      */
     suspend fun unarchiveGroup(groupId: String): ApiResult<Unit>
+    suspend fun restoreGroup(groupId: String): ApiResult<Group>
+    suspend fun getDeletedGroups(): ApiResult<List<Group>>
 
     /**
      * Fetches all balances within a group.
