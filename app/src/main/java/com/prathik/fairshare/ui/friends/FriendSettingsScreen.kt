@@ -97,7 +97,8 @@ fun FriendSettingsScreen(
     val friendType    by viewModel.friendType.collectAsState()
     val sharedGroups  by viewModel.sharedGroups.collectAsState()
     val allGroups     by viewModel.allGroups.collectAsState()
-    val directBalance by viewModel.directBalance.collectAsState()
+    val directBalance    by viewModel.directBalance.collectAsState()
+    val balanceEntries   by viewModel.balanceEntries.collectAsState()
     val isLoading     by viewModel.isLoading.collectAsState()
     val actionState   by viewModel.actionState.collectAsState()
     val snackbarHost        = remember { SnackbarHostState() }
@@ -406,9 +407,14 @@ fun FriendSettingsScreen(
                                     fontSize = 11.sp,
                                     color    = TextTertiary,
                                 )
+                                val amtText = if (balanceEntries.isEmpty())
+                                    MoneyUtils.format(Math.abs(bal), "USD")
+                                else balanceEntries
+                                    .filter { if (bal > 0) it.first > 0 else it.first < 0 }
+                                    .joinToString(" + ") { (amt, cur) -> MoneyUtils.format(Math.abs(amt), cur) }
                                 Text(
-                                    text       = MoneyUtils.format(Math.abs(bal), "USD"),
-                                    fontSize   = 15.sp,
+                                    text       = amtText,
+                                    fontSize   = if (balanceEntries.size > 1) 13.sp else 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color      = if (bal > 0) Green400 else Negative,
                                 )
@@ -420,29 +426,6 @@ fun FriendSettingsScreen(
                     }
                     FriendType.Placeholder -> {
                         StatusPill(label = "Offline", color = TextTertiary)
-                    }
-                }
-            }
-
-            // ── Settle up CTA — accepted with outstanding balance ─────────────
-            val bal = directBalance
-            if (friendType is FriendType.Accepted && bal != null && bal != 0.0) {
-                Box(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier         = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(Radius.xl))
-                            .background(Green400)
-                            .clickable { onNavigateToSettleUp() }
-                            .padding(vertical = 14.dp),
-                    ) {
-                        Text(
-                            text       = "Settle up ${MoneyUtils.format(Math.abs(bal), "USD")}",
-                            fontSize   = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color      = Surface0,
-                        )
                     }
                 }
             }

@@ -570,7 +570,7 @@ fun EditExpenseScreen(
 
     if (showPayerSheet) {
         EditPayerBottomSheet(members = members, payerData = payerData, total = amountDouble,
-            currentUserId = viewModel.currentUserId,
+            currency = currency, currentUserId = viewModel.currentUserId,
             onChanged = { userId, amt -> viewModel.onPayerChanged(userId, amt) },
             onDismiss = { showPayerSheet = false })
     }
@@ -589,7 +589,7 @@ fun EditExpenseScreen(
 
     if (showSplitSheet && splitType != SplitType.EQUAL) {
         EditSplitBottomSheet(splitType = splitType, members = members, splitData = splitData,
-            total = amountDouble, currentUserId = viewModel.currentUserId,
+            total = amountDouble, currency = currency, currentUserId = viewModel.currentUserId,
             onConfirm = { newData -> viewModel.onSplitDataConfirmed(newData); showSplitSheet = false },
             onDismiss = { showSplitSheet = false })
     }
@@ -663,6 +663,7 @@ private fun EditPayerBottomSheet(
     members      : List<GroupMember>,
     payerData    : Map<String, Double>,
     total        : Double,
+    currency     : String,
     currentUserId: String?,
     onChanged    : (String, Double) -> Unit,
     onDismiss    : () -> Unit,
@@ -769,9 +770,9 @@ private fun EditPayerBottomSheet(
                             .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Total: ${MoneyUtils.format(total, "USD")}", fontSize = 12.sp, color = TextSecondary)
+                        Text("Total: ${MoneyUtils.format(total, currency)}", fontSize = 12.sp, color = TextSecondary)
                         Text(
-                            text  = "Sum: ${MoneyUtils.format(multiSum, "USD")}",
+                            text  = "Sum: ${MoneyUtils.format(multiSum, currency)}",
                             fontSize = 12.sp,
                             color = if (multiValid) Green400 else Negative,
                             fontWeight = FontWeight.Medium,
@@ -820,7 +821,7 @@ private fun EditPayerBottomSheet(
 
                 Spacer(modifier = Modifier.height(Spacing.md))
                 FsPrimaryButton(
-                    text = if (multiValid) "Confirm" else "Amounts must sum to ${MoneyUtils.format(total, "USD")}",
+                    text = if (multiValid) "Confirm" else "Amounts must sum to ${MoneyUtils.format(total, currency)}",
                     enabled = multiValid,
                     onClick = {
                         members.forEach { m -> onChanged(m.userId, 0.0) }
@@ -846,6 +847,7 @@ private fun EditSplitBottomSheet(
     members      : List<GroupMember>,
     splitData    : Map<String, Double>,
     total        : Double,
+    currency     : String,
     currentUserId: String?,
     onConfirm    : (Map<String, Double>) -> Unit,
     onDismiss    : () -> Unit,
@@ -882,7 +884,7 @@ private fun EditSplitBottomSheet(
         else -> ""
     }
     val hint = when (splitType) {
-        SplitType.UNEQUAL    -> "Must sum to ${MoneyUtils.format(total, "USD")}"
+        SplitType.UNEQUAL    -> "Must sum to ${MoneyUtils.format(total, currency)}"
         SplitType.PERCENTAGE -> "Must sum to 100%"
         SplitType.SHARES     -> "Any whole numbers (e.g. 2, 1, 1)"
         else -> ""
@@ -912,7 +914,7 @@ private fun EditSplitBottomSheet(
                 }
                 if (splitType != SplitType.SHARES) {
                     val sumLabel = when (splitType) {
-                        SplitType.UNEQUAL    -> MoneyUtils.format(currentSum, "USD")
+                        SplitType.UNEQUAL    -> MoneyUtils.format(currentSum, currency)
                         SplitType.PERCENTAGE -> "${currentSum.toBigDecimal().stripTrailingZeros().toPlainString()}%"
                         else -> ""
                     }
@@ -993,7 +995,7 @@ private fun EditSplitBottomSheet(
             Spacer(modifier = Modifier.height(Spacing.lg))
             FsPrimaryButton(
                 text = if (isValid) "Confirm" else when (splitType) {
-                    SplitType.UNEQUAL    -> "Amounts must sum to ${MoneyUtils.format(total, "USD")}"
+                    SplitType.UNEQUAL    -> "Amounts must sum to ${MoneyUtils.format(total, currency)}"
                     SplitType.PERCENTAGE -> "Percentages must sum to 100%"
                     SplitType.SHARES     -> "Enter whole numbers for each person"
                     else -> "Confirm"

@@ -57,6 +57,10 @@ class FriendSettingsViewModel @Inject constructor(
     private val _directBalance = MutableStateFlow<Double?>(null)
     val directBalance: StateFlow<Double?> = _directBalance.asStateFlow()
 
+    /** Per-currency entries for display — never sum across currencies. */
+    private val _balanceEntries = MutableStateFlow<List<Pair<Double, String>>>(emptyList())
+    val balanceEntries: StateFlow<List<Pair<Double, String>>> = _balanceEntries.asStateFlow()
+
     private val _isLoading    = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -121,8 +125,12 @@ class FriendSettingsViewModel @Inject constructor(
             // Net balance guard — from UserBalance (covers group + non-group expenses)
             val netResult = netBalanceDeferred.await()
             if (netResult is ApiResult.Success) {
-                val net = netResult.data.sumOf { it.amount }
-                _directBalance.value = if (net == 0.0 && netResult.data.isEmpty()) null else net
+                val data = netResult.data
+                val net = data.sumOf { it.amount }
+                _directBalance.value = if (net == 0.0 && data.isEmpty()) null else net
+                _balanceEntries.value = data.groupBy { it.currency }
+                    .map { (cur, list) -> Pair(list.sumOf { it.amount }, cur) }
+                    .filter { it.first != 0.0 }
             }
 
             _isLoading.value = false

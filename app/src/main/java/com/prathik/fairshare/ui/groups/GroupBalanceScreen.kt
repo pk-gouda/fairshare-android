@@ -123,10 +123,24 @@ private fun MemberBalanceRow(
         member.net < 0  -> Negative
         else            -> TextTertiary
     }
+    // Build per-currency label — Splitwise style
+    val positiveNets = member.netByCurrency.filter { it.value > 0 }
+    val negativeNets = member.netByCurrency.filter { it.value < 0 }
     val netLabel = when {
-        member.net > 0  -> "gets back ${MoneyUtils.format(member.net, member.currency)} in total"
-        member.net < 0  -> "owes ${MoneyUtils.format(-member.net, member.currency)} in total"
-        else            -> "is settled up"
+        member.netByCurrency.isEmpty() -> "is settled up"
+        negativeNets.isEmpty() -> {
+            val txt = positiveNets.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) }
+            "gets back $txt in total"
+        }
+        positiveNets.isEmpty() -> {
+            val txt = negativeNets.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) }
+            "owes $txt in total"
+        }
+        else -> {
+            val oweText  = negativeNets.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) }
+            val owedText = positiveNets.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) }
+            "owes $oweText · gets back $owedText"
+        }
     }
 
     Column {

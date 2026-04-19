@@ -379,58 +379,68 @@ fun GroupsHomeScreen(
 
 @Composable
 private fun NetBalanceBar(summary: BalanceSummary) {
-    // Overall direction: owed to you if owedToMe > youOwe, else you owe
-    val netColor = if (summary.owedToMe >= summary.youOwe) Green400 else Negative
-    val netLabel = if (summary.owedToMe >= summary.youOwe) "Owed to you" else "You owe"
+    // Compute per-direction entries first
+    val owedEntries = summary.entries.filter { it.net > 0.0 }
+    val oweEntries  = summary.entries.filter { it.net < 0.0 }
+    val hasBothDirections = owedEntries.isNotEmpty() && oweEntries.isNotEmpty()
 
-    // Build display string — multi-currency like Splitwise: "₹1,000 + $174.19"
-    // Positive entries: currencies where others owe you more than you owe them
-    val owedEntries  = summary.entries.filter { it.net > 0.0 }
-    val oweEntries   = summary.entries.filter { it.net < 0.0 }
-    val displayParts = if (summary.owedToMe >= summary.youOwe) owedEntries else oweEntries
-
-    val netAmountText = if (displayParts.isEmpty()) {
-        "All settled up"
-    } else {
-        displayParts.joinToString(" + ") { MoneyUtils.format(Math.abs(it.net), it.currency) }
-    }
+    // Mixed: pill shows "Owed to you" for dominant direction
+    val dominantIsOwed = summary.owedToMe >= summary.youOwe
+    val netColor = if (dominantIsOwed) Green400 else Negative
+    val pillLabel = if (dominantIsOwed) "Owed to you" else "You owe"
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(Surface0)
-            .border(width = 0.5.dp, color = Surface4,
-                shape = RoundedCornerShape(0.dp))
+            .border(width = 0.5.dp, color = Surface4, shape = RoundedCornerShape(0.dp))
             .padding(horizontal = Spacing.lg, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column {
-            Text(
-                text = "NET BALANCE",
-                fontSize = 10.sp,
-                color = TextTertiary,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 1.sp,
-            )
-            Text(
-                text = netAmountText,
-                fontSize = if (displayParts.size > 1) 18.sp else 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (displayParts.isEmpty()) TextTertiary else netColor,
-                lineHeight = 28.sp,
-            )
+            when {
+                summary.entries.isEmpty() -> Text(
+                    "All settled up",
+                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextTertiary,
+                )
+                hasBothDirections -> {
+                    // Two lines — Splitwise style, no "Mixed" label
+                    val oweText  = oweEntries.joinToString(" + ") { MoneyUtils.format(Math.abs(it.net), it.currency) }
+                    val owedText = owedEntries.joinToString(" + ") { MoneyUtils.format(it.net, it.currency) }
+                    Text(
+                        text = "You owe $oweText",
+                        fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Negative,
+                    )
+                    Text(
+                        text = "Owed to you $owedText",
+                        fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Green400,
+                    )
+                }
+                oweEntries.isNotEmpty() -> Text(
+                    text = oweEntries.joinToString(" + ") { MoneyUtils.format(Math.abs(it.net), it.currency) },
+                    fontSize = if (oweEntries.size > 1) 18.sp else 24.sp,
+                    fontWeight = FontWeight.Bold, color = Negative,
+                )
+                else -> Text(
+                    text = owedEntries.joinToString(" + ") { MoneyUtils.format(it.net, it.currency) },
+                    fontSize = if (owedEntries.size > 1) 18.sp else 24.sp,
+                    fontWeight = FontWeight.Bold, color = Green400,
+                )
+            }
         }
 
-        // Pill badge
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(Radius.full))
-                .background(netColor.copy(alpha = 0.15f))
-                .border(1.dp, netColor.copy(alpha = 0.3f), RoundedCornerShape(Radius.full))
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            Text(netLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = netColor)
+        // Pill badge — shows dominant direction with currency, never "Mixed"
+        if (summary.entries.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.full))
+                    .background(netColor.copy(alpha = 0.15f))
+                    .border(1.dp, netColor.copy(alpha = 0.3f), RoundedCornerShape(Radius.full))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(pillLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = netColor)
+            }
         }
     }
 }
@@ -444,13 +454,19 @@ private fun GroupCard(
     fraction : Float,     // 0..1 arc fill on the ring
     onClick  : () -> Unit,
 ) {
-    val netAmt = entries?.sumOf { it.first }
-    val isSettled = entries != null && (netAmt == null || netAmt == 0.0)
-    val arcColor = when {
-        isSettled    -> Gold
-        netAmt != null && netAmt > 0 -> Green400
-        netAmt != null && netAmt < 0 -> Negative
-        else         -> Color.Transparent
+    val positives = entries?.filter { it.first > 0 } ?: emptyList()
+    val negatives = entries?.filter { it.first < 0 } ?: emptyList()
+    val isMixed   = positives.isNotEmpty() && negatives.isNotEmpty()
+    // Dominant = larger absolute value side
+    val posTotal  = positives.sumOf { it.first }
+    val negTotal  = negatives.sumOf { -it.first }
+    val isSettled = entries != null && entries.isNotEmpty() && positives.isEmpty() && negatives.isEmpty()
+    val arcColor  = when {
+        isSettled       -> Gold
+        isMixed         -> if (negTotal > posTotal) Negative else Green400
+        positives.isNotEmpty() -> Green400
+        negatives.isNotEmpty() -> Negative
+        else            -> Color.Transparent
     }
 
     Row(
@@ -501,42 +517,48 @@ private fun GroupCard(
             }
         }
 
-        // Balance label
+        // Balance label — Splitwise pattern
         when {
-            entries == null -> Text(
-                text     = "no expenses",
-                fontSize = 12.sp,
-                color    = TextTertiary,
-            )
-            isSettled -> Text(
-                text       = "settled up",
-                fontSize   = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color      = Green400,
-            )
-            netAmt != null && netAmt > 0 -> Column(horizontalAlignment = Alignment.End) {
-                Text(text = "owed to you", fontSize = 10.sp, color = TextTertiary)
-                val owedText = entries.filter { it.first > 0 }
-                    .joinToString(" + ") { (amt, cur) -> MoneyUtils.format(amt, cur) }
-                Text(
-                    text = owedText,
-                    fontSize = if (entries.size > 1) 11.sp else 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Green400,
-                    maxLines = 1,
-                )
-            }
+            entries == null -> Text("no expenses", fontSize = 12.sp, color = TextTertiary)
+            isSettled -> Text("settled up", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Green400)
             else -> Column(horizontalAlignment = Alignment.End) {
-                Text(text = "you owe", fontSize = 10.sp, color = TextTertiary)
-                val oweText = entries?.filter { it.first < 0 }
-                    ?.joinToString(" + ") { (amt, cur) -> MoneyUtils.format(-amt, cur) } ?: ""
-                Text(
-                    text = oweText,
-                    fontSize = if ((entries?.size ?: 0) > 1) 11.sp else 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Negative,
-                    maxLines = 1,
-                )
+                when {
+                    // All owed to you
+                    negatives.isEmpty() -> {
+                        Text("owed to you", fontSize = 10.sp, color = TextTertiary)
+                        Text(
+                            text = positives.joinToString(" + ") { (a,c) -> MoneyUtils.format(a,c) },
+                            fontSize = if (positives.size > 1) 11.sp else 14.sp,
+                            fontWeight = FontWeight.Bold, color = Green400, maxLines = 1,
+                        )
+                    }
+                    // All you owe
+                    positives.isEmpty() -> {
+                        Text("you owe", fontSize = 10.sp, color = TextTertiary)
+                        Text(
+                            text = negatives.joinToString(" + ") { (a,c) -> MoneyUtils.format(-a,c) },
+                            fontSize = if (negatives.size > 1) 11.sp else 14.sp,
+                            fontWeight = FontWeight.Bold, color = Negative, maxLines = 1,
+                        )
+                    }
+                    // Mixed — show dominant direction + asterisk
+                    negTotal >= posTotal -> {
+                        Text("you owe", fontSize = 10.sp, color = TextTertiary)
+                        Text(
+                            text = negatives.joinToString(" + ") { (a,c) -> MoneyUtils.format(-a,c) } + "*",
+                            fontSize = if (negatives.size > 1) 11.sp else 14.sp,
+                            fontWeight = FontWeight.Bold, color = Negative, maxLines = 1,
+                        )
+                    }
+                    else -> {
+                        Text("owed to you", fontSize = 10.sp, color = TextTertiary)
+                        Text(
+                            text = positives.joinToString(" + ") { (a,c) -> MoneyUtils.format(a,c) } + "*",
+                            fontSize = if (positives.size > 1) 11.sp else 14.sp,
+                            fontWeight = FontWeight.Bold, color = Green400, maxLines = 1,
+                        )
+                    }
+                }
             }
         }
     }

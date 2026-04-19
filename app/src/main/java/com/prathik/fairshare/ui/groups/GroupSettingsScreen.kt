@@ -104,7 +104,7 @@ fun GroupSettingsScreen(
     val actionState      by viewModel.actionState.collectAsState()
     val friends          by viewModel.friends.collectAsState()
     val claimState       by viewModel.claimState.collectAsState()
-    val yourGroupBalance: Double? by viewModel.yourGroupBalance.collectAsState()
+    val yourGroupBalances by viewModel.yourGroupBalances.collectAsState()
     val editName         by viewModel.editName.collectAsState()
     val simplifyDebts    by viewModel.simplifyDebts.collectAsState()
     val muteNotifications by viewModel.muteNotifications.collectAsState()
@@ -475,53 +475,53 @@ fun GroupSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        val balance = yourGroupBalance   // local snapshot → enables smart cast
+                        val netByCurrency = yourGroupBalances.groupBy { it.currency }
+                            .mapValues { (_, list) -> list.sumOf { it.amount } }
+                            .filter { it.value != 0.0 }
+                        val netTotal = netByCurrency.values.sumOf { it }
                         Column {
                             Text("Your balance", fontSize = 11.sp, color = TextTertiary)
                             when {
-                                balance == null -> Text(
+                                yourGroupBalances.isEmpty() -> Text(
                                     "No expenses yet",
                                     fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary,
                                 )
-                                balance < 0 -> Text(
-                                    "You owe ${com.prathik.fairshare.util.MoneyUtils.format(-balance, "USD")}",
-                                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Negative,
-                                )
-                                balance > 0 -> Text(
-                                    "You are owed ${com.prathik.fairshare.util.MoneyUtils.format(balance, "USD")}",
-                                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Green400,
-                                )
+                                netTotal < 0 && netByCurrency.any { it.value > 0 } -> {
+                                    // Mixed: you owe in one currency, owed in another
+                                    val oweText  = netByCurrency.filter { it.value < 0 }.entries
+                                        .joinToString(" + ") { (c,a) -> com.prathik.fairshare.util.MoneyUtils.format(-a,c) }
+                                    val owedText = netByCurrency.filter { it.value > 0 }.entries
+                                        .joinToString(" + ") { (c,a) -> com.prathik.fairshare.util.MoneyUtils.format(a,c) }
+                                    Text("You owe $oweText", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Negative)
+                                    Text("You are owed $owedText", fontSize = 12.sp, color = Green400)
+                                }
+                                netTotal < 0 -> {
+                                    val oweText = netByCurrency.filter { it.value < 0 }.entries
+                                        .joinToString(" + ") { (c,a) -> com.prathik.fairshare.util.MoneyUtils.format(-a,c) }
+                                    Text("You owe $oweText",
+                                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Negative)
+                                }
+                                netTotal > 0 && netByCurrency.any { it.value < 0 } -> {
+                                    val owedText = netByCurrency.filter { it.value > 0 }.entries
+                                        .joinToString(" + ") { (c,a) -> com.prathik.fairshare.util.MoneyUtils.format(a,c) }
+                                    val oweText  = netByCurrency.filter { it.value < 0 }.entries
+                                        .joinToString(" + ") { (c,a) -> com.prathik.fairshare.util.MoneyUtils.format(-a,c) }
+                                    Text("You are owed $owedText", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Green400)
+                                    Text("You owe $oweText", fontSize = 12.sp, color = Negative)
+                                }
+                                netTotal > 0 -> {
+                                    val owedText = netByCurrency.filter { it.value > 0 }.entries
+                                        .joinToString(" + ") { (c,a) -> com.prathik.fairshare.util.MoneyUtils.format(a,c) }
+                                    Text("You are owed $owedText",
+                                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Green400)
+                                }
                                 else -> Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("✓ ", fontSize = 14.sp, color = Green400)
                                     Text("Settled up", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary)
                                 }
                             }
                         }
-                        // CTA — only when balance exists
-                        when {
-                            balance != null && balance < 0 -> Box(
-                                contentAlignment = Alignment.Center,
-                                modifier         = Modifier
-                                    .clip(RoundedCornerShape(Radius.lg))
-                                    .background(Green400)
-                                    .clickable { onNavigateToSettleUp(viewModel.groupId) }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                            ) {
-                                Text("Settle up", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Surface0)
-                            }
-                            balance != null && balance > 0 -> Box(
-                                contentAlignment = Alignment.Center,
-                                modifier         = Modifier
-                                    .clip(RoundedCornerShape(Radius.lg))
-                                    .background(Surface2)
-                                    .border(1.dp, Surface4, RoundedCornerShape(Radius.lg))
-                                    .clickable { /* remind */ }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                            ) {
-                                Text("Remind", fontSize = 13.sp, color = TextSecondary)
-                            }
-                            else -> {}
-                        }
+
                     }
                 }
             }

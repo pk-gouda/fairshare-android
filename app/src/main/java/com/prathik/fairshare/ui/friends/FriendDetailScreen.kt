@@ -255,11 +255,14 @@ fun FriendDetailScreen(
                     (expensesState as FriendExpensesState.Success).expenses.isNotEmpty())
 
     // Derive the friend state — drives ring color, action bar, empty state
+    // Determine state from per-currency balances, not summed netBalance
+    val ubPositives = userBalances.filter { it.amount > 0 }.sumOf { it.amount }
+    val ubNegatives = userBalances.filter { it.amount < 0 }.sumOf { -it.amount }
     val friendState: FriendUiState = when {
-        netBalance > 0  -> FriendUiState.THEY_OWE_YOU
-        netBalance < 0  -> FriendUiState.YOU_OWE_THEM
-        hasAnyActivity  -> FriendUiState.SETTLED_WITH_HISTORY
-        else            -> FriendUiState.BRAND_NEW
+        ubPositives == 0.0 && ubNegatives == 0.0 && hasAnyActivity -> FriendUiState.SETTLED_WITH_HISTORY
+        ubPositives == 0.0 && ubNegatives == 0.0 -> FriendUiState.BRAND_NEW
+        ubNegatives > ubPositives -> FriendUiState.YOU_OWE_THEM   // dominant = you owe
+        else -> FriendUiState.THEY_OWE_YOU                         // dominant = owed to you (or equal)
     }
 
     // Progress % for ring — depends on friendState
@@ -541,6 +544,7 @@ fun FriendDetailScreen(
                                 netBalance  = netBalance,
                                 currency    = currency,
                                 userBalances = userBalances,
+                                friendName   = friendName,
                                 groupCount  = groupCount,
                                 friendState = friendState,
                             )
@@ -771,27 +775,71 @@ fun FriendDetailScreen(
                     modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 )
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
-                val totalOwed = Math.abs(netBalance)
-                if (totalOwed > 0) {
-                    Row(
-                        modifier          = Modifier
-                            .fillMaxWidth()
-                            .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null, null) }
-                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FsAvatar(name = friendName, userId = viewModel.friendId, size = ComponentSize.avatarMd)
-                        Spacer(Modifier.width(Spacing.md))
-                        Text("Settle all balances", fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                            color = TextPrimary, modifier = Modifier.weight(1f))
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(if (netBalance > 0) "you are owed" else "you owe", fontSize = 11.sp, color = TextTertiary)
-                            Text(MoneyUtils.format(totalOwed, currency), fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (netBalance > 0) Green400 else Negative)
+                val sheetByCur = userBalances.groupBy { it.currency }
+                    .mapValues { (_, list) -> list.sumOf { it.amount } }
+                    .filter { it.value != 0.0 }
+                val isMixedSheet = sheetByCur.values.any { it > 0 } && sheetByCur.values.any { it < 0 }
+                if (sheetByCur.isNotEmpty()) {
+                    if (!isMixedSheet) {
+                        // Single-direction: "Settle all balances" is safe and unambiguous
+                        val allOwed = sheetByCur.values.all { it > 0 }
+                        val amtText = sheetByCur.entries.toList()
+                            .joinToString(" + ") { (c,a) -> MoneyUtils.format(Math.abs(a), c) }
+                        Row(
+                            modifier          = Modifier
+                                .fillMaxWidth()
+                                .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null, null) }
+                                .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            FsAvatar(name = friendName, userId = viewModel.friendId, size = ComponentSize.avatarMd)
+                            Spacer(Modifier.width(Spacing.md))
+                            Text("Settle all balances", fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                                color = TextPrimary, modifier = Modifier.weight(1f))
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(if (allOwed) "you are owed" else "you owe", fontSize = 11.sp, color = TextTertiary)
+                                Text(amtText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                                    color = if (allOwed) Green400 else Negative)
+                            }
                         }
+                        HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                    } else {
+                        // Mixed currencies with opposite signs — show per-currency rows
+                        // so user always settles one currency at a time
+                        Text("Settle by currency", fontSize = 12.sp, color = TextSecondary,
+                            modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, top = Spacing.md, bottom = Spacing.sm))
+                        sheetByCur.entries.toList()
+                            .sortedByDescending { Math.abs(it.value) }
+                            .forEach { (cur, amt) ->
+                                val isOwed = amt > 0
+                                Row(
+                                    modifier          = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            showBalanceSheet = false
+                                            onNavigateToSettle(viewModel.friendId, null, null, cur)
+                                        }
+                                        .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    FsAvatar(name = friendName, userId = viewModel.friendId, size = ComponentSize.avatarMd)
+                                    Spacer(Modifier.width(Spacing.md))
+                                    Text(
+                                        text = MoneyUtils.format(Math.abs(amt), cur),
+                                        fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                                        color = TextPrimary, modifier = Modifier.weight(1f)
+                                    )
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(if (isOwed) "you are owed" else "you owe",
+                                            fontSize = 11.sp, color = TextTertiary)
+                                        Text(MoneyUtils.format(Math.abs(amt), cur),
+                                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                                            color = if (isOwed) Green400 else Negative)
+                                    }
+                                }
+                                HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                            }
                     }
-                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                 }
                 val groupsWithBalance = groupBalances.filter { it.groupId != null && it.amount != 0.0 }
                 if (groupsWithBalance.isNotEmpty()) {
@@ -1065,8 +1113,9 @@ private fun FriendStickyBalanceBar(
     netBalance   : Double,
     currency     : String,
     userBalances : List<com.prathik.fairshare.domain.model.Balance> = emptyList(),
-    groupCount  : Int,
-    friendState : FriendUiState,
+    groupCount   : Int,
+    friendState  : FriendUiState,
+    friendName   : String = "",
 ) {
     val isCentered = friendState == FriendUiState.BRAND_NEW || friendState == FriendUiState.SETTLED_WITH_HISTORY
 
@@ -1088,17 +1137,28 @@ private fun FriendStickyBalanceBar(
                     color = Color(0xFF00C896))
             }
             FriendUiState.THEY_OWE_YOU -> {
-                val owedParts = userBalances.groupBy { it.currency }
+                val ubByCur   = userBalances.groupBy { it.currency }
                     .mapValues { (_, list) -> list.sumOf { it.amount } }
-                    .filter { it.value > 0 }
-                val owedText = if (owedParts.isEmpty())
-                    MoneyUtils.format(netBalance, currency)
-                else owedParts.entries.sortedByDescending { it.value }
-                    .joinToString(" + ") { (cur, amt) -> MoneyUtils.format(amt, cur) }
+                val owedParts = ubByCur.filter { it.value > 0 }
+                val oweParts  = ubByCur.filter { it.value < 0 }
                 Column(modifier = Modifier.weight(1f)) {
+                    // Main line: what they owe you
                     Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                    Text(owedText, fontSize = if (owedParts.size > 1) 14.sp else 18.sp,
-                        fontWeight = FontWeight.Bold, color = Color(0xFF00C896))
+                    Text(
+                        text = owedParts.entries.sortedByDescending { it.value }
+                            .joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) }
+                            .ifEmpty { MoneyUtils.format(netBalance, currency) },
+                        fontSize = if (owedParts.size > 1) 14.sp else 18.sp,
+                        fontWeight = FontWeight.Bold, color = Color(0xFF00C896)
+                    )
+                    // Sub-line: what you owe them (Splitwise style)
+                    if (oweParts.isNotEmpty()) {
+                        Text(
+                            text = "You owe " + oweParts.entries
+                                .joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
+                            fontSize = 11.sp, color = Color(0xFFF87171)
+                        )
+                    }
                 }
                 if (groupCount > 0) {
                     Row(verticalAlignment = Alignment.CenterVertically,
@@ -1110,17 +1170,28 @@ private fun FriendStickyBalanceBar(
                 }
             }
             FriendUiState.YOU_OWE_THEM -> {
-                val oweParts = userBalances.groupBy { it.currency }
+                val ubByCur2   = userBalances.groupBy { it.currency }
                     .mapValues { (_, list) -> list.sumOf { it.amount } }
-                    .filter { it.value < 0 }
-                val oweText = if (oweParts.isEmpty())
-                    MoneyUtils.format(-netBalance, currency)
-                else oweParts.entries.sortedBy { it.value }
-                    .joinToString(" + ") { (cur, amt) -> MoneyUtils.format(-amt, cur) }
+                val oweParts2  = ubByCur2.filter { it.value < 0 }
+                val owedParts2 = ubByCur2.filter { it.value > 0 }
                 Column(modifier = Modifier.weight(1f)) {
+                    // Main line: what you owe (dominant)
                     Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                    Text(oweText, fontSize = if (oweParts.size > 1) 14.sp else 18.sp,
-                        fontWeight = FontWeight.Bold, color = Color(0xFFF87171))
+                    Text(
+                        text = oweParts2.entries.sortedBy { it.value }
+                            .joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) }
+                            .ifEmpty { MoneyUtils.format(-netBalance, currency) },
+                        fontSize = if (oweParts2.size > 1) 14.sp else 18.sp,
+                        fontWeight = FontWeight.Bold, color = Color(0xFFF87171)
+                    )
+                    // Sub-line: what they owe you (Splitwise style)
+                    if (owedParts2.isNotEmpty()) {
+                        Text(
+                            text = "${friendName.ifBlank { "They" }} owes you " + owedParts2.entries
+                                .joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
+                            fontSize = 11.sp, color = Color(0xFF00C896)
+                        )
+                    }
                 }
                 if (groupCount > 0) {
                     Row(verticalAlignment = Alignment.CenterVertically,

@@ -51,9 +51,9 @@ class GroupSettingsViewModel @Inject constructor(
     private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
     val members: StateFlow<List<GroupMember>> = _members.asStateFlow()
 
-    /** Net balance in this group. Positive = owed to you, negative = you owe, null = no expenses. */
-    private val _yourGroupBalance = MutableStateFlow<Double?>(null)
-    val yourGroupBalance: StateFlow<Double?> = _yourGroupBalance.asStateFlow()
+    /** Per-currency balances in this group — used for display. Null = no expenses. */
+    private val _yourGroupBalances = MutableStateFlow<List<com.prathik.fairshare.domain.model.Balance>>(emptyList())
+    val yourGroupBalances: StateFlow<List<com.prathik.fairshare.domain.model.Balance>> = _yourGroupBalances.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -116,7 +116,7 @@ class GroupSettingsViewModel @Inject constructor(
         }
         if (balanceResult is ApiResult.Success) {
             val data = balanceResult.data
-            _yourGroupBalance.value = if (data.isEmpty()) null else data.sumOf { it.amount }
+            _yourGroupBalances.value = data
         }
         _isLoading.value = false
     }

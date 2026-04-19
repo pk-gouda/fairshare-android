@@ -871,13 +871,63 @@ private fun StickyBalanceBar(
                     color = Color(0xFF00C896))
             }
             GroupUiState.ACTIVE_DEBT -> {
-                val (label, amount, color) = when {
-                    yourBalance < 0 -> Triple("You owe", MoneyUtils.format(-yourBalance, currency), Color(0xFFF87171))
-                    else            -> Triple("Owed to you", MoneyUtils.format(yourBalance, currency), Color(0xFF00C896))
-                }
+                // Per-currency nets — never sum across currencies
+                val netByCurrency = balances.groupBy { it.currency }
+                    .mapValues { (_, list) -> list.sumOf { it.amount } }
+                    .filter { it.value != 0.0 }
+                val owedToYou = netByCurrency.filter { it.value > 0 }
+                val youOwe    = netByCurrency.filter { it.value < 0 }
+                val isMixed   = owedToYou.isNotEmpty() && youOwe.isNotEmpty()
+                val posTotal  = owedToYou.values.sumOf { it }
+                val negTotal  = youOwe.values.sumOf { -it }
+
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(label, fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                    Text(amount, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color)
+                    when {
+                        // All same direction
+                        youOwe.isEmpty() -> {
+                            Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                            Text(
+                                text = owedToYou.entries.sortedByDescending { it.value }
+                                    .joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
+                                fontSize = if (owedToYou.size > 1) 14.sp else 18.sp,
+                                fontWeight = FontWeight.Bold, color = Color(0xFF00C896)
+                            )
+                        }
+                        owedToYou.isEmpty() -> {
+                            Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                            Text(
+                                text = youOwe.entries.sortedBy { it.value }
+                                    .joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
+                                fontSize = if (youOwe.size > 1) 14.sp else 18.sp,
+                                fontWeight = FontWeight.Bold, color = Color(0xFFF87171)
+                            )
+                        }
+                        // Mixed — dominant main line, sub-line for opposite (Splitwise style)
+                        negTotal >= posTotal -> {
+                            Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                            Text(
+                                text = youOwe.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
+                                fontSize = if (youOwe.size > 1) 14.sp else 16.sp,
+                                fontWeight = FontWeight.Bold, color = Color(0xFFF87171)
+                            )
+                            Text(
+                                text = "You lent " + owedToYou.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
+                                fontSize = 11.sp, color = Color(0xFF00C896)
+                            )
+                        }
+                        else -> {
+                            Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                            Text(
+                                text = owedToYou.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
+                                fontSize = if (owedToYou.size > 1) 14.sp else 16.sp,
+                                fontWeight = FontWeight.Bold, color = Color(0xFF00C896)
+                            )
+                            Text(
+                                text = "You owe " + youOwe.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
+                                fontSize = 11.sp, color = Color(0xFFF87171)
+                            )
+                        }
+                    }
                 }
                 // Avatar stack — colored by balance direction
                 val relevant = balances.filter { it.amount != 0.0 }.take(3)

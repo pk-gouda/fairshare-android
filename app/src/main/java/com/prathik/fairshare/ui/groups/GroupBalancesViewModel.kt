@@ -72,25 +72,32 @@ class GroupBalancesViewModel @Inject constructor(
 
         // Fill userId's own name from the otherUserName of the inverse record if not found
         // As a fallback just use what we have
-        return netMap.map { (userId, net) ->
+        return netMap.keys.map { userId ->
+            val userBalances = balances.filter { it.userId == userId && it.amount != 0.0 }
+            // Per-currency nets — never sum across currencies
+            val netByCurrency = userBalances.groupBy { it.currency }
+                .mapValues { (_, list) -> list.sumOf { it.amount } }
+                .filter { it.value != 0.0 }
+            val dominantNet = netByCurrency.entries.maxByOrNull { Math.abs(it.value) }
             MemberNet(
-                userId   = userId,
-                name     = nameMap[userId] ?: userId,
-                net      = net,
-                currency = balances.firstOrNull { it.userId == userId }?.currency ?: "USD",
-                // Per-person breakdown: all records where this user is userId
-                details  = balances.filter { it.userId == userId && it.amount != 0.0 },
+                userId        = userId,
+                name          = nameMap[userId] ?: userId,
+                net           = dominantNet?.value ?: 0.0,
+                currency      = dominantNet?.key ?: "USD",
+                netByCurrency = netByCurrency,
+                details       = userBalances,
             )
-        }.sortedByDescending { it.net }
+        }.sortedByDescending { Math.abs(it.net) }
     }
 }
 
 data class MemberNet(
-    val userId  : String,
-    val name    : String,
-    val net     : Double,
-    val currency: String,
-    val details : List<Balance>,   // per-pair breakdown
+    val userId        : String,
+    val name          : String,
+    val net           : Double,           // dominant currency net (for sorting/ring)
+    val currency      : String,           // dominant currency code
+    val netByCurrency : Map<String, Double> = emptyMap(),  // full per-currency breakdown
+    val details       : List<Balance>,    // per-pair breakdown
 )
 
 sealed class GroupBalancesUiState {

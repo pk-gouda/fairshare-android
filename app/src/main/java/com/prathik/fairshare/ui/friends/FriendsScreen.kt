@@ -361,17 +361,13 @@ private fun FriendsNetBalanceBar(
     val youOwe    = entries.sumOf { it.youOwe }
     val showPill  = hasAnyBalance
 
-    val netColor  = if (owedToMe >= youOwe) Green400 else Negative
-    val pillLabel = if (owedToMe >= youOwe) "Owed to you" else "You owe"
+    val owedEntries2 = entries.filter { it.net > 0.0 }
+    val oweEntries2  = entries.filter { it.net < 0.0 }
+    val hasBoth      = owedEntries2.isNotEmpty() && oweEntries2.isNotEmpty()
 
-    // Build display: "₹1,000 + $174.19" for multi-currency, like Splitwise
-    val displayParts = if (owedToMe >= youOwe)
-        entries.filter { it.net > 0.0 }
-    else
-        entries.filter { it.net < 0.0 }
-
-    val displayAmount = if (displayParts.isEmpty()) MoneyUtils.format(0.0, "USD")
-    else displayParts.joinToString(" + ") { MoneyUtils.format(Math.abs(it.net), it.currency) }
+    val dominantIsOwed = owedToMe >= youOwe
+    val netColor  = if (dominantIsOwed) Green400 else Negative
+    val pillLabel = if (dominantIsOwed) "Owed to you" else "You owe"
 
     Row(
         modifier = Modifier
@@ -383,41 +379,32 @@ private fun FriendsNetBalanceBar(
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column {
-            Text(
-                text          = "NET BALANCE",
-                fontSize      = 10.sp,
-                color         = TextTertiary,
-                fontWeight    = FontWeight.Medium,
-                letterSpacing = 1.sp,
-            )
-            if (showPill) {
-                // Active or all-settled: show colored amount
-                Text(
-                    text       = displayAmount,
-                    fontSize   = if (displayParts.size > 1) 18.sp else 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color      = netColor,
-                    lineHeight = 28.sp,
+            when {
+                !showPill -> {
+                    Text(MoneyUtils.format(0.0, "USD"), fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold, color = TextSecondary)
+                    Text("No expenses yet", fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold, color = TextSecondary)
+                }
+                hasBoth -> {
+                    val oweText  = oweEntries2.joinToString(" + ") { MoneyUtils.format(Math.abs(it.net), it.currency) }
+                    val owedText = owedEntries2.joinToString(" + ") { MoneyUtils.format(it.net, it.currency) }
+                    Text("You owe $oweText", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Negative)
+                    Text("Owed to you $owedText", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Green400)
+                }
+                oweEntries2.isNotEmpty() -> Text(
+                    text = oweEntries2.joinToString(" + ") { MoneyUtils.format(Math.abs(it.net), it.currency) },
+                    fontSize = if (oweEntries2.size > 1) 18.sp else 24.sp,
+                    fontWeight = FontWeight.Bold, color = Negative,
                 )
-            } else {
-                // No expenses at all: gray $0.00 + "No expenses yet"
-                Text(
-                    text       = MoneyUtils.format(0.0, "USD"),
-                    fontSize   = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color      = TextSecondary,
-                    lineHeight = 28.sp,
-                )
-                Text(
-                    text       = "No expenses yet",
-                    fontSize   = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = TextSecondary,
+                else -> Text(
+                    text = owedEntries2.joinToString(" + ") { MoneyUtils.format(it.net, it.currency) },
+                    fontSize = if (owedEntries2.size > 1) 18.sp else 24.sp,
+                    fontWeight = FontWeight.Bold, color = Green400,
                 )
             }
         }
 
-        // Pill badge — only when active/settled
         if (showPill) {
             Box(
                 modifier = Modifier
@@ -441,14 +428,19 @@ private fun FriendCard(
     fraction: Float,     // 0..1 ring fill fraction
     onClick : () -> Unit,
 ) {
-    val netAmount = entries.sumOf { it.first }
+    val positives = entries.filter { it.first > 0 }
+    val negatives = entries.filter { it.first < 0 }
+    val posTotal  = positives.sumOf { it.first }
+    val negTotal  = negatives.sumOf { -it.first }
+    val isMixed   = positives.isNotEmpty() && negatives.isNotEmpty()
     val hasEntries = entries.isNotEmpty()
-    val isSettled = hasEntries && netAmount == 0.0
-    val arcColor = when {
-        isSettled    -> Gold
-        netAmount > 0 -> Green400
-        netAmount < 0 -> Negative
-        else          -> Color.Transparent
+    val isSettled  = hasEntries && positives.isEmpty() && negatives.isEmpty()
+    val arcColor   = when {
+        isSettled       -> Gold
+        isMixed         -> if (negTotal > posTotal) Negative else Green400
+        positives.isNotEmpty() -> Green400
+        negatives.isNotEmpty() -> Negative
+        else            -> Color.Transparent
     }
 
     Row(
@@ -493,30 +485,38 @@ private fun FriendCard(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Balance label
+        // Balance label — Splitwise pattern
         when {
             !hasEntries -> Text("no expenses", fontSize = 12.sp, color = TextTertiary)
-            isSettled -> Text(
-                text       = "settled up",
-                fontSize   = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color      = Green400,
-            )
-            netAmount > 0 -> Column(horizontalAlignment = Alignment.End) {
-                Text("owes you", fontSize = 10.sp, color = TextTertiary)
-                val owedText = entries.filter { it.first > 0 }
-                    .joinToString(" + ") { (amt, cur) -> MoneyUtils.format(amt, cur) }
-                Text(owedText.ifEmpty { MoneyUtils.format(netAmount, "USD") },
-                    fontSize = if (entries.size > 1) 11.sp else 14.sp,
-                    fontWeight = FontWeight.Bold, color = Green400, maxLines = 1)
-            }
+            isSettled   -> Text("settled up", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Green400)
             else -> Column(horizontalAlignment = Alignment.End) {
-                Text("you owe", fontSize = 10.sp, color = TextTertiary)
-                val oweText = entries.filter { it.first < 0 }
-                    .joinToString(" + ") { (amt, cur) -> MoneyUtils.format(-amt, cur) }
-                Text(oweText.ifEmpty { MoneyUtils.format(-netAmount, "USD") },
-                    fontSize = if (entries.size > 1) 11.sp else 14.sp,
-                    fontWeight = FontWeight.Bold, color = Negative, maxLines = 1)
+                when {
+                    negatives.isEmpty() -> {
+                        Text("owes you", fontSize = 10.sp, color = TextTertiary)
+                        Text(positives.joinToString(" + ") { (a,c) -> MoneyUtils.format(a,c) },
+                            fontSize = if (positives.size > 1) 11.sp else 14.sp,
+                            fontWeight = FontWeight.Bold, color = Green400, maxLines = 1)
+                    }
+                    positives.isEmpty() -> {
+                        Text("you owe", fontSize = 10.sp, color = TextTertiary)
+                        Text(negatives.joinToString(" + ") { (a,c) -> MoneyUtils.format(-a,c) },
+                            fontSize = if (negatives.size > 1) 11.sp else 14.sp,
+                            fontWeight = FontWeight.Bold, color = Negative, maxLines = 1)
+                    }
+                    // Mixed — dominant + asterisk (sub-detail visible in friend detail screen)
+                    negTotal >= posTotal -> {
+                        Text("you owe", fontSize = 10.sp, color = TextTertiary)
+                        Text(negatives.joinToString(" + ") { (a,c) -> MoneyUtils.format(-a,c) } + "*",
+                            fontSize = if (negatives.size > 1) 11.sp else 14.sp,
+                            fontWeight = FontWeight.Bold, color = Negative, maxLines = 1)
+                    }
+                    else -> {
+                        Text("owes you", fontSize = 10.sp, color = TextTertiary)
+                        Text(positives.joinToString(" + ") { (a,c) -> MoneyUtils.format(a,c) } + "*",
+                            fontSize = if (positives.size > 1) 11.sp else 14.sp,
+                            fontWeight = FontWeight.Bold, color = Green400, maxLines = 1)
+                    }
+                }
             }
         }
     }
