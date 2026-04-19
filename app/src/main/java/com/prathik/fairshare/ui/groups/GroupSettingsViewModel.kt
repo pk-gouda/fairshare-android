@@ -218,12 +218,18 @@ class GroupSettingsViewModel @Inject constructor(
     fun leaveGroup() {
         viewModelScope.launch {
             _actionState.value = GroupSettingsActionState.Loading
-            when (leaveGroupUseCase(groupId)) {
-                is ApiResult.Success  -> _actionState.value = GroupSettingsActionState.GroupDeleted
-                is ApiResult.Conflict -> _actionState.value =
+            when (val result = leaveGroupUseCase(groupId)) {
+                is ApiResult.Success      -> _actionState.value = GroupSettingsActionState.GroupDeleted
+                is ApiResult.Conflict     -> _actionState.value =
                     GroupSettingsActionState.Error("Settle all balances before leaving")
+                is ApiResult.ValidationError -> _actionState.value =
+                    GroupSettingsActionState.Error("Settle all balances before leaving")
+                is ApiResult.HttpError    -> _actionState.value =
+                    GroupSettingsActionState.Error("Server error (${result.code}): ${result.message}")
+                is ApiResult.NetworkError -> _actionState.value =
+                    GroupSettingsActionState.Error("Network error: ${result.message}")
                 else -> _actionState.value =
-                    GroupSettingsActionState.Error("Failed to leave group")
+                    GroupSettingsActionState.Error("Failed to leave group: $result")
             }
         }
     }
