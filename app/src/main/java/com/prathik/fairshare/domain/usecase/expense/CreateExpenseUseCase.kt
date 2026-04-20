@@ -31,6 +31,7 @@ class CreateExpenseUseCase @Inject constructor(
         receiptId: String?,
         remainderPointer: Int? = null,
         itemAssignments: Map<String, List<String>>? = null,
+        repeatInterval: String? = null,
     ): ApiResult<Expense> {
         if (description.isBlank()) {
             return ApiResult.ValidationError("Description cannot be empty")
@@ -58,6 +59,7 @@ class CreateExpenseUseCase @Inject constructor(
             receiptId        = receiptId,
             remainderPointer = remainderPointer,
             itemAssignments  = itemAssignments,
+            repeatInterval   = repeatInterval,
         )
     }
 }

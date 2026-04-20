@@ -3,6 +3,7 @@ package com.prathik.fairshare.ui.friends
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonRemove
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
@@ -56,6 +58,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupType
 import com.prathik.fairshare.ui.components.FsAvatar
@@ -100,11 +103,14 @@ fun FriendSettingsScreen(
     val directBalance    by viewModel.directBalance.collectAsState()
     val balanceEntries   by viewModel.balanceEntries.collectAsState()
     val isLoading     by viewModel.isLoading.collectAsState()
-    val actionState   by viewModel.actionState.collectAsState()
+    val actionState        by viewModel.actionState.collectAsState()
+    val recurringExpenses  by viewModel.recurringExpenses.collectAsState()
     val snackbarHost        = remember { SnackbarHostState() }
     val groupPickerSheet    = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var showRemoveDialog          by remember { mutableStateOf(false) }
+    var stopRecurringTarget       by remember { mutableStateOf<Expense?>(null) }
+    var editRecurringTarget       by remember { mutableStateOf<Expense?>(null) }
     var showCancelInviteDialog    by remember { mutableStateOf(false) }
     var showSharedGroupsBlocker   by remember { mutableStateOf(false) }
     var showBlockDialog           by remember { mutableStateOf(false) }
@@ -354,6 +360,74 @@ fun FriendSettingsScreen(
         }
     }
 
+
+    // ── Stop recurring dialog ─────────────────────────────────────────────────
+    stopRecurringTarget?.let { expense ->
+        AlertDialog(
+            onDismissRequest = { stopRecurringTarget = null },
+            title = { Text("Stop recurring?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = { Text("\"${expense.description}\" will no longer repeat automatically.",
+                color = TextSecondary, fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.stopDirectRecurring(expense.id)
+                    stopRecurringTarget = null
+                }) { Text("Stop", color = Negative, fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { stopRecurringTarget = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+        )
+    }
+
+    // ── Edit Schedule dialog ──────────────────────────────────────────────────
+    editRecurringTarget?.let { expense ->
+        val frequencies = listOf("DAILY", "WEEKLY", "MONTHLY")
+        val labels = mapOf("DAILY" to "Daily", "WEEKLY" to "Weekly", "MONTHLY" to "Monthly")
+        var selected by remember(expense.id) { mutableStateOf(expense.repeatInterval ?: "MONTHLY") }
+        AlertDialog(
+            onDismissRequest = { editRecurringTarget = null },
+            title = { Text("Edit schedule — ${expense.description}",
+                color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text("How often should this repeat?", fontSize = 14.sp, color = TextSecondary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        frequencies.forEach { freq ->
+                            val isSelected = selected == freq
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(if (isSelected) Green400.copy(alpha = 0.15f) else Surface2)
+                                    .border(1.dp, if (isSelected) Green400 else Surface3, RoundedCornerShape(20.dp))
+                                    .clickable { selected = freq }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            ) {
+                                Text(labels[freq] ?: freq, fontSize = 13.sp,
+                                    color = if (isSelected) Green400 else TextSecondary,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.updateDirectSchedule(expense.id, selected)
+                    editRecurringTarget = null
+                }) { Text("Save", color = Green400, fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { editRecurringTarget = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+        )
+    }
+
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
@@ -580,6 +654,50 @@ fun FriendSettingsScreen(
                     }
                 }
                 Spacer(modifier = Modifier.height(Spacing.md))
+            }
+
+            // ── Recurring expenses ────────────────────────────────────────────
+            if (friendType is FriendType.Accepted && recurringExpenses.isNotEmpty()) {
+                SectionDivider()
+                Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+                    Spacer(modifier = Modifier.height(Spacing.md))
+                    Text(
+                        text = "RECURRING EXPENSES",
+                        fontSize = 11.sp, color = TextTertiary,
+                        fontWeight = FontWeight.Medium, letterSpacing = 1.sp,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                    recurringExpenses.forEach { expense ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.xl))
+                                .background(Surface2)
+                                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Outlined.Repeat, contentDescription = null,
+                                tint = Green400, modifier = androidx.compose.ui.Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(Spacing.sm))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(expense.description, fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium, color = TextPrimary)
+                                Text(
+                                    "${MoneyUtils.format(expense.totalAmount, expense.currency)} · ${(expense.repeatInterval ?: "").lowercase().replaceFirstChar { it.uppercase() }}",
+                                    fontSize = 12.sp, color = TextTertiary,
+                                )
+                            }
+                            TextButton(onClick = { editRecurringTarget = expense }) {
+                                Text("Edit", fontSize = 13.sp, color = TextSecondary)
+                            }
+                            TextButton(onClick = { stopRecurringTarget = expense }) {
+                                Text("Stop", fontSize = 13.sp, color = Negative)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(Spacing.xs))
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                }
             }
 
             SectionDivider()

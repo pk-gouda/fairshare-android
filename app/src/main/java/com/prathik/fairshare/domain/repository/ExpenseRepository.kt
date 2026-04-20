@@ -44,6 +44,7 @@ interface ExpenseRepository {
         receiptId: String?,
         remainderPointer: Int? = null,
         itemAssignments: Map<String, List<String>>? = null,
+        repeatInterval: String? = null,
     ): ApiResult<Expense>
 
     /**
@@ -62,6 +63,9 @@ interface ExpenseRepository {
         expenseDate: String?,
         payerData: Map<String, Double>?,
         splitData: Map<String, Double>?,
+        repeatInterval: String? = null,
+        clearRepeat: Boolean? = null,
+        nextRepeatDate: String? = null,
     ): ApiResult<Expense>
 
     /**
@@ -84,6 +88,7 @@ interface ExpenseRepository {
      * Fetches all recurring expenses for a group.
      */
     suspend fun getRecurringExpenses(groupId: String): ApiResult<List<Expense>>
+    suspend fun getDirectRecurringExpenses(friendId: String): ApiResult<List<Expense>>
 
     /**
      * Stops a recurring expense from auto-generating future entries.

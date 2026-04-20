@@ -21,6 +21,7 @@ data class CreateExpenseRequest(
     @SerialName("receiptId")       val receiptId: String? = null,
     @SerialName("remainderPointer") val remainderPointer: Int? = null,
     @SerialName("itemAssignments")   val itemAssignments: Map<String, List<String>>? = null,
+    @SerialName("repeatInterval")     val repeatInterval: String? = null,
 )
 
 @Serializable
@@ -35,6 +36,9 @@ data class UpdateExpenseRequest(
     @SerialName("payerData")      val payerData: Map<String, Double>? = null,
     @SerialName("splitData")      val splitData: Map<String, Double>? = null,
     @SerialName("idempotencyKey") val idempotencyKey: String? = null,
+    @SerialName("repeatInterval") val repeatInterval: String? = null,
+    @SerialName("clearRepeat")    val clearRepeat: Boolean? = null,
+    @SerialName("nextRepeatDate") val nextRepeatDate: String? = null,
 )
 
 @Serializable

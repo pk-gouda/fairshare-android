@@ -82,8 +82,18 @@ class EditExpenseViewModel @Inject constructor(
     private val _notes = MutableStateFlow("")
     val notes: StateFlow<String> = _notes.asStateFlow()
 
+    // null = unchanged; string = new interval; use clearRepeat to remove schedule
+    private val _repeatInterval = MutableStateFlow<String?>(null)
+    val repeatInterval: StateFlow<String?> = _repeatInterval.asStateFlow()
+
+    private val _clearRepeat = MutableStateFlow(false)
+    val clearRepeat: StateFlow<Boolean> = _clearRepeat.asStateFlow()
+
     private val _itemCount = MutableStateFlow(0)
     val itemCount: StateFlow<Int> = _itemCount.asStateFlow()
+
+    private val _isTemplate = MutableStateFlow(false)
+    val isTemplate: StateFlow<Boolean> = _isTemplate.asStateFlow()
 
     private val _expenseDate = MutableStateFlow(LocalDateTime.now().toString())
     val expenseDate: StateFlow<String> = _expenseDate.asStateFlow()
@@ -99,6 +109,9 @@ class EditExpenseViewModel @Inject constructor(
     // ── Members ───────────────────────────────────────────────────────────────
     private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
     val members: StateFlow<List<GroupMember>> = _members.asStateFlow()
+
+    private val _equalExcluded = MutableStateFlow<Set<String>>(emptySet())
+    val equalExcluded: StateFlow<Set<String>> = _equalExcluded.asStateFlow()
 
     // ── Save state ────────────────────────────────────────────────────────────
     private val _saveState = MutableStateFlow<EditSaveState>(EditSaveState.Idle)
@@ -149,11 +162,34 @@ class EditExpenseViewModel @Inject constructor(
             categoryManuallySet = true
         }
 
+        // Recurring schedule
+        _repeatInterval.value = expense.repeatInterval
+
+        // Template flag — drives date field visibility in EditExpenseScreen
+        _isTemplate.value = expense.isTemplate
+
         // Payer data — from expense.payers
         _payerData.value = expense.payers.associate { it.userId to it.amountPaid }
 
-        // Split data — from expense.splits
-        _splitData.value = expense.splits.associate { it.userId to it.amountOwed }
+        // Split data — use the right field per split type:
+        //   SHARES     -> shares (integer count, stored as Double)
+        //   PERCENTAGE -> percentage
+        //   EQUAL/UNEQUAL -> amountOwed
+        _splitData.value = expense.splits.associate { split ->
+            split.userId to when (expense.splitType) {
+                SplitType.SHARES     -> split.shares?.toDouble() ?: split.amountOwed
+                SplitType.PERCENTAGE -> split.percentage ?: split.amountOwed
+                else                 -> split.amountOwed
+            }
+        }
+
+        // Restore excluded members for EQUAL splits (those with amountOwed == 0)
+        if (expense.splitType == SplitType.EQUAL) {
+            _equalExcluded.value = expense.splits
+                .filter { it.amountOwed == 0.0 }
+                .map { it.userId }
+                .toSet()
+        }
         _itemCount.value = expense.itemCount
     }
 
@@ -261,6 +297,16 @@ class EditExpenseViewModel @Inject constructor(
         _notes.value = value
     }
 
+    fun onRepeatIntervalChanged(value: String?) {
+        _repeatInterval.value = value
+        if (value != null) _clearRepeat.value = false
+    }
+
+    fun onClearRepeat() {
+        _clearRepeat.value = true
+        _repeatInterval.value = null
+    }
+
     fun onDateChanged(value: String) {
         _expenseDate.value = value
     }
@@ -275,6 +321,19 @@ class EditExpenseViewModel @Inject constructor(
         _splitData.value = _splitData.value.toMutableMap().apply {
             if (amount > 0) put(userId, amount) else remove(userId)
         }
+    }
+
+    fun onToggleEqualMember(userId: String) {
+        val current = _equalExcluded.value.toMutableSet()
+        val included = _members.value.count { !current.contains(it.userId) }
+        if (current.contains(userId)) {
+            current.remove(userId)
+        } else {
+            if (included <= 1) return
+            current.add(userId)
+        }
+        _equalExcluded.value = current
+        recalculateSplits()
     }
 
     fun onSplitDataConfirmed(newSplitData: Map<String, Double>) {
@@ -296,21 +355,27 @@ class EditExpenseViewModel @Inject constructor(
 
         when (_splitType.value) {
             SplitType.EQUAL -> {
+                val included = members.filter { !_equalExcluded.value.contains(it.userId) }
+                if (included.isEmpty()) return
                 val totalCents = Math.round(total * 100)
-                val shareCents = totalCents / members.size
-                val remainderCents = totalCents - (shareCents * members.size)
+                val shareCents = totalCents / included.size
+                val remainderCents = totalCents - (shareCents * included.size)
 
                 val pointer = _lastRemainderIndex.value
-                val startIndex = if (remainderCents > 0 && members.isNotEmpty())
-                    pointer % members.size else 0
+                val startIndex = if (remainderCents > 0 && included.isNotEmpty())
+                    pointer % included.size else 0
 
-                val rotated = members.drop(startIndex) + members.take(startIndex)
+                val rotated = included.drop(startIndex) + included.take(startIndex)
 
-                _splitData.value = rotated.mapIndexed { index, member ->
+                val includedSplits = rotated.mapIndexed { index, member ->
                     val amount = if (index < remainderCents) (shareCents + 1) / 100.0
                     else shareCents / 100.0
                     member.userId to amount
                 }.toMap()
+                // Excluded members get 0
+                _splitData.value = members.associate { m ->
+                    m.userId to (includedSplits[m.userId] ?: 0.0)
+                }
             }
 
             SplitType.UNEQUAL,
@@ -392,8 +457,10 @@ class EditExpenseViewModel @Inject constructor(
                 category    = finalCategory,
                 notes       = _notes.value.ifBlank { null },
                 expenseDate = _expenseDate.value,
-                payerData   = _payerData.value,
-                splitData   = _splitData.value,
+                payerData      = _payerData.value,
+                splitData      = _splitData.value.filter { it.value > 0.0 },
+                repeatInterval = if (_clearRepeat.value) null else _repeatInterval.value,
+                clearRepeat    = if (_clearRepeat.value) true else null,
             )
             when (result) {
                 is ApiResult.Success -> _saveState.value = EditSaveState.Success

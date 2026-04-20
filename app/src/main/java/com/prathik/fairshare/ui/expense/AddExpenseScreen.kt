@@ -1,5 +1,6 @@
 package com.prathik.fairshare.ui.expense
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,8 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -35,10 +34,10 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Category
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Message
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -65,7 +64,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -121,6 +119,7 @@ fun AddExpenseScreen(
     val splitType         by viewModel.splitType.collectAsState()
     val category          by viewModel.category.collectAsState()
     val notes             by viewModel.notes.collectAsState()
+    val repeatInterval    by viewModel.repeatInterval.collectAsState()
     val expenseDate       by viewModel.expenseDate.collectAsState()
     val groups            by viewModel.groups.collectAsState()
     val members           by viewModel.members.collectAsState()
@@ -132,12 +131,12 @@ fun AddExpenseScreen(
 
     val snackbarHost = remember { SnackbarHostState() }
 
-    var showGroupSheet    by remember { mutableStateOf(false) }
-    var showPayerSheet    by remember { mutableStateOf(false) }
+    var showGroupSheet     by remember { mutableStateOf(false) }
+    var showPayerSheet     by remember { mutableStateOf(false) }
     var showSplitTypeSheet by remember { mutableStateOf(false) }
-    var showCategorySheet by remember { mutableStateOf(false) }
-    var showDatePicker    by remember { mutableStateOf(false) }
-    var showNoteField     by remember { mutableStateOf(notes.isNotBlank()) }
+    var showCategorySheet  by remember { mutableStateOf(false) }
+    var showDatePicker     by remember { mutableStateOf(false) }
+    var showNoteField      by remember { mutableStateOf(notes.isNotBlank()) }
 
     val context = LocalContext.current
 
@@ -149,9 +148,6 @@ fun AddExpenseScreen(
             val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data!!)
             val imageUri = scanResult?.pages?.firstOrNull()?.imageUri
             if (imageUri != null) {
-                // Read bytes HERE on the main thread while the GmsDocumentScanner URI
-                // access grant is still valid. Passing the URI to a coroutine risks
-                // reading it after the grant expires, causing a silent null-stream failure.
                 try {
                     val bytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
                     if (bytes != null) {
@@ -189,23 +185,36 @@ fun AddExpenseScreen(
         }
     }
 
-    // Show a snackbar when receipt scan fails so the user always knows what happened
     LaunchedEffect(receiptState) {
         if (receiptState is ReceiptScanState.Error) {
             snackbarHost.showSnackbar((receiptState as ReceiptScanState.Error).message)
         }
     }
 
-    val isLoading        = uiState is AddExpenseUiState.Loading
-    val amountDouble     = amount.toDoubleOrNull() ?: 0.0
-    val displayDate      = remember(expenseDate) { formatDisplayDate(expenseDate) }
-    val categoryResolved : ExpenseCategory? = category
+    val isLoading    = uiState is AddExpenseUiState.Loading
+    val amountDouble = amount.toDoubleOrNull() ?: 0.0
+    val displayDate  = remember(expenseDate) { formatDisplayDate(expenseDate) }
+    val categoryResolved: ExpenseCategory? = category
 
-    val paidByText = when {
-        payerData.isEmpty() -> "you"
-        payerData.size == 1 -> if (payerData.keys.first() == viewModel.currentUserId) "you"
-        else members.find { it.userId == payerData.keys.first() }?.fullName ?: "1 person"
-        else -> "${payerData.size} people"
+    // ── Derived display strings ───────────────────────────────────────────────
+    val paidByLabel: String
+    val paidByMember: GroupMember?
+    when {
+        payerData.size > 1 -> {
+            paidByLabel  = "${payerData.size} people"
+            paidByMember = null
+        }
+        payerData.size == 1 -> {
+            val uid = payerData.keys.first()
+            paidByMember = members.find { it.userId == uid }
+            paidByLabel  = if (uid == viewModel.currentUserId) "You"
+            else paidByMember?.fullName?.split(" ")?.firstOrNull() ?: "1 person"
+        }
+        else -> {
+            // Empty payerData = current user is default payer
+            paidByMember = members.find { it.userId == viewModel.currentUserId }
+            paidByLabel  = "You"
+        }
     }
 
     val splitLabel = when (splitType) {
@@ -215,39 +224,29 @@ fun AddExpenseScreen(
         SplitType.SHARES     -> "by shares"
     }
 
-    val categoryText = if (categoryResolved == null) "Auto-detect"
-    else categoryResolved.name.lowercase().replace("_", " ").replaceFirstChar { it.uppercase() }
-
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
-        // ── Fixed bottom bar — Date | Category | Note ─────────────────────────
+        // ── Fixed bottom bar — Date | Note ───────────────────────────────────
+        // Category has moved inline next to description; only date + note remain
         bottomBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Surface0)
                     .border(width = 0.5.dp, color = Surface4,
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(0.dp))
+                        shape = RoundedCornerShape(0.dp))
                     .padding(horizontal = Spacing.md, vertical = Spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
-                // Date chip
                 BottomChip(
-                    icon  = Icons.Outlined.CalendarMonth,
-                    label = displayDate,
+                    icon    = Icons.Outlined.CalendarMonth,
+                    label   = displayDate,
                     onClick = { showDatePicker = true },
                 )
-                // Category chip
                 BottomChip(
-                    icon  = Icons.Outlined.Category,
-                    label = categoryText,
-                    onClick = { showCategorySheet = true },
-                )
-                // Note chip
-                BottomChip(
-                    icon  = Icons.Outlined.Message,
-                    label = if (notes.isBlank()) "Add note" else notes,
+                    icon    = Icons.Outlined.Message,
+                    label   = if (notes.isBlank()) "Add note" else notes,
                     onClick = { showNoteField = !showNoteField },
                 )
             }
@@ -271,7 +270,6 @@ fun AddExpenseScreen(
                     .padding(horizontal = Spacing.md, vertical = Spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // X close button
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier
@@ -279,10 +277,9 @@ fun AddExpenseScreen(
                         .clip(CircleShape)
                         .clickable { onBack() },
                 ) {
-                    Text("✕", fontSize = 18.sp, color = TextSecondary)
+                    Text("\u2715", fontSize = 18.sp, color = TextSecondary)
                 }
 
-                // Group pill — center
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     if (preselectedFriend != null) {
                         Row(
@@ -322,7 +319,6 @@ fun AddExpenseScreen(
                     }
                 }
 
-                // Save button
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier
@@ -359,15 +355,15 @@ fun AddExpenseScreen(
                 Spacer(modifier = Modifier.width(Spacing.sm))
                 Text(
                     text = when (receiptState) {
-                        is ReceiptScanState.Success  -> "Receipt scanned ✓"
-                        is ReceiptScanState.Scanning -> "Scanning…"
-                        is ReceiptScanState.Error    -> "Scan failed — tap to retry"
+                        is ReceiptScanState.Success  -> "Receipt scanned \u2713"
+                        is ReceiptScanState.Scanning -> "Scanning\u2026"
+                        is ReceiptScanState.Error    -> "Scan failed \u2014 tap to retry"
                         else                         -> "Scan receipt to auto-fill"
                     },
                     fontSize   = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color      = when (receiptState) {
-                        is ReceiptScanState.Error -> androidx.compose.ui.graphics.Color(0xFFFF5A5F)
+                        is ReceiptScanState.Error -> Color(0xFFFF5A5F)
                         else                      -> Green400
                     },
                 )
@@ -386,7 +382,6 @@ fun AddExpenseScreen(
                     verticalAlignment     = Alignment.Top,
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    // Currency symbol — tappable, top-aligned, lighter
                     Text(
                         text       = currencySymbol(currency),
                         fontSize   = 28.sp,
@@ -401,7 +396,6 @@ fun AddExpenseScreen(
                         onValueChange = { new ->
                             val regex = Regex("^\\d*(\\.\\d{0,2})?$")
                             if (new.isEmpty() || regex.matches(new)) {
-                                // Cap at 100,000,000 (100M)
                                 val parsed = new.toDoubleOrNull() ?: 0.0
                                 if (parsed <= 100_000_000.0) viewModel.onAmountChanged(new)
                             }
@@ -429,7 +423,9 @@ fun AddExpenseScreen(
                 }
             }
 
-            // ── Description — boxed input ─────────────────────────────────────
+            // ── Description + Category icon (inline, left) ────────────────────
+            // Category icon is tappable and opens CategoryBottomSheet.
+            // Replaces the static Edit icon and removes Category from the bottom bar.
             Row(
                 modifier          = Modifier
                     .fillMaxWidth()
@@ -440,7 +436,20 @@ fun AddExpenseScreen(
                     .padding(horizontal = Spacing.md, vertical = Spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Edit, null, tint = TextTertiary, modifier = Modifier.size(18.dp))
+                // Tappable category icon — shows emoji for selected category, generic icon if none
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(Radius.md))
+                        .background(Surface3)
+                        .clickable { showCategorySheet = true },
+                ) {
+                    Text(
+                        text     = categoryEmoji(categoryResolved),
+                        fontSize = 18.sp,
+                    )
+                }
                 Spacer(modifier = Modifier.width(Spacing.sm))
                 BasicTextField(
                     value         = description,
@@ -492,7 +501,8 @@ fun AddExpenseScreen(
             Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Surface0)
                 .border(0.5.dp, Surface3, RoundedCornerShape(0.dp)))
 
-            // ── Paid by — horizontal chips ────────────────────────────────────
+            // ── Paid by — dropdown row (default: current user) ─────────────────
+            // Tapping always opens the PayerBottomSheet which handles single + multiple.
             if (members.isNotEmpty()) {
                 Text(
                     text          = "PAID BY",
@@ -500,70 +510,47 @@ fun AddExpenseScreen(
                     fontWeight    = FontWeight.SemiBold,
                     color         = TextTertiary,
                     letterSpacing = 1.sp,
-                    modifier      = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.sm),
+                    modifier      = Modifier.padding(
+                        start = Spacing.lg, end = Spacing.lg,
+                        top = Spacing.md, bottom = Spacing.sm,
+                    ),
                 )
-                LazyRow(
-                    modifier            = Modifier.fillMaxWidth(),
-                    contentPadding      = androidx.compose.foundation.layout.PaddingValues(horizontal = Spacing.lg),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg)
+                        .clip(RoundedCornerShape(Radius.xl))
+                        .background(Surface2)
+                        .border(1.dp, Surface4, RoundedCornerShape(Radius.xl))
+                        .clickable { showPayerSheet = true }
+                        .padding(horizontal = Spacing.md, vertical = Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    items(members) { member ->
-                        val isSelected = payerData.isEmpty() && member.userId == viewModel.currentUserId
-                                || payerData.containsKey(member.userId)
-                        val name = if (member.userId == viewModel.currentUserId) "You"
-                        else member.fullName.split(" ").firstOrNull() ?: member.fullName
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(Radius.full))
-                                .background(if (isSelected) Green400.copy(alpha = 0.15f) else Surface2)
-                                .border(
-                                    width = if (isSelected) 1.5.dp else 1.dp,
-                                    color = if (isSelected) Green400 else Surface4,
-                                    shape = RoundedCornerShape(Radius.full),
-                                )
-                                .clickable {
-                                    // Set as sole payer. Use max(amount,1.0) so
-                                    // the tap registers even before amount is entered
-                                    // (ViewModel updates amount to actual total later)
-                                    val payAmt = if (amountDouble > 0) amountDouble else 1.0
-                                    members.forEach { m ->
-                                        viewModel.onPayerChanged(m.userId,
-                                            if (m.userId == member.userId) payAmt else 0.0)
-                                    }
-                                }
-                                .padding(horizontal = Spacing.md, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            FsAvatar(name = member.fullName, userId = member.userId, size = 22.dp)
-                            Text(
-                                text       = name,
-                                fontSize   = 13.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                color      = if (isSelected) Green400 else TextPrimary,
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        if (paidByMember != null) {
+                            FsAvatar(
+                                name   = paidByMember.fullName,
+                                userId = paidByMember.userId,
+                                size   = 24.dp,
                             )
                         }
+                        Text(
+                            text       = paidByLabel,
+                            fontSize   = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color      = TextPrimary,
+                        )
                     }
-                    // Multiple payers option
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(Radius.full))
-                                .background(if (payerData.size > 1) Green400.copy(alpha = 0.15f) else Surface2)
-                                .border(1.dp,
-                                    if (payerData.size > 1) Green400 else Surface4,
-                                    RoundedCornerShape(Radius.full))
-                                .clickable { showPayerSheet = true }
-                                .padding(horizontal = Spacing.md, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text  = "+ Multiple",
-                                fontSize = 13.sp,
-                                color = if (payerData.size > 1) Green400 else TextSecondary,
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector        = Icons.Outlined.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint               = TextSecondary,
+                        modifier           = Modifier.size(18.dp),
+                    )
                 }
 
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp,
@@ -584,7 +571,6 @@ fun AddExpenseScreen(
                         color      = TextTertiary,
                     )
                     Spacer(modifier = Modifier.width(Spacing.sm))
-                    // Segmented control
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(Radius.md))
@@ -602,7 +588,7 @@ fun AddExpenseScreen(
                                 contentAlignment = Alignment.Center,
                                 modifier         = Modifier
                                     .clip(RoundedCornerShape(Radius.sm))
-                                    .background(if (selected) Green400 else androidx.compose.ui.graphics.Color.Transparent)
+                                    .background(if (selected) Green400 else Color.Transparent)
                                     .clickable { viewModel.onSplitTypeChanged(type) }
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
                             ) {
@@ -654,7 +640,6 @@ fun AddExpenseScreen(
                             .padding(horizontal = Spacing.lg, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // Checkbox
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier         = Modifier
@@ -666,14 +651,13 @@ fun AddExpenseScreen(
                                     RoundedCornerShape(6.dp)),
                         ) {
                             if (isIncluded) {
-                                Text("✓", fontSize = 11.sp, color = Surface0, fontWeight = FontWeight.Bold)
+                                Text("\u2713", fontSize = 11.sp, color = Surface0, fontWeight = FontWeight.Bold)
                             }
                         }
                         Spacer(modifier = Modifier.width(Spacing.md))
                         FsAvatar(name = member.fullName, userId = member.userId, size = 32.dp)
                         Spacer(modifier = Modifier.width(Spacing.md))
 
-                        // Name + input — name left, underline input right
                         when {
                             !isIncluded -> {
                                 Text(name, fontSize = 14.sp, color = TextTertiary,
@@ -693,7 +677,6 @@ fun AddExpenseScreen(
                                 Text(name, fontSize = 14.sp, color = TextPrimary,
                                     modifier = Modifier.weight(1f))
 
-                                // Suffix label
                                 val suffix = when (splitType) {
                                     SplitType.PERCENTAGE -> "%"
                                     SplitType.SHARES     -> "shares"
@@ -704,7 +687,6 @@ fun AddExpenseScreen(
                                     else              -> ""
                                 }
 
-                                // Always show "0" when empty — makes field obviously tappable
                                 val raw = splitData[member.userId] ?: 0.0
                                 val display = when (splitType) {
                                     SplitType.SHARES -> if (raw > 0) raw.toInt().toString() else "0"
@@ -720,7 +702,7 @@ fun AddExpenseScreen(
                                     value         = if (display == "0") "" else display,
                                     onValueChange = { new ->
                                         val regex = if (splitType == SplitType.SHARES)
-                                            Regex("^\\d*$") else Regex("^\\d*(\\.\\d{0,2})?$")
+                                            Regex("^[0-9]*$") else Regex("^[0-9]*(\\.[0-9]{0,2})?$")
                                         if (new.isEmpty() || regex.matches(new))
                                             viewModel.onSplitChanged(member.userId, new.toDoubleOrNull() ?: 0.0)
                                     },
@@ -750,7 +732,6 @@ fun AddExpenseScreen(
                                     decorationBox = { inner ->
                                         Box(contentAlignment = Alignment.CenterEnd,
                                             modifier = Modifier.padding(bottom = 2.dp)) {
-                                            // Always show "0" as placeholder
                                             if (raw == 0.0) {
                                                 Text(display, fontSize = 14.sp, color = TextTertiary,
                                                     textAlign = TextAlign.End,
@@ -775,9 +756,9 @@ fun AddExpenseScreen(
                 if (splitType != SplitType.EQUAL && currentSum != null) {
                     val sumLabel = when (splitType) {
                         SplitType.UNEQUAL    ->
-                            "✓ ${MoneyUtils.format(currentSum, currency)} of ${MoneyUtils.format(totalDouble, currency)} split"
+                            "\u2713 ${MoneyUtils.format(currentSum, currency)} of ${MoneyUtils.format(totalDouble, currency)} split"
                         SplitType.PERCENTAGE ->
-                            "✓ ${currentSum.toBigDecimal().stripTrailingZeros().toPlainString()}% of 100%"
+                            "\u2713 ${currentSum.toBigDecimal().stripTrailingZeros().toPlainString()}% of 100%"
                         SplitType.SHARES     -> "Tap members to include/exclude"
                         else -> ""
                     }
@@ -792,7 +773,7 @@ fun AddExpenseScreen(
                 }
             }
 
-            // ── Note field (shown when tapped from bottom bar) ────────────────
+            // ── Note field ────────────────────────────────────────────────────
             if (showNoteField) {
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp,
                     modifier = Modifier.padding(horizontal = Spacing.lg))
@@ -808,6 +789,14 @@ fun AddExpenseScreen(
                         .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
                 )
             }
+
+            // ── Repeat schedule ───────────────────────────────────────────────
+            HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                modifier = Modifier.padding(horizontal = Spacing.lg))
+            RepeatSection(
+                repeatInterval   = repeatInterval,
+                onIntervalChange = { viewModel.onRepeatIntervalChanged(it) },
+            )
 
             Spacer(modifier = Modifier.height(100.dp))
         }
@@ -839,10 +828,15 @@ fun AddExpenseScreen(
     }
 
     if (showPayerSheet) {
-        PayerBottomSheet(members = members, payerData = payerData, total = amountDouble, currency = currency,
+        PayerBottomSheet(
+            members       = members,
+            payerData     = payerData,
+            total         = amountDouble,
+            currency      = currency,
             currentUserId = viewModel.currentUserId,
-            onChanged = { userId, amt -> viewModel.onPayerChanged(userId, amt) },
-            onDismiss = { showPayerSheet = false })
+            onChanged     = { userId, amt -> viewModel.onPayerChanged(userId, amt) },
+            onDismiss     = { showPayerSheet = false },
+        )
     }
 
     if (showSplitTypeSheet) {
@@ -857,9 +851,11 @@ fun AddExpenseScreen(
     }
 
     if (showCategorySheet) {
-        CategoryBottomSheet(selected = categoryResolved,
-            onSelect = { viewModel.onCategoryChanged(it); showCategorySheet = false },
-            onDismiss = { showCategorySheet = false })
+        CategoryBottomSheet(
+            selected  = categoryResolved,
+            onSelect  = { viewModel.onCategoryChanged(it); showCategorySheet = false },
+            onDismiss = { showCategorySheet = false },
+        )
     }
 }
 
@@ -882,37 +878,6 @@ private fun BottomChip(
     ) {
         Icon(icon, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
         Text(label, fontSize = 13.sp, color = TextSecondary, maxLines = 1)
-    }
-}
-
-// ── Compact Detail Row ────────────────────────────────────────────────────────
-
-@Composable
-private fun CompactDetailRow(
-    icon   : ImageVector,
-    label  : String,
-    value  : String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(Spacing.md))
-            Text(label, fontSize = 14.sp, color = TextSecondary)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(value, fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(Icons.AutoMirrored.Outlined.ArrowForwardIos, null,
-                tint = TextSecondary, modifier = Modifier.size(12.dp))
-        }
     }
 }
 
@@ -941,7 +906,7 @@ private fun GroupBottomSheet(
                     horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(group.name, color = if (isSel) Green400 else TextPrimary,
                         fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal)
-                    if (isSel) Text("✓", color = Green400, fontWeight = FontWeight.Bold)
+                    if (isSel) Text("\u2713", color = Green400, fontWeight = FontWeight.Bold)
                 }
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
             }
@@ -960,14 +925,10 @@ private fun PayerBottomSheet(
     onChanged    : (String, Double) -> Unit,
     onDismiss    : () -> Unit,
 ) {
-    // Determine initial mode: multiple if more than one payer already selected
     var multipleMode by remember { mutableStateOf(payerData.size > 1) }
-
-    // Single payer: who is currently selected
     val initialSingle = payerData.keys.firstOrNull() ?: currentUserId
     var singleSelected by remember { mutableStateOf(initialSingle) }
 
-    // Multiple payers: editable amounts per person
     val multiAmounts = remember(members) {
         members.associate { member ->
             member.userId to mutableStateOf(
@@ -978,7 +939,7 @@ private fun PayerBottomSheet(
         }
     }
 
-    val multiSum = multiAmounts.values.sumOf { it.value.toDoubleOrNull() ?: 0.0 }
+    val multiSum   = multiAmounts.values.sumOf { it.value.toDoubleOrNull() ?: 0.0 }
     val multiValid = total <= 0 || Math.abs(multiSum - total) < 0.01
 
     ModalBottomSheet(
@@ -988,8 +949,6 @@ private fun PayerBottomSheet(
         dragHandle       = { BottomSheetDefaults.DragHandle() },
     ) {
         Column(modifier = Modifier.padding(bottom = Spacing.xxxl)) {
-
-            // Header + toggle
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
@@ -997,7 +956,6 @@ private fun PayerBottomSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Who paid?", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                // Multiple payers toggle
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(Radius.full))
@@ -1008,9 +966,9 @@ private fun PayerBottomSheet(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = "Multiple",
-                        fontSize = 12.sp,
-                        color = if (multipleMode) Surface0 else TextSecondary,
+                        text       = "Multiple",
+                        fontSize   = 12.sp,
+                        color      = if (multipleMode) Surface0 else TextSecondary,
                         fontWeight = FontWeight.Medium,
                     )
                 }
@@ -1019,7 +977,6 @@ private fun PayerBottomSheet(
             HorizontalDivider(color = Surface4)
 
             if (!multipleMode) {
-                // ── Single payer — radio style ────────────────────────────────
                 members.forEach { member ->
                     val name     = if (member.userId == currentUserId) "You" else member.fullName
                     val selected = member.userId == singleSelected
@@ -1028,7 +985,6 @@ private fun PayerBottomSheet(
                             .fillMaxWidth()
                             .clickable {
                                 singleSelected = member.userId
-                                // Clear all others, set this one to full total
                                 members.forEach { m ->
                                     if (m.userId == member.userId)
                                         onChanged(m.userId, if (total > 0) total else 1.0)
@@ -1049,7 +1005,6 @@ private fun PayerBottomSheet(
                                 color      = if (selected) Green400 else TextPrimary,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                         }
-                        // Radio circle
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
@@ -1066,7 +1021,6 @@ private fun PayerBottomSheet(
                     HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                 }
             } else {
-                // ── Multiple payers — amount per person ───────────────────────
                 if (total > 0) {
                     Row(
                         modifier = Modifier.fillMaxWidth()
@@ -1075,17 +1029,17 @@ private fun PayerBottomSheet(
                     ) {
                         Text("Total: ${MoneyUtils.format(total, currency)}", fontSize = 12.sp, color = TextSecondary)
                         Text(
-                            text  = "Sum: ${MoneyUtils.format(multiSum, currency)}",
-                            fontSize = 12.sp,
-                            color = if (multiValid) Green400 else Negative,
+                            text       = "Sum: ${MoneyUtils.format(multiSum, currency)}",
+                            fontSize   = 12.sp,
+                            color      = if (multiValid) Green400 else Negative,
                             fontWeight = FontWeight.Medium,
                         )
                     }
                 }
 
                 members.forEach { member ->
-                    val name       = if (member.userId == currentUserId) "You" else member.fullName
-                    val amtState   = multiAmounts[member.userId] ?: return@forEach
+                    val name     = if (member.userId == currentUserId) "You" else member.fullName
+                    val amtState = multiAmounts[member.userId] ?: return@forEach
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1095,11 +1049,13 @@ private fun PayerBottomSheet(
                         FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(name, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                        Text("$", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(end = 4.dp))
+                        Text("$", fontSize = 14.sp, color = TextSecondary,
+                            modifier = Modifier.padding(end = 4.dp))
                         BasicTextField(
                             value         = amtState.value,
                             onValueChange = { new ->
-                                if (new.isEmpty() || new.matches(Regex("^[0-9]*(\\.[0-9]{0,2})?$"))) amtState.value = new
+                                if (new.isEmpty() || new.matches(Regex("^[0-9]*(\\.[0-9]{0,2})?$")))
+                                    amtState.value = new
                             },
                             textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                                 color = TextPrimary, textAlign = TextAlign.Start),
@@ -1124,10 +1080,10 @@ private fun PayerBottomSheet(
 
                 Spacer(modifier = Modifier.height(Spacing.md))
                 FsPrimaryButton(
-                    text = if (multiValid) "Confirm" else "Amounts must sum to ${MoneyUtils.format(total, currency)}",
-                    enabled = multiValid,
-                    onClick = {
-                        // Clear all then set each
+                    text = if (multiValid) "Confirm"
+                    else "Amounts must sum to ${MoneyUtils.format(total, currency)}",
+                    enabled  = multiValid,
+                    onClick  = {
                         members.forEach { m -> onChanged(m.userId, 0.0) }
                         multiAmounts.forEach { (userId, state) ->
                             val amt = state.value.toDoubleOrNull() ?: 0.0
@@ -1169,7 +1125,6 @@ private fun SplitBottomSheet(
         }
     }
 
-    // Track which members are included in the split (default: all included)
     val localIncluded = remember(members) {
         members.associate { member ->
             member.userId to mutableStateOf(
@@ -1178,7 +1133,6 @@ private fun SplitBottomSheet(
         }
     }
 
-    // Only validate sum for included members
     val includedMembers = members.filter { localIncluded[it.userId]?.value == true }
 
     val title = when (splitType) {
@@ -1199,7 +1153,8 @@ private fun SplitBottomSheet(
         SplitType.UNEQUAL    -> Math.abs(currentSum - total) < 0.01
         SplitType.PERCENTAGE -> Math.abs(currentSum - 100.0) < 0.01
         SplitType.SHARES     -> includedMembers.all {
-            val v = localValues[it.userId]?.value?.toDoubleOrNull() ?: 0.0; v > 0 && v == Math.floor(v)
+            val v = localValues[it.userId]?.value?.toDoubleOrNull() ?: 0.0
+            v > 0 && v == Math.floor(v)
         }
         else -> true
     }
@@ -1219,7 +1174,8 @@ private fun SplitBottomSheet(
                 if (splitType != SplitType.SHARES) {
                     val sumLabel = when (splitType) {
                         SplitType.UNEQUAL    -> MoneyUtils.format(currentSum, currency)
-                        SplitType.PERCENTAGE -> "${currentSum.toBigDecimal().stripTrailingZeros().toPlainString()}%"
+                        SplitType.PERCENTAGE ->
+                            "${currentSum.toBigDecimal().stripTrailingZeros().toPlainString()}%"
                         else -> ""
                     }
                     Text(sumLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = sumColor)
@@ -1229,11 +1185,11 @@ private fun SplitBottomSheet(
             HorizontalDivider(color = Surface4, thickness = 0.5.dp)
 
             members.forEach { member ->
-                val name       = if (member.userId == currentUserId) "You" else member.fullName
-                val valueState = localValues[member.userId] ?: return@forEach
+                val name          = if (member.userId == currentUserId) "You" else member.fullName
+                val valueState    = localValues[member.userId] ?: return@forEach
                 val includedState = localIncluded[member.userId] ?: return@forEach
-                val isIncluded = includedState.value
-                val suffix     = when (splitType) {
+                val isIncluded    = includedState.value
+                val suffix        = when (splitType) {
                     SplitType.PERCENTAGE -> "%"; SplitType.SHARES -> "shares"; else -> "$"
                 }
                 Row(
@@ -1242,7 +1198,6 @@ private fun SplitBottomSheet(
                         .padding(vertical = Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Checkbox
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -1251,26 +1206,26 @@ private fun SplitBottomSheet(
                             .background(if (isIncluded) Green400 else Surface4)
                             .clickable { includedState.value = !isIncluded },
                     ) {
-                        if (isIncluded) Text("✓", fontSize = 12.sp, color = Surface0, fontWeight = FontWeight.Bold)
+                        if (isIncluded) Text("\u2713", fontSize = 12.sp, color = Surface0,
+                            fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.width(Spacing.sm))
                     FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                     Spacer(modifier = Modifier.width(Spacing.sm))
-                    Text(name, fontSize = 14.sp, color = if (isIncluded) TextPrimary else TextSecondary,
+                    Text(name, fontSize = 14.sp,
+                        color = if (isIncluded) TextPrimary else TextSecondary,
                         modifier = Modifier.weight(1f))
 
                     if (isIncluded) {
-                        // Prefix
                         if (splitType == SplitType.UNEQUAL) {
                             Text("$", fontSize = 14.sp, color = TextSecondary,
                                 modifier = Modifier.padding(end = 4.dp))
                         }
-                        // Amount field — full width feel, left aligned
                         BasicTextField(
                             value         = valueState.value,
                             onValueChange = { new ->
-                                val regex = if (splitType == SplitType.SHARES) Regex("^\\d*$")
-                                else Regex("^\\d*(\\.\\d{0,2})?$")
+                                val regex = if (splitType == SplitType.SHARES) Regex("^[0-9]*$")
+                                else Regex("^[0-9]*(\\.[0-9]{0,2})?$")
                                 if (new.isEmpty() || regex.matches(new)) valueState.value = new
                             },
                             textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
@@ -1307,7 +1262,7 @@ private fun SplitBottomSheet(
                     SplitType.SHARES     -> "Enter whole numbers for each person"
                     else -> "Confirm"
                 },
-                onClick = {
+                onClick  = {
                     if (isValid) {
                         onConfirm(includedMembers.associate { member ->
                             member.userId to (localValues[member.userId]?.value?.toDoubleOrNull() ?: 0.0)
@@ -1341,26 +1296,36 @@ private fun CategoryBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Auto-detect", color = if (selected == null) Green400 else TextSecondary,
                     fontWeight = if (selected == null) FontWeight.SemiBold else FontWeight.Normal)
-                if (selected == null) Text("✓", color = Green400, fontWeight = FontWeight.Bold)
+                if (selected == null) Text("\u2713", color = Green400, fontWeight = FontWeight.Bold)
             }
             HorizontalDivider(color = Surface4, thickness = 0.5.dp)
             ExpenseCategory.entries.forEach { cat ->
                 val isSel = cat == selected
-                Row(modifier = Modifier.fillMaxWidth().clickable { onSelect(cat) }
-                    .background(if (isSel) Surface4 else Surface2)
-                    .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(cat.name.lowercase().replace("_", " ").replaceFirstChar { it.uppercase() },
-                        color = if (isSel) Green400 else TextPrimary,
-                        fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal)
-                    if (isSel) Text("✓", color = Green400, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { onSelect(cat) }
+                        .background(if (isSel) Surface4 else Surface2)
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                    ) {
+                        Text(categoryEmoji(cat), fontSize = 18.sp)
+                        Text(
+                            cat.name.lowercase().replace("_", " ").replaceFirstChar { it.uppercase() },
+                            color      = if (isSel) Green400 else TextPrimary,
+                            fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    }
+                    if (isSel) Text("\u2713", color = Green400, fontWeight = FontWeight.Bold)
                 }
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
             }
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1370,10 +1335,10 @@ private fun SplitTypeSheet(
     onDismiss: () -> Unit,
 ) {
     val options = listOf(
-        SplitType.EQUAL      to "Equally"           to "Split the total evenly between everyone",
-        SplitType.UNEQUAL    to "Exact amounts"     to "Enter how much each person owes",
-        SplitType.PERCENTAGE to "By percentage"     to "Enter a % for each person (must sum to 100)",
-        SplitType.SHARES     to "By shares"         to "Enter a ratio, e.g. 2:1:1",
+        SplitType.EQUAL      to "Equally"       to "Split the total evenly between everyone",
+        SplitType.UNEQUAL    to "Exact amounts"  to "Enter how much each person owes",
+        SplitType.PERCENTAGE to "By percentage"  to "Enter a % for each person (must sum to 100)",
+        SplitType.SHARES     to "By shares"      to "Enter a ratio, e.g. 2:1:1",
     )
 
     ModalBottomSheet(
@@ -1402,11 +1367,10 @@ private fun SplitTypeSheet(
                         Text(label,
                             fontSize   = 15.sp,
                             color      = if (isSel) Green400 else TextPrimary,
-                            fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
-                        )
+                            fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal)
                         Text(description, fontSize = 12.sp, color = TextSecondary)
                     }
-                    if (isSel) Text("✓", color = Green400, fontWeight = FontWeight.Bold)
+                    if (isSel) Text("\u2713", color = Green400, fontWeight = FontWeight.Bold)
                 }
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
             }
@@ -1416,13 +1380,113 @@ private fun SplitTypeSheet(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Returns an emoji representing the given [ExpenseCategory], or a neutral
+ * placeholder when no category has been selected yet.
+ */
+private fun categoryEmoji(category: ExpenseCategory?): String = when (category) {
+    ExpenseCategory.GROCERIES    -> "\uD83D\uDED2"  // shopping cart
+    ExpenseCategory.DINING_OUT   -> "\uD83C\uDF7D"  // fork and knife
+    ExpenseCategory.LIQUOR       -> "\uD83C\uDF7A"  // beer mug
+    ExpenseCategory.MOVIES       -> "\uD83C\uDFAC"  // clapper board
+    ExpenseCategory.MUSIC        -> "\uD83C\uDFB5"  // musical note
+    ExpenseCategory.GAMES        -> "\uD83C\uDFAE"  // video game
+    ExpenseCategory.SPORTS       -> "\u26BD"         // soccer ball
+    ExpenseCategory.ELECTRONICS  -> "\uD83D\uDCF1"  // mobile phone
+    ExpenseCategory.EDUCATION    -> "\uD83D\uDCDA"  // books
+    ExpenseCategory.OTHER        -> "\uD83D\uDCCB"  // clipboard
+    null                         -> "\uD83D\uDCCB"  // placeholder
+    else                         -> "\uD83D\uDCCB"  // any future categories
+}
+
+// ── Repeat Section ────────────────────────────────────────────────────────────
+
+@Composable
+private fun RepeatSection(
+    repeatInterval  : String?,
+    onIntervalChange: (String?) -> Unit,
+) {
+    val frequencies = listOf("DAILY", "WEEKLY", "MONTHLY")
+    val labels      = mapOf("DAILY" to "Daily", "WEEKLY" to "Weekly", "MONTHLY" to "Monthly")
+
+    Column(modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Repeat, contentDescription = null,
+                tint     = if (repeatInterval != null) Green400 else TextTertiary,
+                modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (repeatInterval != null)
+                    "Repeats ${labels[repeatInterval]?.lowercase()}"
+                else "Repeat this expense",
+                fontSize   = 14.sp,
+                color      = if (repeatInterval != null) Green400 else TextSecondary,
+                fontWeight = if (repeatInterval != null) FontWeight.Medium else FontWeight.Normal,
+            )
+        }
+
+        if (repeatInterval != null) {
+            Spacer(modifier = Modifier.height(Spacing.sm))
+        }
+
+        AnimatedVisibility(visible = repeatInterval != null) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                modifier              = Modifier.padding(top = Spacing.xs),
+            ) {
+                frequencies.forEach { freq ->
+                    val selected = repeatInterval == freq
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (selected) Green400.copy(alpha = 0.15f) else Surface2)
+                            .border(1.dp, if (selected) Green400 else Surface3, RoundedCornerShape(20.dp))
+                            .clickable { onIntervalChange(if (selected) null else freq) }
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                    ) {
+                        Text(labels[freq] ?: freq, fontSize = 13.sp,
+                            color      = if (selected) Green400 else TextSecondary,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                }
+            }
+        }
+
+        if (repeatInterval == null) {
+            Spacer(modifier = Modifier.height(Spacing.xs))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                modifier              = Modifier.padding(top = Spacing.xs),
+            ) {
+                frequencies.forEach { freq ->
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier         = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Surface2)
+                            .border(1.dp, Surface3, RoundedCornerShape(20.dp))
+                            .clickable { onIntervalChange(freq) }
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                    ) {
+                        Text(labels[freq] ?: freq, fontSize = 13.sp, color = TextTertiary)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun currencySymbol(code: String): String = when (code) {
-    "USD" -> "$"; "EUR" -> "€"; "GBP" -> "£"; "INR" -> "₹"; "JPY" -> "¥"
-    "CNY" -> "¥"; "KRW" -> "₩"; "RUB" -> "₽"; "BRL" -> "R$"; "CAD" -> "CA$"
-    "AUD" -> "A$"; "SGD" -> "S$"; "HKD" -> "HK$"; "MXN" -> "MX$"; "TRY" -> "₺"
-    "THB" -> "฿"; "IDR" -> "Rp"; "MYR" -> "RM"; "PHP" -> "₱"; "VND" -> "₫"
-    "PKR" -> "₨"; "BDT" -> "৳"; "NGN" -> "₦"; "ZAR" -> "R"; "AED" -> "د.إ"
-    "SAR" -> "﷼"; "PLN" -> "zł"; "SEK" -> "kr"; "NOK" -> "kr"; "DKK" -> "kr"
+    "USD" -> "$"; "EUR" -> "\u20AC"; "GBP" -> "\u00A3"; "INR" -> "\u20B9"; "JPY" -> "\u00A5"
+    "CNY" -> "\u00A5"; "KRW" -> "\u20A9"; "RUB" -> "\u20BD"; "BRL" -> "R$"; "CAD" -> "CA$"
+    "AUD" -> "A$"; "SGD" -> "S$"; "HKD" -> "HK$"; "MXN" -> "MX$"; "TRY" -> "\u20BA"
+    "THB" -> "\u0E3F"; "IDR" -> "Rp"; "MYR" -> "RM"; "PHP" -> "\u20B1"; "VND" -> "\u20AB"
+    "PKR" -> "\u20A8"; "BDT" -> "\u09F3"; "NGN" -> "\u20A6"; "ZAR" -> "R"; "AED" -> "\u062F.\u0625"
+    "SAR" -> "\uFDFC"; "PLN" -> "z\u0142"; "SEK" -> "kr"; "NOK" -> "kr"; "DKK" -> "kr"
     else  -> code
 }
 

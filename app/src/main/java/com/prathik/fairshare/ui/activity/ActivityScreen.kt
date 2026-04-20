@@ -255,7 +255,10 @@ private fun NotificationRow(
                 if (isTappable) Modifier.clickable {
                     when (notification.type) {
                         NotificationType.EXPENSE_ADDED,
-                        NotificationType.EXPENSE_UPDATED -> notification.referenceId?.let {
+                        NotificationType.EXPENSE_UPDATED,
+                        NotificationType.EXPENSE_RECURRING_SET,
+                        NotificationType.EXPENSE_RECURRING_STOPPED,
+                        NotificationType.EXPENSE_AUTO_CREATED -> notification.referenceId?.let {
                             onNavigateToExpense(it)
                         }
 
@@ -430,6 +433,9 @@ private fun notificationEmoji(type: NotificationType): String = when (type) {
     NotificationType.GROUP_UNARCHIVED -> "📤"
     NotificationType.SIMPLIFY_DEBTS_CHANGED -> "⚙️"
     NotificationType.PLACEHOLDER_ASSIGNED -> "🔗"
+    NotificationType.EXPENSE_RECURRING_SET -> "🔄"
+    NotificationType.EXPENSE_RECURRING_STOPPED -> "⏹️"
+    NotificationType.EXPENSE_AUTO_CREATED -> "🤖"
     NotificationType.SETTLE_UP_REMINDER -> "⏰"
 }
 
@@ -461,6 +467,9 @@ private fun notificationBgColor(type: NotificationType): Color = when (type) {
     NotificationType.GROUP_DELETED -> Color(0xFF2A1A1A)
     NotificationType.SIMPLIFY_DEBTS_CHANGED,
     NotificationType.PLACEHOLDER_ASSIGNED -> Color(0xFF1A1A2A)
+    NotificationType.EXPENSE_RECURRING_SET,
+    NotificationType.EXPENSE_RECURRING_STOPPED,
+    NotificationType.EXPENSE_AUTO_CREATED -> Color(0xFF1A2A1A)
     NotificationType.SETTLE_UP_REMINDER -> Color(0xFF2A1800)
 }
 

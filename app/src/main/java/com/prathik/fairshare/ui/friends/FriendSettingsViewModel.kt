@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Friend
+import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
@@ -33,6 +34,7 @@ class FriendSettingsViewModel @Inject constructor(
     private val getGroupsUseCase       : GetGroupsUseCase,
     private val getAllBalancesUseCase   : GetAllBalancesUseCase,
     private val getMyProfileUseCase    : GetMyProfileUseCase,
+    private val expenseRepository      : com.prathik.fairshare.domain.repository.ExpenseRepository,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
@@ -63,6 +65,9 @@ class FriendSettingsViewModel @Inject constructor(
 
     private val _isLoading    = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _recurringExpenses = MutableStateFlow<List<Expense>>(emptyList())
+    val recurringExpenses: StateFlow<List<Expense>> = _recurringExpenses.asStateFlow()
 
     private val _actionState  = MutableStateFlow<FriendSettingsActionState>(FriendSettingsActionState.Idle)
     val actionState: StateFlow<FriendSettingsActionState> = _actionState.asStateFlow()
@@ -134,6 +139,13 @@ class FriendSettingsViewModel @Inject constructor(
             }
 
             _isLoading.value = false
+        }
+        // Load direct recurring expenses with this friend
+        viewModelScope.launch {
+            when (val result = expenseRepository.getDirectRecurringExpenses(friendId)) {
+                is ApiResult.Success -> _recurringExpenses.value = result.data
+                else -> Unit
+            }
         }
     }
 
@@ -208,6 +220,35 @@ class FriendSettingsViewModel @Inject constructor(
 
     fun showError(message: String) {
         _actionState.value = FriendSettingsActionState.Error(message)
+    }
+
+    fun updateDirectSchedule(expenseId: String, newInterval: String) {
+        viewModelScope.launch {
+            when (expenseRepository.updateExpense(
+                expenseId = expenseId, description = null, totalAmount = null,
+                currency = null, splitType = null, category = null, notes = null,
+                expenseDate = null, payerData = null, splitData = null,
+                repeatInterval = newInterval, clearRepeat = null,
+            )) {
+                is ApiResult.Success -> {
+                    _actionState.value = FriendSettingsActionState.Success("Schedule updated")
+                    loadData()
+                }
+                else -> _actionState.value = FriendSettingsActionState.Error("Failed to update schedule")
+            }
+        }
+    }
+
+    fun stopDirectRecurring(expenseId: String) {
+        viewModelScope.launch {
+            when (expenseRepository.stopRecurring(expenseId)) {
+                is ApiResult.Success -> {
+                    _recurringExpenses.value = _recurringExpenses.value.filter { it.id != expenseId }
+                    _actionState.value = FriendSettingsActionState.Success("Recurring stopped")
+                }
+                else -> _actionState.value = FriendSettingsActionState.Error("Failed to stop recurring")
+            }
+        }
     }
 
     fun resetActionState() { _actionState.value = FriendSettingsActionState.Idle }

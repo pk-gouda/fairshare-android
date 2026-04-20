@@ -28,6 +28,10 @@ data class Expense(
     val createdAt: String,
     val updatedAt: String,
     val receipt: ReceiptSummary? = null,
+    val repeatInterval: String? = null,
+    val nextRepeatDate: String? = null,
+    val isRecurring: Boolean = false,
+    val isTemplate: Boolean = false,
 ) : Parcelable {
 
     @Parcelize

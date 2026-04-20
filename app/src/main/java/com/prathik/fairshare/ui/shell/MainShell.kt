@@ -582,9 +582,9 @@ fun MainShell(
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
                 RecurringExpensesScreen(
-                    onBack              = { shellNavController.popBackStack() },
-                    onNavigateToExpense = { expenseId ->
-                        shellNavController.navigate(Screen.ExpenseDetail.route(expenseId))
+                    onBack                  = { shellNavController.popBackStack() },
+                    onNavigateToEditExpense = { expenseId ->
+                        shellNavController.navigate(Screen.EditExpense.route(expenseId))
                     },
                 )
             }

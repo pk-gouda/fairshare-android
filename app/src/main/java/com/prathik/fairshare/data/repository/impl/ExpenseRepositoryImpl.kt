@@ -66,6 +66,7 @@ class ExpenseRepositoryImpl @Inject constructor(
         receiptId: String?,
         remainderPointer: Int?,
         itemAssignments: Map<String, List<String>>?,
+        repeatInterval: String?,
     ): ApiResult<Expense> =
         safeApiCall {
             expenseService.createExpense(
@@ -83,6 +84,7 @@ class ExpenseRepositoryImpl @Inject constructor(
                     receiptId        = receiptId,
                     remainderPointer = remainderPointer,
                     itemAssignments  = itemAssignments,
+                    repeatInterval   = repeatInterval,
                 )
             )
         }.mapSuccess { it.toDomain() }
@@ -98,20 +100,26 @@ class ExpenseRepositoryImpl @Inject constructor(
         expenseDate: String?,
         payerData: Map<String, Double>?,
         splitData: Map<String, Double>?,
+        repeatInterval: String?,
+        clearRepeat: Boolean?,
+        nextRepeatDate: String?,
     ): ApiResult<Expense> =
         safeApiCall {
             expenseService.updateExpense(
                 expenseId,
                 UpdateExpenseRequest(
-                    description = description,
-                    totalAmount = totalAmount,
-                    currency    = currency,
-                    splitType   = splitType,
-                    category    = category,
-                    notes       = notes,
-                    expenseDate = expenseDate,
-                    payerData   = payerData,
-                    splitData   = splitData,
+                    description    = description,
+                    totalAmount    = totalAmount,
+                    currency       = currency,
+                    splitType      = splitType,
+                    category       = category,
+                    notes          = notes,
+                    expenseDate    = expenseDate,
+                    payerData      = payerData,
+                    splitData      = splitData,
+                    repeatInterval = repeatInterval,
+                    clearRepeat    = clearRepeat,
+                    nextRepeatDate = nextRepeatDate,
                 )
             )
         }.mapSuccess { it.toDomain() }
@@ -142,6 +150,10 @@ class ExpenseRepositoryImpl @Inject constructor(
 
     override suspend fun getRecurringExpenses(groupId: String): ApiResult<List<Expense>> =
         safeApiCall { expenseService.getRecurringExpenses(groupId) }
+            .mapSuccess { list -> list.map { it.toDomain() } }
+
+    override suspend fun getDirectRecurringExpenses(friendId: String): ApiResult<List<Expense>> =
+        safeApiCall { expenseService.getDirectRecurringExpenses(friendId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
     override suspend fun stopRecurring(expenseId: String): ApiResult<Unit> =

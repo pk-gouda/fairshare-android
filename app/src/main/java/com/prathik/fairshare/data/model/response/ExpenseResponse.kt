@@ -29,7 +29,11 @@ data class ExpenseResponse(
     @SerialName("yourShare")     val yourShare: Double,
     @SerialName("yourBalance")   val yourBalance: Double,
     @SerialName("createdAt")     val createdAt: String,
-    @SerialName("updatedAt")     val updatedAt: String,
+    @SerialName("updatedAt")       val updatedAt: String,
+    @SerialName("repeatInterval")  val repeatInterval: String? = null,
+    @SerialName("nextRepeatDate")  val nextRepeatDate: String? = null,
+    @SerialName("isRecurring")     val isRecurring: Boolean = false,
+    @SerialName("isTemplate")      val isTemplate: Boolean = false,
 ) {
     @Serializable
     data class PayerDetail(

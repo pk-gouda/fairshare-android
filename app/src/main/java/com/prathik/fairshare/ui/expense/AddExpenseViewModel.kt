@@ -76,6 +76,10 @@ class AddExpenseViewModel @Inject constructor(
     private val _notes = MutableStateFlow("")
     val notes: StateFlow<String> = _notes.asStateFlow()
 
+    // null = not recurring; "DAILY"/"WEEKLY"/"MONTHLY" = recurring
+    private val _repeatInterval = MutableStateFlow<String?>(null)
+    val repeatInterval: StateFlow<String?> = _repeatInterval.asStateFlow()
+
     private val _expenseDate = MutableStateFlow(LocalDateTime.now().toString())
     val expenseDate: StateFlow<String> = _expenseDate.asStateFlow()
 
@@ -237,6 +241,10 @@ class AddExpenseViewModel @Inject constructor(
 
     fun onNotesChanged(value: String) {
         _notes.value = value
+    }
+
+    fun onRepeatIntervalChanged(value: String?) {
+        _repeatInterval.value = value
     }
 
     fun onDateChanged(value: String) {
@@ -612,7 +620,8 @@ class AddExpenseViewModel @Inject constructor(
                 splitData = effectiveSplitData,
                 receiptId = scannedReceiptId,
                 remainderPointer = _pointerAtCreation,
-                itemAssignments = _itemAssignments.value.ifEmpty { null },
+                itemAssignments  = _itemAssignments.value.ifEmpty { null },
+                repeatInterval   = _repeatInterval.value,
             )) {
                 is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
                 is ApiResult.NetworkError -> _uiState.value =

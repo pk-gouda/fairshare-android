@@ -54,6 +54,9 @@ interface ExpenseApiService {
     @GET("api/expenses/search")
     suspend fun searchExpenses(@Query("q") query: String): ApiResponse<List<ExpenseResponse>>
 
+    @GET("api/friends/{friendId}/recurring-expenses")
+    suspend fun getDirectRecurringExpenses(@Path("friendId") friendId: String): ApiResponse<List<ExpenseResponse>>
+
     @GET("api/groups/{groupId}/recurring-expenses")
     suspend fun getRecurringExpenses(@Path("groupId") groupId: String): ApiResponse<List<ExpenseResponse>>
 

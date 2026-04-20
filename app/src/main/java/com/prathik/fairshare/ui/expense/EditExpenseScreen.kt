@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Message
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -45,6 +46,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -109,12 +111,17 @@ fun EditExpenseScreen(
     val amount       by viewModel.amount.collectAsState()
     val currency     by viewModel.currency.collectAsState()
     val groupName    by viewModel.groupName.collectAsState()
+    val groupId      by viewModel.groupId.collectAsState()
     val splitType    by viewModel.splitType.collectAsState()
     val category     by viewModel.category.collectAsState()
     val itemCount    by viewModel.itemCount.collectAsState()
-    val notes        by viewModel.notes.collectAsState()
+    val notes           by viewModel.notes.collectAsState()
+    val repeatInterval  by viewModel.repeatInterval.collectAsState()
+    val clearRepeat     by viewModel.clearRepeat.collectAsState()
     val expenseDate  by viewModel.expenseDate.collectAsState()
+    val isTemplate   by viewModel.isTemplate.collectAsState()
     val members      by viewModel.members.collectAsState()
+    val equalExcluded by viewModel.equalExcluded.collectAsState()
     val payerData    by viewModel.payerData.collectAsState()
     val splitData    by viewModel.splitData.collectAsState()
 
@@ -171,7 +178,9 @@ fun EditExpenseScreen(
                     .padding(horizontal = Spacing.md, vertical = Spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
-                EditBottomChip(Icons.Outlined.CalendarMonth, displayDate) { showDatePicker = true }
+                if (!isTemplate) {
+                    EditBottomChip(Icons.Outlined.CalendarMonth, displayDate) { showDatePicker = true }
+                }
                 EditBottomChip(Icons.Outlined.Category, categoryText) { showCategorySheet = true }
                 EditBottomChip(Icons.Outlined.Message, if (notes.isBlank()) "Add note" else notes) {
                     showNoteField = !showNoteField
@@ -460,18 +469,37 @@ fun EditExpenseScreen(
 
                 members.forEach { member ->
                     val name = if (member.userId == viewModel.currentUserId) "You" else member.fullName
+                    val isIncluded = !equalExcluded.contains(member.userId)
                     Row(
                         modifier          = Modifier
                             .fillMaxWidth()
+                            .then(if (splitType == SplitType.EQUAL)
+                                Modifier.clickable { viewModel.onToggleEqualMember(member.userId) }
+                            else Modifier)
                             .padding(horizontal = Spacing.lg, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        if (splitType == SplitType.EQUAL) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isIncluded) Green400 else Surface2)
+                                    .border(1.dp, if (isIncluded) Green400 else Surface4, RoundedCornerShape(6.dp)),
+                            ) {
+                                if (isIncluded) Text("✓", fontSize = 11.sp, color = Surface0, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(Spacing.md))
+                        }
                         FsAvatar(name = member.fullName, userId = member.userId, size = 32.dp)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         when (splitType) {
                             SplitType.EQUAL -> {
-                                Text(name, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                                Text(
+                                Text(name, fontSize = 14.sp,
+                                    color = if (isIncluded) TextPrimary else TextTertiary,
+                                    modifier = Modifier.weight(1f))
+                                if (isIncluded) Text(
                                     text = MoneyUtils.format(splitData[member.userId] ?: 0.0, currency),
                                     fontSize = 14.sp, color = Green400, fontWeight = FontWeight.SemiBold,
                                 )
@@ -542,6 +570,17 @@ fun EditExpenseScreen(
                     singleLine    = false,
                     maxLines      = 3,
                     modifier      = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                )
+            }
+
+            // ── Repeat schedule (only for group expenses) ─────────────────
+            if (groupId != null) {
+                HorizontalDivider(color = Surface4, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg))
+                EditRepeatSection(
+                    repeatInterval   = if (clearRepeat) null else repeatInterval,
+                    onIntervalChange = { viewModel.onRepeatIntervalChanged(it) },
+                    onClearRepeat    = { viewModel.onClearRepeat() },
                 )
             }
 
@@ -1120,6 +1159,75 @@ private fun editCurrencySymbol(code: String): String = when (code) {
     "PKR" -> "₨"; "BDT" -> "৳"; "NGN" -> "₦"; "ZAR" -> "R"; "AED" -> "د.إ"
     "SAR" -> "﷼"; "PLN" -> "zł"; "SEK" -> "kr"; "NOK" -> "kr"; "DKK" -> "kr"
     else  -> code
+}
+
+
+// ── Edit Repeat Section ───────────────────────────────────────────────────────
+
+@Composable
+private fun EditRepeatSection(
+    repeatInterval  : String?,
+    onIntervalChange: (String?) -> Unit,
+    onClearRepeat   : () -> Unit,
+) {
+    val frequencies = listOf("DAILY", "WEEKLY", "MONTHLY")
+    val labels      = mapOf("DAILY" to "Daily", "WEEKLY" to "Weekly", "MONTHLY" to "Monthly")
+
+    Column(modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Repeat, contentDescription = null,
+                    tint = if (repeatInterval != null) Green400 else TextTertiary,
+                    modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (repeatInterval != null) "Repeats ${labels[repeatInterval]?.lowercase()}"
+                    else "Repeat this expense",
+                    fontSize = 14.sp,
+                    color = if (repeatInterval != null) Green400 else TextSecondary,
+                    fontWeight = if (repeatInterval != null) FontWeight.Medium else FontWeight.Normal,
+                )
+            }
+            // Stop repeating — only shown when currently recurring
+            if (repeatInterval != null) {
+                androidx.compose.material3.TextButton(onClick = onClearRepeat) {
+                    Text("Stop", fontSize = 12.sp, color = Negative)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(Spacing.xs))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            frequencies.forEach { freq ->
+                val selected = repeatInterval == freq
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (selected) Green400.copy(alpha = 0.15f) else Surface2)
+                        .border(1.dp,
+                            if (selected) Green400 else Surface3,
+                            RoundedCornerShape(20.dp))
+                        .clickable { onIntervalChange(if (selected) null else freq) }
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                ) {
+                    Text(labels[freq] ?: freq, fontSize = 13.sp,
+                        color = if (selected) Green400 else TextSecondary,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+        }
+    }
 }
 
 private fun editFormatDisplayDate(isoDate: String): String {
