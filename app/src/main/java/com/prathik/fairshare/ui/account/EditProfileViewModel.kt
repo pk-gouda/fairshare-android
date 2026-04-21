@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.TimeZone
 import javax.inject.Inject
 
 @HiltViewModel
@@ -86,7 +87,8 @@ class EditProfileViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _isLoading.value = true
-            when (updateProfileUseCase(fullName = name)) {
+            val deviceTimezone = TimeZone.getDefault().id
+            when (updateProfileUseCase(fullName = name, timezone = deviceTimezone)) {
                 is ApiResult.Success -> {
                     _editingField.value = null
                     _actionState.value  = EditProfileActionState.Success("Name updated")
@@ -101,7 +103,8 @@ class EditProfileViewModel @Inject constructor(
     fun savePhone() {
         viewModelScope.launch {
             _isLoading.value = true
-            when (updateProfileUseCase(phoneNumber = _phoneNumber.value.trim().ifBlank { null })) {
+            val deviceTimezone = TimeZone.getDefault().id
+            when (updateProfileUseCase(phoneNumber = _phoneNumber.value.trim().ifBlank { null }, timezone = deviceTimezone)) {
                 is ApiResult.Success -> {
                     _editingField.value = null
                     _actionState.value  = EditProfileActionState.Success("Phone updated")

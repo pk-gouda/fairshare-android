@@ -13,11 +13,13 @@ class UpdateProfileUseCase @Inject constructor(
         phoneNumber        : String?  = null,
         preferredCurrency  : String?  = null,
         notificationEnabled: Boolean? = null,
+        timezone           : String?  = null,
     ): ApiResult<User> = userRepository.updateProfile(
         fullName            = fullName,
         phoneNumber         = phoneNumber,
         preferredCurrency   = preferredCurrency,
         language            = null,
         notificationEnabled = notificationEnabled,
+        timezone            = timezone,
     )
 }

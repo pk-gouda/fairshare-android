@@ -55,6 +55,7 @@ class UserRepositoryImpl @Inject constructor(
         preferredCurrency: String?,
         language: String?,
         notificationEnabled: Boolean?,
+        timezone: String?,
     ): ApiResult<User> {
         val result = safeApiCall {
             userService.updateProfile(
@@ -64,6 +65,7 @@ class UserRepositoryImpl @Inject constructor(
                     preferredCurrency = preferredCurrency,
                     language = language,
                     notificationEnabled = notificationEnabled,
+                    timezone = timezone,
                 )
             )
         }

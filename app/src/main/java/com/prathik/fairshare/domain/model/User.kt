@@ -15,4 +15,5 @@ data class User(
     val notificationEnabled: Boolean,
     val isActive           : Boolean,
     val friendCode         : String? = null,
+    val timezone            : String  = "UTC",
 ) : Parcelable

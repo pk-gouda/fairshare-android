@@ -31,6 +31,7 @@ interface UserRepository {
         preferredCurrency: String?,
         language: String?,
         notificationEnabled: Boolean?,
+        timezone: String? = null,
     ): ApiResult<User>
 
     /**

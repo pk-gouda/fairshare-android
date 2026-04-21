@@ -20,4 +20,5 @@ fun UserResponse.toDomain(): User = User(
     language            = language,
     notificationEnabled = notificationEnabled,
     isActive            = accountStatus == "ACTIVE",
+    timezone            = timezone ?: "UTC",
 )
