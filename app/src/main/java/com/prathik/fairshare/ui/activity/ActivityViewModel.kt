@@ -18,6 +18,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
+enum class ActivityFilter { ALL, EXPENSES, SETTLEMENTS, GROUPS }
+
 @HiltViewModel
 class ActivityViewModel @Inject constructor(
     private val getNotificationsUseCase: GetNotificationsUseCase,
@@ -31,6 +33,11 @@ class ActivityViewModel @Inject constructor(
 
     private val _notifications = MutableStateFlow<List<Notification>>(emptyList())
     val notifications: StateFlow<List<Notification>> = _notifications.asStateFlow()
+
+    private val _selectedFilter = MutableStateFlow(ActivityFilter.ALL)
+    val selectedFilter: StateFlow<ActivityFilter> = _selectedFilter.asStateFlow()
+
+    fun setFilter(filter: ActivityFilter) { _selectedFilter.value = filter }
 
     private val _actionState = MutableStateFlow<ActivityActionState>(ActivityActionState.Idle)
     val actionState: StateFlow<ActivityActionState> = _actionState.asStateFlow()
@@ -98,12 +105,21 @@ class ActivityViewModel @Inject constructor(
     /**
      * Groups notifications into Today / Yesterday / Earlier buckets.
      */
-    fun groupedNotifications(): Map<String, List<Notification>> {
+    fun groupedNotifications(filter: ActivityFilter = ActivityFilter.ALL): Map<String, List<Notification>> {
         val zoneId = java.time.ZoneId.systemDefault()
         val today = java.time.LocalDate.now(zoneId)
         val yesterday = today.minusDays(1)
 
-        return _notifications.value.groupBy { notification ->
+        val filtered = when (filter) {
+            ActivityFilter.ALL -> _notifications.value
+            ActivityFilter.EXPENSES -> _notifications.value.filter { it.type.name.startsWith("EXPENSE") }
+            ActivityFilter.SETTLEMENTS -> _notifications.value.filter { it.type.name.startsWith("SETTLEMENT") }
+            ActivityFilter.GROUPS -> _notifications.value.filter {
+                it.type.name.startsWith("GROUP") || it.type.name.startsWith("PLACEHOLDER")
+            }
+        }
+
+        return filtered.groupBy { notification ->
             try {
                 // Parse as UTC, convert to device local time for grouping
                 val instant = try {

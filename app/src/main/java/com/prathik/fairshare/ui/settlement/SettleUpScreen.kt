@@ -91,8 +91,10 @@ fun SettleUpScreen(
     val paymentMethod   by viewModel.paymentMethod.collectAsState()
     val otherUserName   by viewModel.otherUserName.collectAsState()
     val balanceAmount   by viewModel.balanceAmount.collectAsState()
-    val balanceCurrency by viewModel.balanceCurrency.collectAsState()
-    val payerName       by viewModel.payerName.collectAsState()
+    val balanceCurrency    by viewModel.balanceCurrency.collectAsState()
+    val payerName          by viewModel.payerName.collectAsState()
+    val availableCurrencies by viewModel.availableCurrencies.collectAsState()
+    val activeCurrency      by viewModel.activeCurrency.collectAsState()
 
     val snackbarHost    = remember { SnackbarHostState() }
     val scope           = rememberCoroutineScope()
@@ -288,6 +290,38 @@ fun SettleUpScreen(
                         fontWeight = FontWeight.SemiBold,
                         color      = Negative,
                     )
+                }
+            }
+
+            // ── Currency selector (shown only when multiple currencies) ─────────
+            if (availableCurrencies.size > 1) {
+                Spacer(modifier = Modifier.height(Spacing.md))
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    availableCurrencies.forEach { currency ->
+                        val isSelected = currency == activeCurrency
+                        Box(
+                            contentAlignment = androidx.compose.ui.Alignment.Center,
+                            modifier = Modifier
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(com.prathik.fairshare.ui.theme.Radius.full))
+                                .background(if (isSelected) Green400 else Surface2)
+                                .border(1.dp, if (isSelected) Green400 else Surface4,
+                                    androidx.compose.foundation.shape.RoundedCornerShape(com.prathik.fairshare.ui.theme.Radius.full))
+                                .clickable { viewModel.setActiveCurrency(currency) }
+                                .padding(horizontal = Spacing.md, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = currency,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isSelected) Surface0 else TextSecondary,
+                            )
+                        }
+                    }
                 }
             }
 

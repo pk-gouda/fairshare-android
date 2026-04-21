@@ -987,7 +987,9 @@ private fun PayerBottomSheet(
                                 singleSelected = member.userId
                                 members.forEach { m ->
                                     if (m.userId == member.userId)
-                                        onChanged(m.userId, if (total > 0) total else 1.0)
+                                    // Use total if known; 0.0 if user hasn't entered amount yet
+                                    // (ViewModel will correct to actual total on save)
+                                        onChanged(m.userId, if (total > 0) total else 0.0)
                                     else
                                         onChanged(m.userId, 0.0)
                                 }

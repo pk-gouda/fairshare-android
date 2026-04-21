@@ -58,6 +58,26 @@ class SettleUpViewModel @Inject constructor(
     private val _balanceCurrency = MutableStateFlow(tokenStore.getPreferredCurrency())
     val balanceCurrency: StateFlow<String> = _balanceCurrency.asStateFlow()
 
+    /** All currencies in which a balance exists with otherUser (in this group if groupId set). */
+    private val _availableCurrencies = MutableStateFlow<List<String>>(emptyList())
+    val availableCurrencies: StateFlow<List<String>> = _availableCurrencies.asStateFlow()
+
+    /** The currency currently selected for settlement. Defaults to largest absolute balance. */
+    private val _activeCurrency = MutableStateFlow(selectedCurrency ?: tokenStore.getPreferredCurrency())
+    val activeCurrency: StateFlow<String> = _activeCurrency.asStateFlow()
+
+    fun setActiveCurrency(currency: String) {
+        _activeCurrency.value = currency
+        // Recompute balance for newly selected currency
+        val balances = _cachedBalances.value
+        val entry = balances.filter { it.currency == currency }
+        _balanceAmount.value = if (overridePayerId == null) entry.sumOf { it.amount } else 0.0
+        _balanceCurrency.value = currency
+    }
+
+    /** Raw balance list cached so setActiveCurrency can recompute without a network call. */
+    private val _cachedBalances = MutableStateFlow<List<com.prathik.fairshare.domain.model.Balance>>(emptyList())
+
     init {
         // Pre-populate payer name immediately from nav arg — no async needed
         if (overridePayerName != null) _payerName.value = overridePayerName
@@ -82,14 +102,17 @@ class SettleUpViewModel @Inject constructor(
                 when (val result = balanceRepository.getBreakdownWithUser(otherUserId)) {
                     is ApiResult.Success -> {
                         val scoped = result.data.filter { it.groupId == groupId }
-                            .let { list ->
-                                // Filter by currency when user selected a specific entry
-                                if (selectedCurrency != null) list.filter { it.currency == selectedCurrency }
-                                else list
-                            }
-                        if (overridePayerId == null) _balanceAmount.value = scoped.sumOf { it.amount }
-                        _balanceCurrency.value = scoped.firstOrNull()?.currency
+                        _cachedBalances.value = scoped
+                        val currencies = scoped.map { it.currency }.distinct()
+                        _availableCurrencies.value = currencies
+                        // Pick active currency: selectedCurrency arg > largest absolute balance
+                        val active = selectedCurrency?.takeIf { it in currencies }
+                            ?: scoped.maxByOrNull { kotlin.math.abs(it.amount) }?.currency
                             ?: tokenStore.getPreferredCurrency()
+                        _activeCurrency.value = active
+                        _balanceCurrency.value = active
+                        val activeBalances = scoped.filter { it.currency == active }
+                        if (overridePayerId == null) _balanceAmount.value = activeBalances.sumOf { it.amount }
                         val name = scoped.firstOrNull()?.otherUserName
                         if (!name.isNullOrBlank()) _otherUserName.value = name
                     }
@@ -98,13 +121,17 @@ class SettleUpViewModel @Inject constructor(
             } else {
                 when (val result = balanceRepository.getNetBalanceWithUser(otherUserId)) {
                     is ApiResult.Success -> {
-                        val filtered = if (selectedCurrency != null)
-                            result.data.filter { it.currency == selectedCurrency }
-                        else result.data
-                        if (overridePayerId == null) _balanceAmount.value = filtered.sumOf { it.amount }
-                        _balanceCurrency.value = filtered.firstOrNull()?.currency
+                        _cachedBalances.value = result.data
+                        val currencies = result.data.map { it.currency }.distinct()
+                        _availableCurrencies.value = currencies
+                        val active = selectedCurrency?.takeIf { it in currencies }
+                            ?: result.data.maxByOrNull { kotlin.math.abs(it.amount) }?.currency
                             ?: tokenStore.getPreferredCurrency()
-                        val name = filtered.firstOrNull()?.otherUserName
+                        _activeCurrency.value = active
+                        _balanceCurrency.value = active
+                        val activeBalances = result.data.filter { it.currency == active }
+                        if (overridePayerId == null) _balanceAmount.value = activeBalances.sumOf { it.amount }
+                        val name = result.data.firstOrNull()?.otherUserName
                         if (!name.isNullOrBlank()) _otherUserName.value = name
                     }
                     else -> Unit
@@ -164,7 +191,7 @@ class SettleUpViewModel @Inject constructor(
             // (e.g. USD) when the actual balance is EUR creates a USD settlement that can never
             // be matched — the EUR balance stays unfixed and a phantom USD debt appears on the
             // other side.
-            val currency = _balanceCurrency.value
+            val currency = _activeCurrency.value
 
             when (val result = settleUseCase(
                 otherUserId   = otherUserId,

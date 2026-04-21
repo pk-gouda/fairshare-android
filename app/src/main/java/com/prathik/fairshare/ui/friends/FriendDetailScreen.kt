@@ -190,8 +190,21 @@ fun FriendDetailScreen(
     }
 
 
-    val groupBalanceSum = groupBalances.filter { it.groupId != null }.sumOf { it.amount }
-    val nonGroupBalance = netBalance - groupBalanceSum
+    // Per-currency group totals
+    val groupByCurrency = groupBalances.filter { it.groupId != null }
+        .groupBy { it.currency }
+        .mapValues { (_, list) -> list.sumOf { it.amount } }
+    // Per-currency total balances
+    val totalByCurrency = userBalances
+        .groupBy { it.currency }
+        .mapValues { (_, list) -> list.sumOf { it.amount } }
+    // Non-group = total - group, per currency
+    val nonGroupByCurrency = totalByCurrency
+        .mapValues { (cur, total) -> total - (groupByCurrency[cur] ?: 0.0) }
+        .filter { Math.abs(it.value) > 0.01 }
+    // Keep legacy vars for code that still uses them
+    val groupBalanceSum = groupByCurrency.values.sumOf { it }
+    val nonGroupBalance = nonGroupByCurrency.values.sumOf { it }
 
     val handleSettle: () -> Unit = {
         if (netBalance != 0.0 || groupBalances.isNotEmpty()) showBalanceSheet = true
@@ -871,29 +884,34 @@ fun FriendDetailScreen(
                         HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                     }
                 }
-                if (Math.abs(nonGroupBalance) > 0.01) {
-                    Row(
-                        modifier          = Modifier
-                            .fillMaxWidth()
-                            .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null, null) }
-                            .padding(horizontal = Spacing.lg, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(ComponentSize.avatarMd).clip(RoundedCornerShape(12.dp)).background(Surface4)) {
-                            Text("📋", fontSize = 18.sp)
+                if (nonGroupByCurrency.isNotEmpty()) {
+                    nonGroupByCurrency.entries
+                        .sortedByDescending { Math.abs(it.value) }
+                        .forEach { (cur, amt) ->
+                            val isOwed = amt > 0
+                            Row(
+                                modifier          = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null, cur) }
+                                    .padding(horizontal = Spacing.lg, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(contentAlignment = Alignment.Center,
+                                    modifier = Modifier.size(ComponentSize.avatarMd).clip(RoundedCornerShape(12.dp)).background(Surface4)) {
+                                    Text("📋", fontSize = 18.sp)
+                                }
+                                Spacer(Modifier.width(Spacing.md))
+                                Text(if (nonGroupByCurrency.size > 1) "Non-group · $cur" else "Non-group expenses", fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                                    color = TextPrimary, modifier = Modifier.weight(1f))
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(if (isOwed) "you are owed" else "you owe", fontSize = 11.sp, color = TextTertiary)
+                                    Text(MoneyUtils.format(Math.abs(amt), cur), fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isOwed) Green400 else Negative)
+                                }
+                            }
+                            HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                         }
-                        Spacer(Modifier.width(Spacing.md))
-                        Text("Non-group expenses", fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                            color = TextPrimary, modifier = Modifier.weight(1f))
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(if (nonGroupBalance > 0) "you are owed" else "you owe", fontSize = 11.sp, color = TextTertiary)
-                            Text(MoneyUtils.format(Math.abs(nonGroupBalance), currency), fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (nonGroupBalance > 0) Green400 else Negative)
-                        }
-                    }
-                    HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                 }
                 Row(
                     modifier          = Modifier

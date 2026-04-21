@@ -585,6 +585,15 @@ class AddExpenseViewModel @Inject constructor(
             _uiState.value = AddExpenseUiState.Error("Please select who paid."); return
         }
 
+        // Fix: if single payer was selected before amount was entered, their stored amount
+        // is 0.0 or 1.0 (fallback). Correct it to the actual total now.
+        if (_payerData.value.size == 1) {
+            val (payerId, payerAmt) = _payerData.value.entries.first()
+            if (payerAmt <= 1.0 || payerAmt != amount) {
+                _payerData.value = mapOf(payerId to amount)
+            }
+        }
+
         // Determine the split data to send:
         // - If item assignments were done, use the accurate per-person amounts from the
         //   assignment screen. This prevents the backend from falling back to splitting
