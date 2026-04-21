@@ -256,12 +256,10 @@ private fun NotificationRow(
                     when (notification.type) {
                         NotificationType.EXPENSE_ADDED,
                         NotificationType.EXPENSE_UPDATED,
+                        NotificationType.EXPENSE_DELETED,
                         NotificationType.EXPENSE_RECURRING_SET,
                         NotificationType.EXPENSE_RECURRING_STOPPED,
-                        NotificationType.EXPENSE_AUTO_CREATED -> notification.referenceId?.let {
-                            onNavigateToExpense(it)
-                        }
-
+                        NotificationType.EXPENSE_AUTO_CREATED,
                         NotificationType.EXPENSE_RESTORED -> notification.referenceId?.let {
                             onNavigateToExpense(it)
                         }

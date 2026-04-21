@@ -13,6 +13,7 @@ import com.prathik.fairshare.domain.model.ExpenseChangeLog
 import com.prathik.fairshare.domain.model.ExpenseItem
 import com.prathik.fairshare.domain.usecase.expense.DeleteExpenseUseCase
 import com.prathik.fairshare.domain.usecase.expense.GetExpenseUseCase
+import com.prathik.fairshare.domain.usecase.expense.RestoreExpenseUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +24,8 @@ import javax.inject.Inject
 @HiltViewModel
 class ExpenseDetailViewModel @Inject constructor(
     private val getExpenseUseCase    : GetExpenseUseCase,
-    private val deleteExpenseUseCase : DeleteExpenseUseCase,
+    private val deleteExpenseUseCase  : DeleteExpenseUseCase,
+    private val restoreExpenseUseCase : RestoreExpenseUseCase,
     private val expenseApiService    : ExpenseApiService,
     private val tokenStore           : EncryptedTokenStore,
     savedStateHandle                 : SavedStateHandle,
@@ -124,6 +126,17 @@ class ExpenseDetailViewModel @Inject constructor(
         }
     }
 
+    fun restoreExpense() {
+        viewModelScope.launch {
+            _actionState.value = ExpenseActionState.Loading
+            when (restoreExpenseUseCase(expenseId)) {
+                is ApiResult.Success    -> _actionState.value = ExpenseActionState.Restored
+                is ApiResult.NetworkError -> _actionState.value = ExpenseActionState.Error("No internet connection.")
+                else                    -> _actionState.value = ExpenseActionState.Error("Failed to restore expense.")
+            }
+        }
+    }
+
     fun resetActionState() { _actionState.value = ExpenseActionState.Idle }
 }
 
@@ -138,5 +151,6 @@ sealed class ExpenseActionState {
     object Idle    : ExpenseActionState()
     object Loading : ExpenseActionState()
     object Deleted : ExpenseActionState()
+    object Restored : ExpenseActionState()
     data class Error(val message: String) : ExpenseActionState()
 }

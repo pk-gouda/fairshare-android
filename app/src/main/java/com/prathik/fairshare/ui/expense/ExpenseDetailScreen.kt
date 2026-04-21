@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -123,6 +124,10 @@ fun ExpenseDetailScreen(
                 onDeleted(); viewModel.resetActionState()
             }
 
+            is ExpenseActionState.Restored -> {
+                viewModel.loadExpense(); viewModel.resetActionState()
+            }
+
             is ExpenseActionState.Error -> {
                 snackbarHost.showSnackbar(state.message); viewModel.resetActionState()
             }
@@ -131,10 +136,10 @@ fun ExpenseDetailScreen(
         }
     }
 
-    // If the expense no longer exists (deleted by someone else), go back
+    // Expense truly does not exist on server (different from soft-deleted)
     LaunchedEffect(expenseState) {
         if (expenseState is ExpenseDetailUiState.Deleted) {
-            snackbarHost.showSnackbar("This expense has been deleted")
+            snackbarHost.showSnackbar("This expense no longer exists")
             onBack()
         }
     }
@@ -147,18 +152,27 @@ fun ExpenseDetailScreen(
                 onBack = onBack,
                 actions = {
                     val expense = (expenseState as? ExpenseDetailUiState.Success)?.expense
-                    if (expense != null && expense.addedById == viewModel.currentUserId) {
-                        FsIconButton(
-                            icon = Icons.Filled.Edit,
-                            contentDescription = "Edit",
-                            onClick = { onNavigateToEdit(viewModel.expenseId) },
-                        )
-                        FsIconButton(
-                            icon = Icons.Filled.Delete,
-                            contentDescription = "Delete",
-                            onClick = { showDeleteDialog = true },
-                            tint = Negative,
-                        )
+                    if (expense != null) {
+                        if (expense.isDeleted) {
+                            // Deleted expense — show Restore only
+                            FsTextButton(
+                                text = "Restore",
+                                onClick = { viewModel.restoreExpense() },
+                            )
+                        } else if (expense.addedById == viewModel.currentUserId) {
+                            // Active expense — show Edit + Delete
+                            FsIconButton(
+                                icon = Icons.Filled.Edit,
+                                contentDescription = "Edit",
+                                onClick = { onNavigateToEdit(viewModel.expenseId) },
+                            )
+                            FsIconButton(
+                                icon = Icons.Filled.Delete,
+                                contentDescription = "Delete",
+                                onClick = { showDeleteDialog = true },
+                                tint = Negative,
+                            )
+                        }
                     }
                 }
             )
@@ -185,6 +199,7 @@ fun ExpenseDetailScreen(
                     isDeleting = actionState is ExpenseActionState.Loading,
                     changeLog = changeLog,
                     changeLogLoading = changeLogLoading,
+                    onRestore = { viewModel.restoreExpense() },
                 )
             }
         }
@@ -224,6 +239,7 @@ private fun ExpenseDetailContent(
     isDeleting       : Boolean,
     changeLog        : List<ExpenseChangeLog>,
     changeLogLoading : Boolean,
+    onRestore        : () -> Unit = {},
 ) {
     var showItemBreakdown by remember { mutableStateOf(false) }
     Column(
@@ -248,7 +264,8 @@ private fun ExpenseDetailContent(
                 text = MoneyUtils.format(expense.totalAmount, expense.currency),
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 42.sp,
-                color = TextPrimary,
+                color = if (expense.isDeleted) TextSecondary else TextPrimary,
+                textDecoration = if (expense.isDeleted) TextDecoration.LineThrough else TextDecoration.None,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -256,44 +273,62 @@ private fun ExpenseDetailContent(
                 fontSize = 16.sp,
                 color = TextSecondary,
                 fontWeight = FontWeight.Medium,
+                textDecoration = if (expense.isDeleted) TextDecoration.LineThrough else TextDecoration.None,
             )
-
-            // Your balance pill
-            Spacer(modifier = Modifier.height(Spacing.md))
-            val balanceColor = when {
-                expense.yourBalance > 0 -> Green400
-                expense.yourBalance < 0 -> Negative
-                else -> TextSecondary
-            }
-            val balanceText = when {
-                expense.yourBalance > 0 -> "you get back ${
-                    MoneyUtils.format(
-                        expense.yourBalance,
-                        expense.currency
-                    )
-                }"
-
-                expense.yourBalance < 0 -> "you owe ${
-                    MoneyUtils.format(
-                        -expense.yourBalance,
-                        expense.currency
-                    )
-                }"
-
-                else -> "you're settled up"
-            }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Radius.full))
-                    .background(balanceColor.copy(alpha = 0.12f))
-                    .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
-            ) {
+            // Deleted-by line
+            if (expense.isDeleted) {
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                val deletedLabel = buildString {
+                    append("Deleted")
+                    if (expense.deletedByName != null) append(" by ${expense.deletedByName}")
+                    if (expense.deletedAt != null) {
+                        val date = try {
+                            java.time.LocalDateTime.parse(expense.deletedAt,
+                                java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                                .toLocalDate()
+                                .format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy"))
+                        } catch (e: Exception) { expense.deletedAt.take(10) }
+                        append(" on $date")
+                    }
+                }
                 Text(
-                    text = balanceText,
+                    text = deletedLabel,
                     fontSize = 13.sp,
-                    color = balanceColor,
-                    fontWeight = FontWeight.SemiBold
+                    color = Negative,
+                    fontWeight = FontWeight.Medium,
                 )
+            }
+
+            // Your balance pill — hidden for deleted expenses
+            if (!expense.isDeleted) {
+                Spacer(modifier = Modifier.height(Spacing.md))
+                val balanceColor = when {
+                    expense.yourBalance > 0 -> Green400
+                    expense.yourBalance < 0 -> Negative
+                    else -> TextSecondary
+                }
+                val balanceText = when {
+                    expense.yourBalance > 0 -> "you get back ${
+                        MoneyUtils.format(expense.yourBalance, expense.currency)
+                    }"
+                    expense.yourBalance < 0 -> "you owe ${
+                        MoneyUtils.format(-expense.yourBalance, expense.currency)
+                    }"
+                    else -> "you're settled up"
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Radius.full))
+                        .background(balanceColor.copy(alpha = 0.12f))
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                ) {
+                    Text(
+                        text = balanceText,
+                        fontSize = 13.sp,
+                        color = balanceColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
 
@@ -632,8 +667,8 @@ private fun ExpenseDetailContent(
             }
         }
 
-        // ── Settle Up button (only if you owe) ────────────────────────────────
-        if (expense.yourBalance < 0) {
+        // ── Settle Up button (only if you owe, and not deleted) ─────────────
+        if (!expense.isDeleted && expense.yourBalance < 0) {
             val payer = expense.payers.firstOrNull()
             if (payer != null) {
                 Spacer(modifier = Modifier.height(Spacing.xl))
@@ -652,8 +687,8 @@ private fun ExpenseDetailContent(
             }
         }
 
-        // ── Change Log ───────────────────────────────────────────────────────
-        if (changeLogLoading || changeLog.isNotEmpty()) {
+        // ── Change Log (hidden for deleted expenses) ─────────────────────────
+        if (!expense.isDeleted && (changeLogLoading || changeLog.isNotEmpty())) {
             Spacer(modifier = Modifier.height(Spacing.xl))
             FsSectionLabel(
                 text     = "CHANGE HISTORY",

@@ -18,6 +18,8 @@ data class Expense(
     val notes: String?,
     val expenseDate: String,
     val isDeleted: Boolean,
+    val deletedByName: String? = null,
+    val deletedAt: String? = null,
     val payers: List<PayerDetail>,
     val splits: List<SplitDetail>,
     val commentCount: Int,

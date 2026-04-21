@@ -21,6 +21,8 @@ data class ExpenseResponse(
     @SerialName("notes")         val notes: String? = null,
     @SerialName("expenseDate")   val expenseDate: String,
     @SerialName("isDeleted")     val isDeleted: Boolean,
+    @SerialName("deletedByName")  val deletedByName: String? = null,
+    @SerialName("deletedAt")      val deletedAt: String? = null,
     @SerialName("payers")        val payers: List<PayerDetail>? = null,
     @SerialName("splits")        val splits: List<SplitDetail>? = null,
     @SerialName("commentCount")  val commentCount: Int,
