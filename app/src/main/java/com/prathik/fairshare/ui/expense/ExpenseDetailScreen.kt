@@ -69,6 +69,7 @@ import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
 import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextPrimary
+import com.prathik.fairshare.domain.model.ExpenseChangeLog
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.util.MoneyUtils
 import coil.compose.AsyncImage
@@ -99,8 +100,10 @@ fun ExpenseDetailScreen(
 ) {
     val expenseState  by viewModel.expenseState.collectAsState()
     val actionState   by viewModel.actionState.collectAsState()
-    val items         by viewModel.items.collectAsState()
-    val itemsLoading  by viewModel.itemsLoading.collectAsState()
+    val items            by viewModel.items.collectAsState()
+    val itemsLoading     by viewModel.itemsLoading.collectAsState()
+    val changeLog        by viewModel.changeLog.collectAsState()
+    val changeLogLoading by viewModel.changeLogLoading.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -180,6 +183,8 @@ fun ExpenseDetailScreen(
                     items = items,
                     onSettle = { onNavigateToSettle(it) },
                     isDeleting = actionState is ExpenseActionState.Loading,
+                    changeLog = changeLog,
+                    changeLogLoading = changeLogLoading,
                 )
             }
         }
@@ -212,11 +217,13 @@ fun ExpenseDetailScreen(
 
 @Composable
 private fun ExpenseDetailContent(
-    expense       : Expense,
-    currentUserId : String?,
-    items         : List<com.prathik.fairshare.domain.model.ExpenseItem>,
-    onSettle      : (String) -> Unit,
-    isDeleting    : Boolean,
+    expense          : Expense,
+    currentUserId    : String?,
+    items            : List<com.prathik.fairshare.domain.model.ExpenseItem>,
+    onSettle         : (String) -> Unit,
+    isDeleting       : Boolean,
+    changeLog        : List<ExpenseChangeLog>,
+    changeLogLoading : Boolean,
 ) {
     var showItemBreakdown by remember { mutableStateOf(false) }
     Column(
@@ -645,7 +652,73 @@ private fun ExpenseDetailContent(
             }
         }
 
+        // ── Change Log ───────────────────────────────────────────────────────
+        if (changeLogLoading || changeLog.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(Spacing.xl))
+            FsSectionLabel(
+                text     = "CHANGE HISTORY",
+                modifier = Modifier.padding(horizontal = Spacing.lg),
+            )
+            Spacer(modifier = Modifier.height(Spacing.sm))
+
+            if (changeLogLoading) {
+                Box(
+                    modifier        = Modifier.fillMaxWidth().padding(Spacing.lg),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color    = Green400,
+                        strokeWidth = 2.dp,
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    changeLog.forEach { entry: ExpenseChangeLog ->
+                        ChangeLogEntry(entry = entry)
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(Spacing.xxxl))
+    }
+}
+
+// ── Change Log Entry ──────────────────────────────────────────────────────────
+
+@Composable
+private fun ChangeLogEntry(entry: ExpenseChangeLog) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+    ) {
+        Text(
+            text       = "${entry.changedByName} updated this expense:",
+            fontSize   = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color      = TextPrimary,
+        )
+        entry.changes.forEach { change ->
+            Text(
+                text     = buildChangeText(change),
+                fontSize = 13.sp,
+                color    = TextSecondary,
+            )
+        }
+    }
+}
+
+private fun buildChangeText(change: ExpenseChangeLog.FieldChange): String {
+    return when (change.fieldName) {
+        "cost"          -> "- Cost changed from ${change.oldValue} to ${change.newValue}"
+        "currency"      -> "- Currency changed from ${change.oldValue} to ${change.newValue}"
+        "splitType"     -> "- Split type changed from ${change.oldValue} to ${change.newValue}"
+        "payer"         -> "- Payer changed from ${change.oldValue} to ${change.newValue}"
+        "memberAdded"   -> "- ${change.oldValue} added to split"
+        "memberRemoved" -> "- ${change.oldValue} removed from split"
+        else            -> "- ${change.fieldName} changed"
     }
 }
 

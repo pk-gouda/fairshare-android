@@ -9,6 +9,7 @@ import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Expense
+import com.prathik.fairshare.domain.model.ExpenseChangeLog
 import com.prathik.fairshare.domain.model.ExpenseItem
 import com.prathik.fairshare.domain.usecase.expense.DeleteExpenseUseCase
 import com.prathik.fairshare.domain.usecase.expense.GetExpenseUseCase
@@ -43,6 +44,12 @@ class ExpenseDetailViewModel @Inject constructor(
     private val _itemsLoading = MutableStateFlow(false)
     val itemsLoading: StateFlow<Boolean> = _itemsLoading.asStateFlow()
 
+    private val _changeLog = MutableStateFlow<List<ExpenseChangeLog>>(emptyList())
+    val changeLog: StateFlow<List<ExpenseChangeLog>> = _changeLog.asStateFlow()
+
+    private val _changeLogLoading = MutableStateFlow(false)
+    val changeLogLoading: StateFlow<Boolean> = _changeLogLoading.asStateFlow()
+
     init { loadExpense() }
 
     private var hasLoadedOnce = false
@@ -58,6 +65,7 @@ class ExpenseDetailViewModel @Inject constructor(
                     if (_items.value.isEmpty()) {
                         loadItems()
                     }
+                    loadChangeLog()
                 }
                 is ApiResult.NotFound -> _expenseState.value = ExpenseDetailUiState.Deleted
                 is ApiResult.NetworkError -> {
@@ -78,6 +86,30 @@ class ExpenseDetailViewModel @Inject constructor(
                 _items.value = result.data.map { it.toDomain() }
             }
             _itemsLoading.value = false
+        }
+    }
+
+    fun loadChangeLog() {
+        viewModelScope.launch {
+            _changeLogLoading.value = true
+            val result = safeApiCall { expenseApiService.getChangeLog(expenseId) }
+            if (result is ApiResult.Success) {
+                _changeLog.value = result.data.map { entry ->
+                    ExpenseChangeLog(
+                        changedById   = entry.changedById,
+                        changedByName = entry.changedByName,
+                        changedAt     = entry.changedAt,
+                        changes       = entry.changes.map { fc ->
+                            ExpenseChangeLog.FieldChange(
+                                fieldName = fc.fieldName,
+                                oldValue  = fc.oldValue,
+                                newValue  = fc.newValue,
+                            )
+                        }
+                    )
+                }
+            }
+            _changeLogLoading.value = false
         }
     }
 

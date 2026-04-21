@@ -5,6 +5,7 @@ import com.prathik.fairshare.data.model.request.CreateExpenseRequest
 import com.prathik.fairshare.data.model.request.ItemAssignmentRequest
 import com.prathik.fairshare.data.model.request.UpdateExpenseRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
+import com.prathik.fairshare.data.model.response.ExpenseChangeLogResponse
 import com.prathik.fairshare.data.model.response.ExpenseCommentResponse
 import com.prathik.fairshare.data.model.response.ExpenseItemResponse
 import com.prathik.fairshare.data.model.response.ExpenseResponse
@@ -74,4 +75,7 @@ interface ExpenseApiService {
 
     @DELETE("api/comments/{commentId}")
     suspend fun deleteComment(@Path("commentId") commentId: String): ApiResponse<Unit>
+
+    @GET("api/expenses/{expenseId}/changes")
+    suspend fun getChangeLog(@Path("expenseId") expenseId: String): ApiResponse<List<ExpenseChangeLogResponse>>
 }

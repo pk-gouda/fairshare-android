@@ -183,13 +183,6 @@ class EditExpenseViewModel @Inject constructor(
             }
         }
 
-        // Restore excluded members for EQUAL splits (those with amountOwed == 0)
-        if (expense.splitType == SplitType.EQUAL) {
-            _equalExcluded.value = expense.splits
-                .filter { it.amountOwed == 0.0 }
-                .map { it.userId }
-                .toSet()
-        }
         _itemCount.value = expense.itemCount
     }
 
@@ -202,7 +195,17 @@ class EditExpenseViewModel @Inject constructor(
         if (gid != null) {
             viewModelScope.launch {
                 when (val result = getGroupMembersUseCase(gid)) {
-                    is ApiResult.Success -> _members.value = result.data
+                    is ApiResult.Success -> {
+                        _members.value = result.data
+                        // Members not in the expense splits were excluded when created
+                        if (expense.splitType == SplitType.EQUAL) {
+                            val splitUserIds = expense.splits.map { it.userId }.toSet()
+                            _equalExcluded.value = result.data
+                                .map { it.userId }
+                                .filter { it !in splitUserIds }
+                                .toSet()
+                        }
+                    }
                     else -> {
                         // Fallback: synthesize from expense participants
                         _members.value = synthesizeMembers(expense)
