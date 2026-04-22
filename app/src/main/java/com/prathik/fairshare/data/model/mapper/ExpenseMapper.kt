@@ -42,6 +42,7 @@ fun ExpenseResponse.toDomain(): Expense = Expense(
     nextRepeatDate = nextRepeatDate,
     isRecurring    = isRecurring,
     isTemplate     = isTemplate,
+    canEdit        = canEdit,
 )
 
 fun ExpenseResponse.ReceiptSummary.toDomain(): Expense.ReceiptSummary = Expense.ReceiptSummary(

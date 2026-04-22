@@ -36,6 +36,7 @@ data class ExpenseResponse(
     @SerialName("nextRepeatDate")  val nextRepeatDate: String? = null,
     @SerialName("isRecurring")     val isRecurring: Boolean = false,
     @SerialName("isTemplate")      val isTemplate: Boolean = false,
+    @SerialName("canEdit")         val canEdit: Boolean = false,
 ) {
     @Serializable
     data class PayerDetail(

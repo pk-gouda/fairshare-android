@@ -286,6 +286,15 @@ private fun NotificationRow(
             .background(if (isUnread) Color(0xFF0D1A0D) else Surface0)
             .then(
                 if (isTappable) Modifier.clickable {
+                    // Helper: show restore dialog instead of navigating when group is deleted
+                    fun handleGroupDeleted() {
+                        val name = notification.groupName?.ifBlank { null }
+                            ?: notification.message.substringAfter("'").substringBefore("'")
+                                .ifBlank { "this group" }
+                        val id = notification.groupId ?: notification.referenceId
+                        id?.let { onGroupDeleted(it, name) }
+                    }
+
                     when (notification.type) {
                         NotificationType.EXPENSE_ADDED,
                         NotificationType.EXPENSE_UPDATED,
@@ -293,27 +302,23 @@ private fun NotificationRow(
                         NotificationType.EXPENSE_RECURRING_SET,
                         NotificationType.EXPENSE_RECURRING_STOPPED,
                         NotificationType.EXPENSE_AUTO_CREATED,
-                        NotificationType.EXPENSE_RESTORED -> notification.referenceId?.let {
-                            onNavigateToExpense(
-                                it
-                            )
+                        NotificationType.EXPENSE_RESTORED -> {
+                            if (notification.isGroupDeleted) {
+                                handleGroupDeleted()
+                            } else {
+                                notification.referenceId?.let { onNavigateToExpense(it) }
+                            }
                         }
 
                         NotificationType.SETTLEMENT_RECEIVED,
                         NotificationType.SETTLEMENT_CONFIRMED -> notification.referenceId?.let {
-                            onNavigateToSettlement(
-                                it
-                            )
+                            onNavigateToSettlement(it)
                         }
 
                         NotificationType.FRIEND_REQUEST_RECEIVED,
                         NotificationType.FRIEND_REQUEST_ACCEPTED -> onNavigateToFriend()
 
-                        NotificationType.GROUP_DELETED -> {
-                            val name = notification.message.substringAfter("'").substringBefore("'")
-                                .ifBlank { "this group" }
-                            notification.referenceId?.let { onGroupDeleted(it, name) }
-                        }
+                        NotificationType.GROUP_DELETED -> handleGroupDeleted()
 
                         NotificationType.GROUP_INVITE_RECEIVED,
                         NotificationType.GROUP_MEMBER_JOINED,
@@ -324,10 +329,12 @@ private fun NotificationRow(
                         NotificationType.GROUP_ARCHIVED,
                         NotificationType.GROUP_UNARCHIVED,
                         NotificationType.SIMPLIFY_DEBTS_CHANGED,
-                        NotificationType.PLACEHOLDER_ASSIGNED -> notification.referenceId?.let {
-                            onNavigateToGroup(
-                                it
-                            )
+                        NotificationType.PLACEHOLDER_ASSIGNED -> {
+                            if (notification.isGroupDeleted) {
+                                handleGroupDeleted()
+                            } else {
+                                notification.referenceId?.let { onNavigateToGroup(it) }
+                            }
                         }
 
                         NotificationType.SETTLE_UP_REMINDER -> onNavigateToFriend()

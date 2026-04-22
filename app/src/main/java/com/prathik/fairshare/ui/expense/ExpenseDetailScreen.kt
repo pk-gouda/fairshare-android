@@ -159,7 +159,7 @@ fun ExpenseDetailScreen(
                                 text = "Restore",
                                 onClick = { viewModel.restoreExpense() },
                             )
-                        } else if (expense.addedById == viewModel.currentUserId) {
+                        } else if (expense.canEdit) {
                             // Active expense — show Edit + Delete
                             FsIconButton(
                                 icon = Icons.Filled.Edit,

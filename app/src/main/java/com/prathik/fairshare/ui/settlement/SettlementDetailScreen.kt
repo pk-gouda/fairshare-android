@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.prathik.fairshare.data.model.response.SettlementChangeLogResponse
 import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsErrorScreen
@@ -77,6 +79,7 @@ fun SettlementDetailScreen(
 ) {
     val state        by viewModel.state.collectAsState()
     val actionState  by viewModel.actionState.collectAsState()
+    val changeLog    by viewModel.changeLog.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -153,7 +156,7 @@ fun SettlementDetailScreen(
                     if (s.settlement.isFullSettle && s.settlement.settleType == "ALL") {
                         FullySettledContent(settlement = s.settlement)
                     } else {
-                        SettlementDetailContent(settlement = s.settlement)
+                        SettlementDetailContent(settlement = s.settlement, changeLog = changeLog)
                     }
             }
         }
@@ -394,7 +397,7 @@ private fun groupColor(name: String): Color {
 // ── Standard payment detail screen ───────────────────────────────────────────
 
 @Composable
-private fun SettlementDetailContent(settlement: Settlement) {
+private fun SettlementDetailContent(settlement: Settlement, changeLog: List<SettlementChangeLogResponse>) {
     val displayDate = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -502,6 +505,66 @@ private fun SettlementDetailContent(settlement: Settlement) {
             textAlign = TextAlign.Center,
             modifier  = Modifier.padding(horizontal = Spacing.xl),
         )
+
+
+        // ── Edit history ─────────────────────────────────────────────────────
+        if (changeLog.isNotEmpty()) {
+            Spacer(Modifier.height(Spacing.xl))
+            Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+                Text(
+                    text = "EDIT HISTORY",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextTertiary,
+                    letterSpacing = 0.8.sp,
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.xl))
+                        .background(Surface2),
+                ) {
+                    changeLog.forEachIndexed { entryIdx: Int, entry: SettlementChangeLogResponse ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = Spacing.md, vertical = Spacing.md),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    entry.changedByName,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary,
+                                )
+                                Text(
+                                    entry.fieldName.replaceFirstChar { it.uppercase() },
+                                    fontSize = 11.sp,
+                                    color = TextTertiary,
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            if (entry.oldValue != null) {
+                                Text("Was: ${entry.oldValue}", fontSize = 12.sp, color = TextSecondary)
+                            }
+                            val displayNew = entry.newValue ?: "—"
+                            Text("Now: $displayNew", fontSize = 12.sp, color = TextPrimary)
+                        }
+                        if (entryIdx < changeLog.lastIndex)
+                            HorizontalDivider(
+                                color = Surface3,
+                                thickness = 0.5.dp,
+                                modifier = Modifier.padding(horizontal = Spacing.md),
+                            )
+                    }
+                }
+            }
+        }
     }
 }
 

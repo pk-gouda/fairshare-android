@@ -34,6 +34,7 @@ data class Expense(
     val nextRepeatDate: String? = null,
     val isRecurring: Boolean = false,
     val isTemplate: Boolean = false,
+    val canEdit: Boolean = false,
 ) : Parcelable {
 
     @Parcelize

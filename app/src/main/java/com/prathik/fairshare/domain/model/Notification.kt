@@ -13,4 +13,7 @@ data class Notification(
     val referenceType: String?,
     val isRead: Boolean,
     val createdAt: String,
+    val groupId: String? = null,
+    val groupName: String? = null,
+    val isGroupDeleted: Boolean = false,
 ) : Parcelable

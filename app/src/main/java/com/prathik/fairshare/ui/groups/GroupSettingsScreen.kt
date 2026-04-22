@@ -37,6 +37,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.prathik.fairshare.ui.components.FsPrimaryButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -121,7 +122,10 @@ fun GroupSettingsScreen(
     var showLeaveDialog   by remember { mutableStateOf(false) }
     var showArchiveDialog   by remember { mutableStateOf(false) }
     var showUnarchiveDialog by remember { mutableStateOf(false) }
-    var showAssignSheet   by remember { mutableStateOf<GroupMember?>(null) }
+    var showAssignSheet      by remember { mutableStateOf<GroupMember?>(null) }
+    var pendingAssignMember  by remember { mutableStateOf<GroupMember?>(null) }
+    var pendingAssignFriendId by remember { mutableStateOf<String?>(null) }
+    var showAssignConfirmDialog by remember { mutableStateOf(false) }
 
     val isCreator = group?.createdById == viewModel.currentUserId
     val isMember = group != null  // any member can perform all group actions
@@ -182,6 +186,56 @@ fun GroupSettingsScreen(
     }
 
     // ── Dialogs ───────────────────────────────────────────────────────────────
+
+
+    if (showAssignConfirmDialog && pendingAssignMember != null) {
+        val ownerName = group?.createdByName ?: "the group owner"
+        val memberName = pendingAssignMember!!.fullName
+        AlertDialog(
+            onDismissRequest = {
+                showAssignConfirmDialog = false
+                pendingAssignMember = null
+                pendingAssignFriendId = null
+            },
+            containerColor = Surface2,
+            title = {
+                Text(
+                    "This cannot be undone",
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                )
+            },
+            text = {
+                Text(
+                    "Linking $memberName to a FairShare account is permanent and can only be reversed by $ownerName.",
+                    color = TextSecondary,
+                    fontSize = 14.sp,
+                )
+            },
+            confirmButton = {
+                FsPrimaryButton(
+                    text = "Link account",
+                    onClick = {
+                        pendingAssignMember?.let { m ->
+                            pendingAssignFriendId?.let { fid ->
+                                viewModel.assignMember(m.userId, fid)
+                            }
+                        }
+                        showAssignConfirmDialog = false
+                        pendingAssignMember = null
+                        pendingAssignFriendId = null
+                    },
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAssignConfirmDialog = false
+                    pendingAssignMember = null
+                    pendingAssignFriendId = null
+                }) { Text("Cancel", color = TextSecondary) }
+            },
+        )
+    }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -342,7 +396,12 @@ fun GroupSettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { showAssignSheet = null; viewModel.assignMember(member.userId, friend.id) }
+                                .clickable {
+                                    pendingAssignMember = member
+                                    pendingAssignFriendId = friend.id
+                                    showAssignSheet = null
+                                    showAssignConfirmDialog = true
+                                }
                                 .padding(horizontal = Spacing.lg, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -423,7 +482,7 @@ fun GroupSettingsScreen(
                             ) {
                                 Text(coverEmoji(g.type), fontSize = 26.sp)
                             }
-                            if (isCreator) {
+                            if (isMember) {
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier         = Modifier

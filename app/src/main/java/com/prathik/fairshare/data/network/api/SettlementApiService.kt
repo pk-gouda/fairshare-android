@@ -3,6 +3,7 @@ package com.prathik.fairshare.data.network.api
 import com.prathik.fairshare.data.model.request.SettleRequest
 import com.prathik.fairshare.data.model.request.UpdateSettlementRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
+import com.prathik.fairshare.data.model.response.SettlementChangeLogResponse
 import com.prathik.fairshare.data.model.response.SettlementResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -42,4 +43,9 @@ interface SettlementApiService {
         @Path("settlementId") settlementId: String,
         @Body request: UpdateSettlementRequest,
     ): ApiResponse<SettlementResponse>
+
+    @GET("api/settlements/{settlementId}/changelog")
+    suspend fun getSettlementChangelog(
+        @Path("settlementId") settlementId: String,
+    ): ApiResponse<List<SettlementChangeLogResponse>>
 }

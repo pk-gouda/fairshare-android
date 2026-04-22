@@ -12,14 +12,17 @@ import com.prathik.fairshare.domain.model.NotificationType
  * Safe conversion with fallback: unknown type → EXPENSE_ADDED.
  */
 fun NotificationResponse.toDomain(): Notification = Notification(
-    id            = id,
-    title         = title,
-    message       = message,
-    type          = type.toNotificationTypeSafe(),
-    referenceId   = referenceId,
-    referenceType = referenceType,
-    isRead        = isRead,
-    createdAt     = createdAt,
+    id             = id,
+    title          = title,
+    message        = message,
+    type           = type.toNotificationTypeSafe(),
+    referenceId    = referenceId,
+    referenceType  = referenceType,
+    isRead         = isRead,
+    createdAt      = createdAt,
+    groupId        = groupId,
+    groupName      = groupName,
+    isGroupDeleted = isGroupDeleted,
 )
 
 private fun String.toNotificationTypeSafe(): NotificationType =

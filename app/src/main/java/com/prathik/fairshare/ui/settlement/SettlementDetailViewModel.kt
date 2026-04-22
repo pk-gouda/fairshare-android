@@ -4,6 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.model.response.SettlementChangeLogResponse
+import com.prathik.fairshare.data.network.api.SettlementApiService
+import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.repository.SettlementRepository
@@ -17,6 +20,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SettlementDetailViewModel @Inject constructor(
     private val settlementRepository: SettlementRepository,
+    private val settlementApiService: SettlementApiService,
     private val tokenStore: EncryptedTokenStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -30,6 +34,9 @@ class SettlementDetailViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<SettlementDetailActionState>(SettlementDetailActionState.Idle)
     val actionState: StateFlow<SettlementDetailActionState> = _actionState.asStateFlow()
 
+    private val _changeLog = MutableStateFlow<List<SettlementChangeLogResponse>>(emptyList())
+    val changeLog: StateFlow<List<SettlementChangeLogResponse>> = _changeLog.asStateFlow()
+
     private var hasLoadedOnce = false
 
     init { load() }
@@ -41,6 +48,10 @@ class SettlementDetailViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     _state.value = SettlementDetailUiState.Success(result.data)
                     hasLoadedOnce = true
+                    when (val logs = safeApiCall { settlementApiService.getSettlementChangelog(settlementId) }) {
+                        is ApiResult.Success -> _changeLog.value = logs.data
+                        else -> Unit
+                    }
                 }
                 is ApiResult.NotFound -> _state.value = SettlementDetailUiState.Deleted
                 is ApiResult.NetworkError -> {
