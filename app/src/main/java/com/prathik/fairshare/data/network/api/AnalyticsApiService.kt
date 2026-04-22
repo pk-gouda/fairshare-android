@@ -4,6 +4,7 @@ import com.prathik.fairshare.data.model.response.ApiResponse
 import kotlinx.serialization.json.JsonElement
 import retrofit2.http.GET
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface AnalyticsApiService {
 
@@ -20,7 +21,12 @@ interface AnalyticsApiService {
     suspend fun getGroupSummary(@Path("groupId") groupId: String): ApiResponse<JsonElement>
 
     @GET("api/groups/{groupId}/analytics/chart")
-    suspend fun getGroupChartData(@Path("groupId") groupId: String): ApiResponse<JsonElement>
+    suspend fun getGroupChartData(
+        @Path("groupId")          groupId     : String,
+        @Query("memberUserId")    memberUserId: String? = null,
+        @Query("startDate")       startDate   : String? = null,
+        @Query("endDate")         endDate     : String? = null,
+    ): ApiResponse<JsonElement>
 
     @GET("api/groups/{groupId}/analytics/my-share")
     suspend fun getMyShareInGroup(@Path("groupId") groupId: String): ApiResponse<JsonElement>
@@ -39,4 +45,7 @@ interface AnalyticsApiService {
 
     @GET("api/analytics/friend/{otherUserId}/trends")
     suspend fun getFriendTrends(@Path("otherUserId") otherUserId: String): ApiResponse<JsonElement>
+
+    @GET("api/analytics/friend/{otherUserId}/breakdown")
+    suspend fun getFriendBreakdown(@Path("otherUserId") otherUserId: String): ApiResponse<JsonElement>
 }

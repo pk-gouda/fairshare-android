@@ -579,7 +579,7 @@ fun AddExpenseScreen(
                     ) {
                         listOf(
                             SplitType.EQUAL      to "Equally",
-                            SplitType.UNEQUAL    to "$",
+                            SplitType.UNEQUAL    to MoneyUtils.getSymbol(currency),
                             SplitType.PERCENTAGE to "%",
                             SplitType.SHARES     to "Ratio",
                         ).forEach { (type, label) ->
@@ -1051,7 +1051,7 @@ private fun PayerBottomSheet(
                         FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(name, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                        Text("$", fontSize = 14.sp, color = TextSecondary,
+                        Text(MoneyUtils.getSymbol(currency), fontSize = 14.sp, color = TextSecondary,
                             modifier = Modifier.padding(end = 4.dp))
                         BasicTextField(
                             value         = amtState.value,
@@ -1192,7 +1192,7 @@ private fun SplitBottomSheet(
                 val includedState = localIncluded[member.userId] ?: return@forEach
                 val isIncluded    = includedState.value
                 val suffix        = when (splitType) {
-                    SplitType.PERCENTAGE -> "%"; SplitType.SHARES -> "shares"; else -> "$"
+                    SplitType.PERCENTAGE -> "%"; SplitType.SHARES -> "shares"; else -> MoneyUtils.getSymbol(currency)
                 }
                 Row(
                     modifier = Modifier
@@ -1220,7 +1220,7 @@ private fun SplitBottomSheet(
 
                     if (isIncluded) {
                         if (splitType == SplitType.UNEQUAL) {
-                            Text("$", fontSize = 14.sp, color = TextSecondary,
+                            Text(MoneyUtils.getSymbol(currency), fontSize = 14.sp, color = TextSecondary,
                                 modifier = Modifier.padding(end = 4.dp))
                         }
                         BasicTextField(
@@ -1482,15 +1482,8 @@ private fun RepeatSection(
     }
 }
 
-private fun currencySymbol(code: String): String = when (code) {
-    "USD" -> "$"; "EUR" -> "\u20AC"; "GBP" -> "\u00A3"; "INR" -> "\u20B9"; "JPY" -> "\u00A5"
-    "CNY" -> "\u00A5"; "KRW" -> "\u20A9"; "RUB" -> "\u20BD"; "BRL" -> "R$"; "CAD" -> "CA$"
-    "AUD" -> "A$"; "SGD" -> "S$"; "HKD" -> "HK$"; "MXN" -> "MX$"; "TRY" -> "\u20BA"
-    "THB" -> "\u0E3F"; "IDR" -> "Rp"; "MYR" -> "RM"; "PHP" -> "\u20B1"; "VND" -> "\u20AB"
-    "PKR" -> "\u20A8"; "BDT" -> "\u09F3"; "NGN" -> "\u20A6"; "ZAR" -> "R"; "AED" -> "\u062F.\u0625"
-    "SAR" -> "\uFDFC"; "PLN" -> "z\u0142"; "SEK" -> "kr"; "NOK" -> "kr"; "DKK" -> "kr"
-    else  -> code
-}
+private fun currencySymbol(code: String): String = MoneyUtils.getSymbol(code)
+
 
 private fun formatDisplayDate(isoDate: String): String {
     return try {

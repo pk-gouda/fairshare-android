@@ -430,7 +430,7 @@ fun EditExpenseScreen(
                     ) {
                         listOf(
                             SplitType.EQUAL      to "Equally",
-                            SplitType.UNEQUAL    to "$",
+                            SplitType.UNEQUAL    to MoneyUtils.getSymbol(currency),
                             SplitType.PERCENTAGE to "%",
                             SplitType.SHARES     to "Ratio",
                         ).forEach { (type, label) ->
@@ -831,7 +831,7 @@ private fun EditPayerBottomSheet(
                         FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(name, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                        Text("$", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(end = 4.dp))
+                        Text(MoneyUtils.getSymbol(currency), fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(end = 4.dp))
                         BasicTextField(
                             value         = amtState.value,
                             onValueChange = { new ->
@@ -969,7 +969,7 @@ private fun EditSplitBottomSheet(
                 val includedState = localIncluded[member.userId] ?: return@forEach
                 val isIncluded = includedState.value
                 val suffix     = when (splitType) {
-                    SplitType.PERCENTAGE -> "%"; SplitType.SHARES -> "shares"; else -> "$"
+                    SplitType.PERCENTAGE -> "%"; SplitType.SHARES -> "shares"; else -> MoneyUtils.getSymbol(currency)
                 }
                 Row(
                     modifier = Modifier
@@ -995,7 +995,7 @@ private fun EditSplitBottomSheet(
 
                     if (isIncluded) {
                         if (splitType == SplitType.UNEQUAL) {
-                            Text("$", fontSize = 14.sp, color = TextSecondary,
+                            Text(MoneyUtils.getSymbol(currency), fontSize = 14.sp, color = TextSecondary,
                                 modifier = Modifier.padding(end = 4.dp))
                         }
                         BasicTextField(
@@ -1151,15 +1151,7 @@ private fun EditSplitTypeSheet(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-private fun editCurrencySymbol(code: String): String = when (code) {
-    "USD" -> "$"; "EUR" -> "€"; "GBP" -> "£"; "INR" -> "₹"; "JPY" -> "¥"
-    "CNY" -> "¥"; "KRW" -> "₩"; "RUB" -> "₽"; "BRL" -> "R$"; "CAD" -> "CA$"
-    "AUD" -> "A$"; "SGD" -> "S$"; "HKD" -> "HK$"; "MXN" -> "MX$"; "TRY" -> "₺"
-    "THB" -> "฿"; "IDR" -> "Rp"; "MYR" -> "RM"; "PHP" -> "₱"; "VND" -> "₫"
-    "PKR" -> "₨"; "BDT" -> "৳"; "NGN" -> "₦"; "ZAR" -> "R"; "AED" -> "د.إ"
-    "SAR" -> "﷼"; "PLN" -> "zł"; "SEK" -> "kr"; "NOK" -> "kr"; "DKK" -> "kr"
-    else  -> code
-}
+private fun editCurrencySymbol(code: String): String = MoneyUtils.getSymbol(code)
 
 
 // ── Edit Repeat Section ───────────────────────────────────────────────────────

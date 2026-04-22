@@ -138,8 +138,7 @@ fun SettleUpScreen(
     }
 
     val symbol = remember(balanceCurrency) {
-        try { java.util.Currency.getInstance(balanceCurrency).symbol }
-        catch (e: Exception) { "$" }
+        MoneyUtils.getSymbol(balanceCurrency)
     }
 
     val enteredAmount = amount.toDoubleOrNull() ?: 0.0

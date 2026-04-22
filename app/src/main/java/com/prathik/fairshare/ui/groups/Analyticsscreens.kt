@@ -2,6 +2,9 @@ package com.prathik.fairshare.ui.groups
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,19 +18,31 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -40,11 +55,15 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.theme.Green400
+import com.prathik.fairshare.util.MoneyUtils
+import com.prathik.fairshare.ui.theme.Negative
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
 import com.prathik.fairshare.ui.theme.Surface3
+import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
@@ -60,29 +79,24 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import java.time.LocalDate
 import javax.inject.Inject
+import kotlin.math.atan2
+import kotlin.math.sqrt
 
-// ── Palette for pie slices ────────────────────────────────────────────────────
+// ── Palette ───────────────────────────────────────────────────────────────────
 
 private val PIE_COLORS = listOf(
-    Color(0xFF4FC3F7), // light blue
-    Color(0xFFAED581), // light green
-    Color(0xFFFFB74D), // orange
-    Color(0xFFF06292), // pink
-    Color(0xFF9575CD), // purple
-    Color(0xFF4DB6AC), // teal
-    Color(0xFFFF8A65), // deep orange
-    Color(0xFF90A4AE), // blue grey
-    Color(0xFFFFF176), // yellow
-    Color(0xFF80CBC4), // teal light
-    Color(0xFFCE93D8), // light purple
-    Color(0xFFEF9A9A), // light red
+    Color(0xFF4FC3F7), Color(0xFFAED581), Color(0xFFFFB74D), Color(0xFFF06292),
+    Color(0xFF9575CD), Color(0xFF4DB6AC), Color(0xFFFF8A65), Color(0xFF90A4AE),
+    Color(0xFFFFF176), Color(0xFF80CBC4), Color(0xFFCE93D8), Color(0xFFEF9A9A),
 )
 
-// ── Fields to hide ────────────────────────────────────────────────────────────
 private val HIDDEN_FIELDS = setOf("groupId", "userId", "isArchived", "groupName")
 
-// ── UI state types ────────────────────────────────────────────────────────────
+// ── UI state types ─────────────────────────────────────────────────────────────
 
 sealed class AnalyticsObjectState {
     object Loading : AnalyticsObjectState()
@@ -96,11 +110,25 @@ sealed class AnalyticsListState {
     data class Error(val message: String) : AnalyticsListState()
 }
 
-// ── Data class for a pie slice entry ─────────────────────────────────────────
-
 data class PieEntry(val label: String, val amount: Double, val percentage: Float)
+data class MemberChip(val userId: String?, val fullName: String)
+data class MonthChip(val year: Int?, val month: Int?, val label: String)
 
-// ── GroupAnalyticsViewModel ───────────────────────────────────────────────────
+sealed class GroupChartState {
+    object Loading : GroupChartState()
+    data class Success(
+        val members       : List<MemberChip>,
+        val categories    : List<PieEntry>,
+        val totalPaid     : Double,
+        val totalOwes     : Double,
+        val totalBalance  : Double,
+        val selectedMember: MemberChip,
+        val currency      : String = "USD",
+    ) : GroupChartState()
+    data class Error(val message: String) : GroupChartState()
+}
+
+// ── ViewModel ─────────────────────────────────────────────────────────────────
 
 @HiltViewModel
 class GroupAnalyticsViewModel @Inject constructor(
@@ -110,41 +138,111 @@ class GroupAnalyticsViewModel @Inject constructor(
 
     val groupId: String = checkNotNull(savedStateHandle["groupId"])
 
-    private val _summaryState  = MutableStateFlow<AnalyticsObjectState>(AnalyticsObjectState.Loading)
-    val summaryState: StateFlow<AnalyticsObjectState> = _summaryState.asStateFlow()
+    private val _chartState = MutableStateFlow<GroupChartState>(GroupChartState.Loading)
+    val chartState: StateFlow<GroupChartState> = _chartState.asStateFlow()
 
-    private val _categoryState = MutableStateFlow<AnalyticsListState>(AnalyticsListState.Loading)
-    val categoryState: StateFlow<AnalyticsListState> = _categoryState.asStateFlow()
+    private val _selectedMember = MutableStateFlow(MemberChip(null, "All members"))
+    val selectedMember: StateFlow<MemberChip> = _selectedMember.asStateFlow()
 
-    private val _memberState   = MutableStateFlow<AnalyticsListState>(AnalyticsListState.Loading)
-    val memberState: StateFlow<AnalyticsListState> = _memberState.asStateFlow()
+    private val _selectedMonth = MutableStateFlow(MonthChip(null, null, "All time"))
+    val selectedMonth: StateFlow<MonthChip> = _selectedMonth.asStateFlow()
+
+    private val _months = MutableStateFlow<List<MonthChip>>(buildMonthChips())
+    val months: StateFlow<List<MonthChip>> = _months.asStateFlow()
 
     init { load() }
 
+    fun selectMember(member: MemberChip) { _selectedMember.value = member; load() }
+    fun selectMonth(month: MonthChip)   { _selectedMonth.value = month;   load() }
+
     fun load() {
         viewModelScope.launch {
-            val summaryDef  = async { safeApiCall { analyticsApiService.getGroupSummary(groupId) } }
-            val categoryDef = async { safeApiCall { analyticsApiService.getGroupCategoryBreakdown(groupId) } }
-            val memberDef   = async { safeApiCall { analyticsApiService.getGroupMemberBreakdown(groupId) } }
+            _chartState.value = GroupChartState.Loading
+            val member    = _selectedMember.value
+            val monthChip = _selectedMonth.value
 
-            _summaryState.value = when (val r = summaryDef.await()) {
-                is ApiResult.Success      -> AnalyticsObjectState.Success(r.data)
-                is ApiResult.NetworkError -> AnalyticsObjectState.Error("No internet connection.")
-                else                      -> AnalyticsObjectState.Error("Failed to load analytics.")
+            val startDate = monthChip.year?.let {
+                "${it}-${monthChip.month!!.toString().padStart(2,'0')}-01T00:00:00"
             }
-            _categoryState.value = when (val r = categoryDef.await()) {
-                is ApiResult.Success -> AnalyticsListState.Success(r.data)
-                else                 -> AnalyticsListState.Error("")
+            val endDate = monthChip.year?.let {
+                val last = LocalDate.of(it, monthChip.month!!, 1).plusMonths(1).minusDays(1)
+                "${last}T23:59:59"
             }
-            _memberState.value = when (val r = memberDef.await()) {
-                is ApiResult.Success -> AnalyticsListState.Success(r.data)
-                else                 -> AnalyticsListState.Error("")
+
+            when (val r = safeApiCall {
+                analyticsApiService.getGroupChartData(
+                    groupId      = groupId,
+                    memberUserId = member.userId,
+                    startDate    = startDate,
+                    endDate      = endDate,
+                )
+            }) {
+                is ApiResult.Success -> {
+                    val obj = r.data as? JsonObject ?: run {
+                        _chartState.value = GroupChartState.Error("Invalid response")
+                        return@launch
+                    }
+
+                    val currentMembers = (_chartState.value as? GroupChartState.Success)?.members
+                    val members = currentMembers ?: run {
+                        val raw = (obj["members"] as? JsonArray)?.mapNotNull { m ->
+                            val mo = m as? JsonObject ?: return@mapNotNull null
+                            MemberChip(
+                                userId   = mo["userId"]?.toStr() ?: return@mapNotNull null,
+                                fullName = mo["fullName"]?.toStr() ?: return@mapNotNull null,
+                            )
+                        } ?: emptyList()
+                        listOf(MemberChip(null, "All members")) + raw
+                    }
+
+                    val cats = (obj["categories"] as? JsonArray)?.mapNotNull { item ->
+                        val co = item as? JsonObject ?: return@mapNotNull null
+                        val label  = co["category"]?.toStr()?.categoryLabel() ?: return@mapNotNull null
+                        val amount = if (member.userId == null)
+                            co["categoryTotal"]?.toStr()?.toDoubleOrNull() ?: 0.0
+                        else
+                            co["userOwes"]?.toStr()?.toDoubleOrNull() ?: 0.0
+                        if (amount < 0.01) null else PieEntry(label, amount, 0f)
+                    }?.sortedByDescending { it.amount } ?: emptyList()
+
+                    val total = cats.sumOf { it.amount }.coerceAtLeast(0.001)
+                    val catsWithPct = cats.map { it.copy(percentage = ((it.amount / total) * 100).toFloat()) }
+
+                    val totalPaid = if (member.userId == null) 0.0 else
+                        (obj["categories"] as? JsonArray)?.sumOf {
+                            (it as? JsonObject)?.get("userPaid")?.toStr()?.toDoubleOrNull() ?: 0.0
+                        } ?: 0.0
+                    val totalOwes    = cats.sumOf { it.amount }
+                    val totalBalance = totalPaid - totalOwes
+
+                    val currency = obj["currency"]?.toStr()?.takeIf { it.isNotBlank() } ?: "USD"
+
+                    _chartState.value = GroupChartState.Success(
+                        members        = members,
+                        categories     = catsWithPct,
+                        totalPaid      = totalPaid,
+                        totalOwes      = totalOwes,
+                        totalBalance   = totalBalance,
+                        selectedMember = member,
+                        currency       = currency,
+                    )
+                }
+                is ApiResult.NetworkError -> _chartState.value = GroupChartState.Error("No internet connection.")
+                else -> _chartState.value = GroupChartState.Error("Failed to load analytics.")
             }
+        }
+    }
+
+    private fun buildMonthChips(): List<MonthChip> {
+        val now = LocalDate.now()
+        return listOf(MonthChip(null, null, "All time")) + (0..11).map { i ->
+            val d = now.minusMonths(i.toLong())
+            MonthChip(d.year, d.monthValue, "${monthName(d.monthValue)} ${d.year}")
         }
     }
 }
 
-// ── GroupAnalyticsScreen ──────────────────────────────────────────────────────
+// ── Screen ────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,43 +250,19 @@ fun GroupAnalyticsScreen(
     onBack   : () -> Unit,
     viewModel: GroupAnalyticsViewModel = hiltViewModel(),
 ) {
-    val summaryState  by viewModel.summaryState.collectAsState()
-    val categoryState by viewModel.categoryState.collectAsState()
-    val memberState   by viewModel.memberState.collectAsState()
+    val chartState     by viewModel.chartState.collectAsState()
+    val selectedMember by viewModel.selectedMember.collectAsState()
+    val selectedMonth  by viewModel.selectedMonth.collectAsState()
+    val months         by viewModel.months.collectAsState()
 
     Scaffold(
         containerColor = Surface0,
-        topBar         = { FsTopBar(title = "Group analytics", onBack = onBack) },
+        topBar = { FsTopBar(title = "Analytics", onBack = onBack) },
     ) { innerPadding ->
-        when (summaryState) {
-            is AnalyticsObjectState.Loading -> FsLoadingScreen()
-            is AnalyticsObjectState.Error   -> FsErrorScreen(
-                message = (summaryState as AnalyticsObjectState.Error).message,
-                onRetry = { viewModel.load() }
-            )
-            is AnalyticsObjectState.Success -> {
-                val summary    = (summaryState as AnalyticsObjectState.Success).data as? JsonObject ?: JsonObject(emptyMap())
-                val categories = ((categoryState as? AnalyticsListState.Success)?.data) as? JsonArray
-                val members    = ((memberState   as? AnalyticsListState.Success)?.data) as? JsonArray
-
-                // Build pie entries from category data
-                val categoryEntries: List<PieEntry> = categories?.mapNotNull { item ->
-                    val obj = item as? JsonObject ?: return@mapNotNull null
-                    val label  = obj["category"]?.toDisplayString()?.toReadable() ?: return@mapNotNull null
-                    val amount = obj["amount"]?.toDisplayString()?.toDoubleOrNull() ?: return@mapNotNull null
-                    val pct    = obj["percentage"]?.toDisplayString()?.toFloatOrNull() ?: 0f
-                    PieEntry(label, amount, pct)
-                }?.sortedByDescending { it.amount } ?: emptyList()
-
-                // Build pie entries from member data
-                val memberEntries: List<PieEntry> = members?.mapNotNull { item ->
-                    val obj = item as? JsonObject ?: return@mapNotNull null
-                    val label  = obj["fullName"]?.toDisplayString() ?: return@mapNotNull null
-                    val amount = obj["amountPaid"]?.toDisplayString()?.toDoubleOrNull() ?: return@mapNotNull null
-                    val pct    = obj["percentage"]?.toDisplayString()?.toFloatOrNull() ?: 0f
-                    PieEntry(label, amount, pct)
-                }?.sortedByDescending { it.amount } ?: emptyList()
-
+        when (val state = chartState) {
+            is GroupChartState.Loading -> FsLoadingScreen()
+            is GroupChartState.Error   -> FsErrorScreen(message = state.message, onRetry = { viewModel.load() })
+            is GroupChartState.Success -> {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -197,66 +271,360 @@ fun GroupAnalyticsScreen(
                 ) {
                     Spacer(Modifier.height(Spacing.md))
 
-                    // Overview card
-                    val overviewEntries = summary.entries
-                        .filter { it.key !in HIDDEN_FIELDS }
-                        .sortedBy { it.key }
-                    if (overviewEntries.isNotEmpty()) {
-                        Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
-                            SectionLabel("OVERVIEW")
-                            Spacer(Modifier.height(Spacing.sm))
-                            AnalyticsCard {
-                                overviewEntries.forEachIndexed { i, (key, value) ->
-                                    AnalyticsRow(label = key.toReadable(), value = value.toDisplayString())
-                                    if (i < overviewEntries.lastIndex)
-                                        HorizontalDivider(color = Surface3, thickness = 0.5.dp,
-                                            modifier = Modifier.padding(start = Spacing.md))
-                                }
-                            }
+                    // ── Dropdowns row ─────────────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        // Member dropdown
+                        if (state.members.size > 1) {
+                            AnalyticsDropdown(
+                                label    = selectedMember.fullName,
+                                options  = state.members.map { it.fullName },
+                                onSelect = { idx -> viewModel.selectMember(state.members[idx]) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        // Month dropdown
+                        AnalyticsDropdown(
+                            label    = selectedMonth.label,
+                            options  = months.map { it.label },
+                            onSelect = { idx -> viewModel.selectMonth(months[idx]) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+
+                    Spacer(Modifier.height(Spacing.lg))
+
+                    // ── Summary card (specific member only) ───────────────────
+                    if (selectedMember.userId != null && (state.totalPaid > 0 || state.totalOwes > 0)) {
+                        Row(
+                            modifier = Modifier
+                                .padding(horizontal = Spacing.lg)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.xl))
+                                .background(Surface2)
+                                .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            SummaryCol("Paid",  MoneyUtils.format(state.totalPaid, state.currency),  TextPrimary)
+                            SummaryCol("Share", MoneyUtils.format(state.totalOwes, state.currency),  TextSecondary)
+                            val netColor = if (state.totalBalance >= 0) Green400 else Negative
+                            val netSign  = if (state.totalBalance >= 0) "+" else "-"
+                            val netText  = "$netSign${MoneyUtils.format(Math.abs(state.totalBalance), state.currency)}"
+                            SummaryCol("Net", netText, netColor)
                         }
                         Spacer(Modifier.height(Spacing.xl))
                     }
 
-                    // Category pie chart
-                    if (categoryEntries.isNotEmpty()) {
+                    // ── Donut + legend ────────────────────────────────────────
+                    if (state.categories.isNotEmpty()) {
                         Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
                             SectionLabel("SPENDING BY CATEGORY")
                         }
                         Spacer(Modifier.height(Spacing.md))
-                        PieChart(
-                            entries   = categoryEntries,
-                            modifier  = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Spacing.xxxl),
-                        )
-                        Spacer(Modifier.height(Spacing.lg))
-                        PieLegend(entries = categoryEntries, modifier = Modifier.padding(horizontal = Spacing.lg))
-                        Spacer(Modifier.height(Spacing.xl))
-                    }
 
-                    // Member pie chart
-                    if (memberEntries.isNotEmpty()) {
-                        Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
-                            SectionLabel("SPENDING BY MEMBER")
+                        val catTotal = state.categories.sumOf { it.amount }
+                        var tappedIndex by remember { mutableStateOf<Int?>(null) }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 56.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            DonutChart(
+                                entries       = state.categories,
+                                selectedIndex = tappedIndex,
+                                onSliceTapped = { idx -> tappedIndex = if (tappedIndex == idx) null else idx },
+                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                val tapped = tappedIndex?.let { state.categories.getOrNull(it) }
+                                if (tapped != null) {
+                                    Text(
+                                        text       = tapped.label,
+                                        fontSize   = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color      = TextPrimary,
+                                    )
+                                    Text(
+                                        text     = "${MoneyUtils.format(tapped.amount, state.currency)} · ${String.format("%.0f", tapped.percentage)}%",
+                                        fontSize = 12.sp,
+                                        color    = TextSecondary,
+                                    )
+                                } else {
+                                    Text(
+                                        text       = MoneyUtils.format(catTotal, state.currency),
+                                        fontSize   = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color      = TextPrimary,
+                                    )
+                                    Text(
+                                        text     = if (selectedMember.userId == null) "group total" else "${selectedMember.fullName.split(" ").first()}'s share",
+                                        fontSize = 11.sp,
+                                        color    = TextTertiary,
+                                    )
+                                }
+                            }
                         }
-                        Spacer(Modifier.height(Spacing.md))
-                        PieChart(
-                            entries   = memberEntries,
-                            colorOffset = PIE_COLORS.size / 2,
-                            modifier  = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Spacing.xxxl),
-                        )
+
                         Spacer(Modifier.height(Spacing.lg))
-                        PieLegend(entries = memberEntries, colorOffset = PIE_COLORS.size / 2,
-                            modifier = Modifier.padding(horizontal = Spacing.lg))
+
+                        // Legend
+                        Column(
+                            modifier = Modifier
+                                .padding(horizontal = Spacing.lg)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.xl))
+                                .background(Surface2),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                            ) {
+                                Spacer(Modifier.width(22.dp))
+                                Text("Category", fontSize = 12.sp, color = TextTertiary,
+                                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Text("Amount", fontSize = 12.sp, color = TextTertiary,
+                                    fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.width(Spacing.sm))
+                                Text("%", fontSize = 12.sp, color = TextTertiary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.width(34.dp), textAlign = TextAlign.End)
+                            }
+                            HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                            state.categories.forEachIndexed { i, entry ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = Spacing.md, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(PIE_COLORS[i % PIE_COLORS.size])
+                                    )
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Text(entry.label, fontSize = 13.sp, color = TextSecondary,
+                                        modifier = Modifier.weight(1f))
+                                    Text(MoneyUtils.format(entry.amount, state.currency), fontSize = 13.sp,
+                                        color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Text("${String.format("%.0f", entry.percentage)}%",
+                                        fontSize = 12.sp, color = TextTertiary,
+                                        modifier = Modifier.width(34.dp), textAlign = TextAlign.End)
+                                }
+                                if (i < state.categories.lastIndex)
+                                    HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                                        modifier = Modifier.padding(start = 38.dp))
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xxxl),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("📊", fontSize = 32.sp)
+                                Spacer(Modifier.height(Spacing.md))
+                                Text("No spending data for this selection",
+                                    fontSize = 14.sp, color = TextTertiary, textAlign = TextAlign.Center)
+                            }
+                        }
                     }
 
-                    Spacer(Modifier.height(Spacing.xxxl))
+                    Spacer(Modifier.height(100.dp))
                 }
             }
         }
     }
+}
+
+// ── Dropdown component ────────────────────────────────────────────────────────
+
+@Composable
+private fun AnalyticsDropdown(
+    label    : String,
+    options  : List<String>,
+    onSelect : (Int) -> Unit,
+    modifier : Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.lg))
+                .background(Surface2)
+                .border(1.dp, Surface4, RoundedCornerShape(Radius.lg))
+                .clickable { expanded = true }
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text       = label,
+                fontSize   = 13.sp,
+                color      = TextPrimary,
+                fontWeight = FontWeight.Medium,
+                maxLines   = 1,
+                modifier   = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector        = Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint               = TextSecondary,
+                modifier           = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(
+            expanded         = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor   = Surface2,
+        ) {
+            options.forEachIndexed { idx, option ->
+                DropdownMenuItem(
+                    text    = { Text(option, fontSize = 14.sp, color = if (label == option) Green400 else TextPrimary) },
+                    onClick = { onSelect(idx); expanded = false },
+                    colors  = MenuDefaults.itemColors(textColor = TextPrimary),
+                )
+            }
+        }
+    }
+}
+
+// ── Shared composables ────────────────────────────────────────────────────────
+
+@Composable
+private fun SummaryCol(label: String, value: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 11.sp, color = TextTertiary, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(3.dp))
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = color)
+    }
+}
+
+@Composable
+private fun DonutChart(
+    entries       : List<PieEntry>,
+    selectedIndex : Int? = null,
+    onSliceTapped : (Int) -> Unit = {},
+) {
+    val total = entries.sumOf { it.amount }.toFloat().coerceAtLeast(0.001f)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .pointerInput(entries) {
+                detectTapGestures { tap ->
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    val dx = tap.x - cx
+                    val dy = tap.y - cy
+                    val dist = sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                    val strokePx = 44.dp.toPx()
+                    val minDim = minOf(size.width, size.height).toFloat()
+                    val outerR = (minDim - strokePx) / 2f + strokePx / 2
+                    val innerR = (minDim - strokePx) / 2f - strokePx / 2
+                    if (dist < innerR || dist > outerR) return@detectTapGestures
+                    var tapAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
+                    if (tapAngle < 0) tapAngle += 360f
+                    var start = 0f
+                    entries.forEachIndexed { i, entry ->
+                        val sweep = (entry.amount.toFloat() / total) * 360f
+                        if (tapAngle in start..(start + sweep)) {
+                            onSliceTapped(i)
+                            return@detectTapGestures
+                        }
+                        start += sweep
+                    }
+                }
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val stroke   = 44.dp.toPx()
+            val diameter = size.minDimension - stroke
+            val tl       = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+            var start    = -90f
+            entries.forEachIndexed { i, entry ->
+                val sweep     = (entry.amount.toFloat() / total) * 360f
+                val isSelected = i == selectedIndex
+                drawArc(
+                    color      = PIE_COLORS[i % PIE_COLORS.size].let {
+                        if (selectedIndex != null && !isSelected) it.copy(alpha = 0.4f) else it
+                    },
+                    startAngle = start,
+                    sweepAngle = sweep - 1.5f,
+                    useCenter  = false,
+                    topLeft    = Offset(tl.x, tl.y),
+                    size       = Size(diameter, diameter),
+                    style      = Stroke(width = if (isSelected) stroke * 1.25f else stroke),
+                )
+                start += sweep
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text = text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+        color = TextTertiary, letterSpacing = 0.8.sp)
+}
+
+@Composable
+private fun AnalyticsCard(content: @Composable () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.xl)).background(Surface2)) {
+        content()
+    }
+}
+
+@Composable
+private fun AnalyticsRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 14.sp, color = TextSecondary, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+private fun JsonElement.toStr(): String = when (this) {
+    is JsonPrimitive -> contentOrNull ?: toString()
+    is JsonNull      -> ""
+    else             -> toString().trim('"')
+}
+
+private fun JsonElement.toDisplayString(): String = when (this) {
+    is JsonPrimitive -> contentOrNull ?: toString()
+    is JsonArray     -> joinToString(", ") { it.toDisplayString() }
+    is JsonNull      -> "-"
+    else             -> toString().trim('"')
+}
+
+private fun String.toReadable(): String =
+    replace('_', ' ').replace(Regex("([A-Z])")) { " ${it.value}" }
+        .trim().replaceFirstChar { it.uppercase() }
+
+private fun String.categoryLabel(): String =
+    replace('_', ' ').lowercase()
+        .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        .replace("Tv Phone Internet", "TV/Phone/Internet")
+        .replace("Bus Train", "Bus/Train")
+        .replace("Heat Gas", "Heat & Gas")
+
+private fun fmt(v: Double): String = String.format("%.2f", v)
+
+private fun monthName(month: Int): String = when (month) {
+    1 -> "Jan"; 2 -> "Feb"; 3 -> "Mar"; 4 -> "Apr"
+    5 -> "May"; 6 -> "Jun"; 7 -> "Jul"; 8 -> "Aug"
+    9 -> "Sep"; 10 -> "Oct"; 11 -> "Nov"; 12 -> "Dec"
+    else -> ""
 }
 
 // ── MyAnalyticsViewModel ──────────────────────────────────────────────────────
@@ -359,6 +727,22 @@ fun MyAnalyticsScreen(
 
 // ── FriendAnalyticsViewModel ──────────────────────────────────────────────────
 
+data class FriendMonthEntry(val label: String, val amount: Double)
+
+sealed class FriendChartState {
+    object Loading : FriendChartState()
+    data class Success(
+        val friendName   : String,
+        val categories   : List<PieEntry>,
+        val months       : List<FriendMonthEntry>,
+        val totalPaid    : Double,
+        val totalOwes    : Double,
+        val totalBalance : Double,
+        val currency     : String = "USD",
+    ) : FriendChartState()
+    data class Error(val message: String) : FriendChartState()
+}
+
 @HiltViewModel
 class FriendAnalyticsViewModel @Inject constructor(
     private val analyticsApiService: AnalyticsApiService,
@@ -367,18 +751,91 @@ class FriendAnalyticsViewModel @Inject constructor(
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
 
-    private val _trendsState = MutableStateFlow<AnalyticsListState>(AnalyticsListState.Loading)
-    val trendsState: StateFlow<AnalyticsListState> = _trendsState.asStateFlow()
+    private val _chartState = MutableStateFlow<FriendChartState>(FriendChartState.Loading)
+    val chartState: StateFlow<FriendChartState> = _chartState.asStateFlow()
+
+    private val _selectedMonth = MutableStateFlow(MonthChip(null, null, "All time"))
+    val selectedMonth: StateFlow<MonthChip> = _selectedMonth.asStateFlow()
+
+    private val _months = MutableStateFlow<List<MonthChip>>(buildMonthChips())
+    val months: StateFlow<List<MonthChip>> = _months.asStateFlow()
+
+    private var allTrends: List<FriendMonthEntry> = emptyList()
+    private var cachedBreakdown: JsonObject? = null
 
     init { load() }
 
+    fun selectMonth(month: MonthChip) {
+        _selectedMonth.value = month
+        applyFilter()
+    }
+
     fun load() {
         viewModelScope.launch {
-            _trendsState.value = when (val r = safeApiCall { analyticsApiService.getFriendTrends(friendId) }) {
-                is ApiResult.Success      -> AnalyticsListState.Success(r.data)
-                is ApiResult.NetworkError -> AnalyticsListState.Error("No internet connection.")
-                else                      -> AnalyticsListState.Error("Failed to load trends.")
+            _chartState.value = FriendChartState.Loading
+            val trendsDeferred    = async { safeApiCall { analyticsApiService.getFriendTrends(friendId) } }
+            val breakdownDeferred = async { safeApiCall { analyticsApiService.getFriendBreakdown(friendId) } }
+
+            val trendsResult    = trendsDeferred.await()
+            val breakdownResult = breakdownDeferred.await()
+
+            if (trendsResult is ApiResult.NetworkError) {
+                _chartState.value = FriendChartState.Error("No internet connection.")
+                return@launch
             }
+
+            // Parse trends
+            allTrends = ((trendsResult as? ApiResult.Success)?.data as? JsonArray)?.mapNotNull { item ->
+                val obj    = item as? JsonObject ?: return@mapNotNull null
+                val year   = obj["year"]?.toStr()?.toIntOrNull() ?: return@mapNotNull null
+                val month  = obj["month"]?.toStr()?.toIntOrNull() ?: return@mapNotNull null
+                val amount = obj["amount"]?.toStr()?.toDoubleOrNull() ?: 0.0
+                FriendMonthEntry("${monthName(month)} $year", amount)
+            } ?: emptyList()
+
+            // Cache breakdown
+            cachedBreakdown = (breakdownResult as? ApiResult.Success)?.data as? JsonObject
+
+            applyFilter()
+        }
+    }
+
+    private fun applyFilter() {
+        val month = _selectedMonth.value
+        val filtered = if (month.year == null) allTrends
+        else allTrends.filter { it.label == "${monthName(month.month!!)} ${month.year}" }
+
+        val breakdown = cachedBreakdown
+        val friendName = breakdown?.get("otherUserName")?.toStr() ?: "Friend"
+        val totalPaid  = breakdown?.get("totalPaid")?.toStr()?.toDoubleOrNull() ?: 0.0
+        val totalOwes  = breakdown?.get("totalOwes")?.toStr()?.toDoubleOrNull() ?: 0.0
+
+        val cats = (breakdown?.get("categories") as? JsonArray)?.mapNotNull { item ->
+            val co = item as? JsonObject ?: return@mapNotNull null
+            val label  = co["category"]?.toStr()?.categoryLabel() ?: return@mapNotNull null
+            val amount = co["userOwes"]?.toStr()?.toDoubleOrNull() ?: 0.0
+            val pct    = co["percentage"]?.toStr()?.toFloatOrNull() ?: 0f
+            if (amount < 0.01) null else PieEntry(label, amount, pct)
+        }?.sortedByDescending { it.amount } ?: emptyList()
+
+        val currency = breakdown?.get("currency")?.toStr()?.takeIf { it.isNotBlank() } ?: "USD"
+
+        _chartState.value = FriendChartState.Success(
+            friendName   = friendName,
+            categories   = cats,
+            months       = filtered,
+            totalPaid    = totalPaid,
+            totalOwes    = totalOwes,
+            totalBalance = totalPaid - totalOwes,
+            currency     = currency,
+        )
+    }
+
+    private fun buildMonthChips(): List<MonthChip> {
+        val now = LocalDate.now()
+        return listOf(MonthChip(null, null, "All time")) + (0..11).map { i ->
+            val d = now.minusMonths(i.toLong())
+            MonthChip(d.year, d.monthValue, "${monthName(d.monthValue)} ${d.year}")
         }
     }
 }
@@ -391,205 +848,216 @@ fun FriendAnalyticsScreen(
     onBack   : () -> Unit,
     viewModel: FriendAnalyticsViewModel = hiltViewModel(),
 ) {
-    val trendsState by viewModel.trendsState.collectAsState()
+    val chartState    by viewModel.chartState.collectAsState()
+    val selectedMonth by viewModel.selectedMonth.collectAsState()
+    val months        by viewModel.months.collectAsState()
 
     Scaffold(
         containerColor = Surface0,
         topBar         = { FsTopBar(title = "Spending trends", onBack = onBack) },
     ) { innerPadding ->
-        when (trendsState) {
-            is AnalyticsListState.Loading -> FsLoadingScreen()
-            is AnalyticsListState.Error   -> FsErrorScreen(
-                message = (trendsState as AnalyticsListState.Error).message,
-                onRetry = { viewModel.load() }
-            )
-            is AnalyticsListState.Success -> {
-                val trends = ((trendsState as AnalyticsListState.Success).data) as? JsonArray ?: JsonArray(emptyList())
-                if (trends.isEmpty()) {
-                    FsErrorScreen(message = "No shared spending found.", onRetry = {})
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                            .padding(horizontal = Spacing.lg)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
+        when (val state = chartState) {
+            is FriendChartState.Loading -> FsLoadingScreen()
+            is FriendChartState.Error   -> FsErrorScreen(message = state.message, onRetry = { viewModel.load() })
+            is FriendChartState.Success -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Spacer(Modifier.height(Spacing.md))
+
+                    // Month dropdown
+                    AnalyticsDropdown(
+                        label    = selectedMonth.label,
+                        options  = months.map { it.label },
+                        onSelect = { idx -> viewModel.selectMonth(months[idx]) },
+                        modifier = Modifier.padding(horizontal = Spacing.lg).fillMaxWidth(),
+                    )
+
+                    Spacer(Modifier.height(Spacing.lg))
+
+                    // Summary card
+                    if (state.totalPaid > 0 || state.totalOwes > 0) {
+                        Row(
+                            modifier = Modifier
+                                .padding(horizontal = Spacing.lg)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.xl))
+                                .background(Surface2)
+                                .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            SummaryCol("Paid", MoneyUtils.format(state.totalPaid, state.currency), TextPrimary)
+                            SummaryCol("Owes", MoneyUtils.format(state.totalOwes, state.currency), TextSecondary)
+                            val netColor = if (state.totalBalance >= 0) Green400 else Negative
+                            val netSign  = if (state.totalBalance >= 0) "+" else "-"
+                            val netText  = "$netSign${MoneyUtils.format(Math.abs(state.totalBalance), state.currency)}"
+                            SummaryCol("Net", netText, netColor)
+                        }
+                        Spacer(Modifier.height(Spacing.xl))
+                    }
+
+                    // Donut + legend (category breakdown)
+                    if (state.categories.isNotEmpty()) {
+                        Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+                            SectionLabel("SPENDING BY CATEGORY")
+                        }
                         Spacer(Modifier.height(Spacing.md))
-                        SectionLabel("MONTHLY TRENDS")
-                        Spacer(Modifier.height(Spacing.sm))
-                        AnalyticsCard {
-                            trends.forEachIndexed { i, item ->
-                                val obj    = item as? JsonObject ?: return@forEachIndexed
-                                val year   = obj["year"]?.toDisplayString() ?: ""
-                                val month  = obj["month"]?.toDisplayString()?.toIntOrNull()
-                                    ?.let { monthName(it) } ?: ""
-                                val amount = obj["amount"]?.toDisplayString() ?: "-"
-                                AnalyticsRow(label = "$month $year", value = "$$amount")
-                                if (i < trends.size - 1)
-                                    HorizontalDivider(color = Surface3, thickness = 0.5.dp,
-                                        modifier = Modifier.padding(start = Spacing.md))
+
+                        val catTotal = state.categories.sumOf { it.amount }
+                        var tappedIndex by remember { mutableStateOf<Int?>(null) }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 56.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            DonutChart(
+                                entries       = state.categories,
+                                selectedIndex = tappedIndex,
+                                onSliceTapped = { idx -> tappedIndex = if (tappedIndex == idx) null else idx },
+                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                val tapped = tappedIndex?.let { state.categories.getOrNull(it) }
+                                if (tapped != null) {
+                                    Text(tapped.label, fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                                    Text("${MoneyUtils.format(tapped.amount, state.currency)} · ${String.format("%.0f", tapped.percentage)}%",
+                                        fontSize = 12.sp, color = TextSecondary)
+                                } else {
+                                    Text(MoneyUtils.format(catTotal, state.currency), fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text("your share", fontSize = 11.sp, color = TextTertiary)
+                                }
                             }
                         }
-                        Spacer(Modifier.height(Spacing.xxxl))
+
+                        Spacer(Modifier.height(Spacing.lg))
+
+                        Column(
+                            modifier = Modifier
+                                .padding(horizontal = Spacing.lg)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.xl))
+                                .background(Surface2),
+                        ) {
+                            Row(modifier = Modifier.fillMaxWidth()
+                                .padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
+                                Spacer(Modifier.width(22.dp))
+                                Text("Category", fontSize = 12.sp, color = TextTertiary,
+                                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Text("Amount", fontSize = 12.sp, color = TextTertiary,
+                                    fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.width(Spacing.sm))
+                                Text("%", fontSize = 12.sp, color = TextTertiary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.width(34.dp), textAlign = TextAlign.End)
+                            }
+                            HorizontalDivider(color = Surface3, thickness = 0.5.dp)
+                            state.categories.forEachIndexed { i, entry ->
+                                Row(modifier = Modifier.fillMaxWidth()
+                                    .padding(horizontal = Spacing.md, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(14.dp).clip(RoundedCornerShape(3.dp))
+                                        .background(PIE_COLORS[i % PIE_COLORS.size]))
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Text(entry.label, fontSize = 13.sp, color = TextSecondary,
+                                        modifier = Modifier.weight(1f))
+                                    Text(MoneyUtils.format(entry.amount, state.currency), fontSize = 13.sp,
+                                        color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Text("${String.format("%.0f", entry.percentage)}%",
+                                        fontSize = 12.sp, color = TextTertiary,
+                                        modifier = Modifier.width(34.dp), textAlign = TextAlign.End)
+                                }
+                                if (i < state.categories.lastIndex)
+                                    HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                                        modifier = Modifier.padding(start = 38.dp))
+                            }
+                        }
+
+                        Spacer(Modifier.height(Spacing.xl))
                     }
+
+                    // Monthly bar chart
+                    if (state.months.isNotEmpty()) {
+                        Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
+                            SectionLabel("MONTHLY BREAKDOWN")
+                            Spacer(Modifier.height(Spacing.sm))
+                        }
+                        val maxAmt = state.months.maxOf { it.amount }.coerceAtLeast(0.001)
+                        Column(
+                            modifier = Modifier
+                                .padding(horizontal = Spacing.lg)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.xl))
+                                .background(Surface2)
+                                .padding(Spacing.md),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        ) {
+                            state.months.forEachIndexed { i, entry ->
+                                Row(verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()) {
+                                    Text(entry.label, fontSize = 12.sp, color = TextSecondary,
+                                        modifier = Modifier.width(72.dp))
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Box(modifier = Modifier.weight(1f).height(22.dp)
+                                        .clip(RoundedCornerShape(4.dp)).background(Surface3)) {
+                                        Box(modifier = Modifier.height(22.dp)
+                                            .fillMaxWidth((entry.amount / maxAmt).toFloat())
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(PIE_COLORS[i % PIE_COLORS.size]))
+                                    }
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Text(MoneyUtils.format(entry.amount, state.currency), fontSize = 12.sp,
+                                        color = TextPrimary, fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.width(72.dp), textAlign = TextAlign.End)
+                                }
+                            }
+                        }
+                    } else if (state.categories.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xxxl),
+                            contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("📊", fontSize = 32.sp)
+                                Spacer(Modifier.height(Spacing.md))
+                                Text("No shared spending found", fontSize = 14.sp, color = TextTertiary)
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(100.dp))
                 }
             }
         }
     }
 }
 
-// ── Pie chart composables ─────────────────────────────────────────────────────
+// ── Composables ───────────────────────────────────────────────────────────────
 
 @Composable
-private fun PieChart(
-    entries    : List<PieEntry>,
-    modifier   : Modifier = Modifier,
-    colorOffset: Int = 0,
+private fun AnalyticsChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    small: Boolean = false,
 ) {
-    val total = entries.sumOf { it.amount }.toFloat().coerceAtLeast(0.001f)
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.size(220.dp)) {
-            var startAngle = -90f
-            entries.forEachIndexed { i, entry ->
-                val sweep = (entry.amount.toFloat() / total) * 360f
-                drawArc(
-                    color      = PIE_COLORS[(i + colorOffset) % PIE_COLORS.size],
-                    startAngle = startAngle,
-                    sweepAngle = sweep,
-                    useCenter  = true,
-                )
-                // White separator
-                drawArc(
-                    color      = Color.Black.copy(alpha = 0.15f),
-                    startAngle = startAngle,
-                    sweepAngle = sweep,
-                    useCenter  = true,
-                    style      = Stroke(width = 2f),
-                )
-                startAngle += sweep
-            }
-        }
-    }
-}
-
-@Composable
-private fun PieLegend(
-    entries    : List<PieEntry>,
-    modifier   : Modifier = Modifier,
-    colorOffset: Int = 0,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(Surface2),
-    ) {
-        // Header
-        Row(
-            modifier          = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Spacer(Modifier.width(28.dp))
-            Text(text = "Category", fontSize = 12.sp, color = TextTertiary,
-                fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text(text = "Total", fontSize = 12.sp, color = TextTertiary,
-                fontWeight = FontWeight.SemiBold)
-        }
-        HorizontalDivider(color = Surface3, thickness = 0.5.dp)
-
-        entries.forEachIndexed { i, entry ->
-            Row(
-                modifier          = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Color swatch
-                Box(
-                    modifier = Modifier
-                        .size(16.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(PIE_COLORS[(i + colorOffset) % PIE_COLORS.size])
-                )
-                Spacer(Modifier.width(Spacing.sm))
-                Text(
-                    text     = entry.label,
-                    fontSize = 14.sp,
-                    color    = TextSecondary,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text       = "$${String.format("%.2f", entry.amount)}",
-                    fontSize   = 14.sp,
-                    color      = TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            if (i < entries.lastIndex)
-                HorizontalDivider(color = Surface3, thickness = 0.5.dp,
-                    modifier = Modifier.padding(start = Spacing.md))
-        }
-    }
-}
-
-// ── Shared UI components ──────────────────────────────────────────────────────
-
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text          = text,
-        fontSize      = 11.sp,
-        fontWeight    = FontWeight.SemiBold,
-        color         = TextTertiary,
-        letterSpacing = 0.8.sp,
-    )
-}
-
-@Composable
-private fun AnalyticsCard(content: @Composable () -> Unit) {
-    Column(
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(Surface2),
-    ) { content() }
-}
-
-@Composable
-private fun AnalyticsRow(label: String, value: String) {
-    Row(
-        modifier          = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = Spacing.md, vertical = Spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
+            .clip(RoundedCornerShape(Radius.full))
+            .background(if (isSelected) Green400 else Surface2)
+            .border(1.dp, if (isSelected) Green400 else Surface4, RoundedCornerShape(Radius.full))
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (small) Spacing.sm else Spacing.md, vertical = if (small) 5.dp else 7.dp),
     ) {
-        Text(text = label, fontSize = 14.sp, color = TextSecondary, modifier = Modifier.weight(1f))
-        Text(text = value, fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+        Text(
+            text       = label,
+            fontSize   = if (small) 11.sp else 13.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            color      = if (isSelected) Surface0 else TextSecondary,
+        )
     }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-private fun kotlinx.serialization.json.JsonElement.toDisplayString(): String = when (this) {
-    is JsonPrimitive -> contentOrNull ?: toString()
-    is JsonArray     -> joinToString(", ") { it.toDisplayString() }
-    is JsonNull      -> "-"
-    else             -> toString().trim('"')
-}
-
-private fun String.toReadable(): String =
-    replace('_', ' ')
-        .replace(Regex("([A-Z])")) { " ${it.value}" }
-        .trim()
-        .replaceFirstChar { it.uppercase() }
-
-private fun monthName(month: Int): String = when (month) {
-    1 -> "Jan"; 2 -> "Feb"; 3 -> "Mar"; 4 -> "Apr"
-    5 -> "May"; 6 -> "Jun"; 7 -> "Jul"; 8 -> "Aug"
-    9 -> "Sep"; 10 -> "Oct"; 11 -> "Nov"; 12 -> "Dec"
-    else -> ""
 }
