@@ -95,9 +95,10 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QrCodeScreen(
-    onBack        : () -> Unit,
-    onCodeScanned : (String) -> Unit,
-    viewModel     : QrCodeViewModel = hiltViewModel(),
+    onBack          : () -> Unit,
+    onCodeScanned   : (String) -> Unit,
+    onScanConsumed  : (() -> Unit) -> Unit = {},
+    viewModel       : QrCodeViewModel = hiltViewModel(),
 ) {
     val friendCode  by viewModel.friendCode.collectAsState()
     val isLoading   by viewModel.isLoading.collectAsState()
@@ -112,6 +113,10 @@ fun QrCodeScreen(
     // Reset when switching back to Scan tab
     LaunchedEffect(selectedTab) {
         if (selectedTab == 0) scanned.value = false
+    }
+    // Register reset callback so MainShell can reset after dialog confirm/cancel
+    LaunchedEffect(Unit) {
+        onScanConsumed { scanned.value = false }
     }
     val tabs = listOf("Scan", "My Code")
 

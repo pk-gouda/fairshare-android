@@ -14,6 +14,7 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
+import com.prathik.fairshare.data.model.response.GroupPreviewResponse
 import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.repository.GroupRepository
 import kotlinx.coroutines.CoroutineScope
@@ -43,7 +44,7 @@ class GroupRepositoryImpl @Inject constructor(
     private suspend fun refreshGroupsFromNetwork(): ApiResult<List<Group>> {
         val result = safeApiCall { groupService.getMyGroups() }
         if (result is ApiResult.Success) {
-            val entities = result.data.map { it.toEntity() }
+            val entities = result.data.map { it.toGroupEntity() }
             groupDao.deleteAll()
             groupDao.insertAll(entities)
         }
@@ -53,7 +54,7 @@ class GroupRepositoryImpl @Inject constructor(
     override suspend fun getGroup(groupId: String): ApiResult<Group> {
         // Always fetch from network to reflect latest group state.
         val result = safeApiCall { groupService.getGroup(groupId) }
-        if (result is ApiResult.Success) groupDao.insert(result.data.toEntity())
+        if (result is ApiResult.Success) groupDao.insert(result.data.toGroupEntity())
         // Fall back to cache if network fails
         if (result is ApiResult.NetworkError) {
             val cached = groupDao.getById(groupId)
@@ -95,7 +96,7 @@ class GroupRepositoryImpl @Inject constructor(
             groupService.updateGroup(groupId, UpdateGroupRequest(name, description, simplifyDebts, defaultCurrency))
         }
         if (raw is ApiResult.Success) {
-            groupDao.insert(raw.data.toEntity())
+            groupDao.insert(raw.data.toGroupEntity())
         }
         return raw.mapSuccess { it.toDomain() }
     }
@@ -159,7 +160,13 @@ class GroupRepositoryImpl @Inject constructor(
         safeApiCall { groupService.getGroupSettlements(groupId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
-    private fun com.prathik.fairshare.data.model.response.GroupResponse.toEntity() = GroupEntity(
+    override suspend fun previewGroup(inviteCode: String): ApiResult<GroupPreviewResponse> =
+        safeApiCall { groupService.previewGroup(inviteCode) }
+
+    override suspend fun regenerateInviteCode(groupId: String): ApiResult<String> =
+        safeApiCall { groupService.regenerateInviteCode(groupId) }
+
+    private fun com.prathik.fairshare.data.model.response.GroupResponse.toGroupEntity() = GroupEntity(
         id = id,
         name = name,
         type = type,

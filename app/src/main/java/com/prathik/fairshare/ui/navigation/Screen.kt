@@ -58,6 +58,9 @@ sealed class Screen(val route: String) {
         fun route(groupId: String) = "group/$groupId/totals"
     }
 
+    object GroupInvite : Screen("group/{groupId}/invite") {
+        fun route(groupId: String) = "group/$groupId/invite"
+    }
     object GroupAnalytics : Screen("group/{groupId}/analytics") {
         fun route(groupId: String) = "group/$groupId/analytics"
     }

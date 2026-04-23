@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExitToApp
@@ -98,6 +99,7 @@ fun GroupSettingsScreen(
     onNavigateToAnalytics: (String) -> Unit = {},
     onNavigateToRecurring: (String) -> Unit = {},
     onNavigateToReminders: (String) -> Unit = {},
+    onNavigateToInvite   : (groupId: String) -> Unit = {},
     defaultCurrency      : String = "USD",
     onNavigateToCurrency : (currentCurrency: String) -> Unit = {},
     viewModel            : GroupSettingsViewModel = hiltViewModel(),
@@ -854,6 +856,50 @@ fun GroupSettingsScreen(
                                 thickness = 0.5.dp,
                                 modifier  = Modifier.padding(start = 56.dp),
                             )
+                        }
+                    }
+                }
+            }
+
+            SectionDivider()
+
+            // ── Invite ────────────────────────────────────────────────────────
+            Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+                Text(
+                    text          = "Invite",
+                    fontSize      = 11.sp,
+                    fontWeight    = FontWeight.Medium,
+                    color         = TextSecondary,
+                    letterSpacing = 1.sp,
+                    modifier      = Modifier.padding(bottom = Spacing.sm),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.xl))
+                        .background(Surface2)
+                        .border(1.dp, Surface4, RoundedCornerShape(Radius.xl)),
+                ) {
+                    group?.id?.let { gId ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onNavigateToInvite(gId) }
+                                .padding(horizontal = Spacing.md, vertical = Spacing.md),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector        = Icons.Outlined.Link,
+                                contentDescription = null,
+                                tint               = Green400,
+                                modifier           = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(Spacing.md))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Invite via link", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                                Text("Share a QR code or link to invite members", fontSize = 12.sp, color = TextSecondary)
+                            }
+                            Text("›", fontSize = 18.sp, color = TextTertiary)
                         }
                     }
                 }

@@ -4,6 +4,7 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
+import com.prathik.fairshare.data.model.response.GroupPreviewResponse
 import com.prathik.fairshare.domain.model.Settlement
 
 /**
@@ -107,4 +108,6 @@ interface GroupRepository {
      * Fetches all settlements within a group, ordered by date descending.
      */
     suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>>
+    suspend fun previewGroup(inviteCode: String): ApiResult<GroupPreviewResponse>
+    suspend fun regenerateInviteCode(groupId: String): ApiResult<String>
 }

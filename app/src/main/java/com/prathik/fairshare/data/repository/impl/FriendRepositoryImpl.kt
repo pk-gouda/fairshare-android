@@ -91,6 +91,10 @@ class FriendRepositoryImpl @Inject constructor(
                 catch (e: IllegalArgumentException) { FriendStatus.PENDING }
             }
 
+    override suspend fun getBlocked(): ApiResult<List<Friend>> =
+        safeApiCall { friendService.getBlocked() }
+            .mapSuccess { list -> list.map { it.toDomain() } }
+
     override suspend fun lookupByFriendCode(code: String): ApiResult<Friend> =
         safeApiCall { friendService.lookupByFriendCode(code) }
             .mapSuccess { it.toDomain() }
@@ -98,10 +102,6 @@ class FriendRepositoryImpl @Inject constructor(
     override suspend fun addByFriendCode(code: String): ApiResult<Friendship> =
         safeApiCall { friendService.addByFriendCode(code) }
             .mapSuccess { it.toDomain() }
-
-    override suspend fun getBlocked(): ApiResult<List<Friend>> =
-        safeApiCall { friendService.getBlocked() }
-            .mapSuccess { list -> list.map { it.toDomain() } }
 }
 
 // ── Mappers ───────────────────────────────────────────────────────────────────

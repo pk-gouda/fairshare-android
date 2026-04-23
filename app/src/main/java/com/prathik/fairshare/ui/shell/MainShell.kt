@@ -35,8 +35,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -100,12 +98,14 @@ import com.prathik.fairshare.ui.expense.ExpenseDetailScreen
 import com.prathik.fairshare.ui.settlement.EditSettlementScreen
 import com.prathik.fairshare.ui.settlement.SettlementDetailScreen
 import com.prathik.fairshare.ui.settlement.SettleUpScreen
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
-import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.ui.groups.GroupInviteScreen
 import com.prathik.fairshare.domain.model.Friend
+import com.prathik.fairshare.domain.model.ApiResult
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 
 
 /**
@@ -166,12 +166,15 @@ fun MainShell(
     )
 
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
-    val coroutineScope = rememberCoroutineScope()
-    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
-    var pendingFriendCode by remember { mutableStateOf<String?>(null) }
-    var pendingFriend by remember { mutableStateOf<Friend?>(null) }
-    var resetScanCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
     val shellNavController = rememberNavController()
+    val coroutineScope     = rememberCoroutineScope()
+    val snackbarHostState  = remember { androidx.compose.material3.SnackbarHostState() }
+    // Pending friend add via QR
+    var pendingFriendCode by remember { mutableStateOf<String?>(null) }
+    var pendingFriend     by remember { mutableStateOf<Friend?>(null) }
+    // Pending group join via QR
+    var pendingGroupCode  by remember { mutableStateOf<String?>(null) }
+    var pendingGroupName  by remember { mutableStateOf<String?>(null) }
 
     // ── Handle email change deep link when app is already open ────────────────
     // When user taps "Confirm New Email" while app is running, onNewIntent fires
@@ -213,55 +216,100 @@ fun MainShell(
     }
 
 
+    // ── Add friend via QR dialog ──────────────────────────────────────────────
     val capturedFriend = pendingFriend
-    val capturedCode   = pendingFriendCode
-    if (capturedFriend != null && capturedCode != null) {
-        val friendName = capturedFriend.fullName
-        val codeToAdd  = capturedCode
+    val capturedFriendCode = pendingFriendCode
+    if (capturedFriend != null && capturedFriendCode != null) {
         AlertDialog(
-            onDismissRequest = { pendingFriendCode = null; pendingFriend = null },
-            containerColor = androidx.compose.ui.graphics.Color(0xFF1C1C1E),
+            onDismissRequest  = { pendingFriendCode = null; pendingFriend = null },
+            containerColor    = androidx.compose.ui.graphics.Color(0xFF1C1C1E),
             title = {
-                androidx.compose.material3.Text(
-                    "Add $friendName?",
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = androidx.compose.ui.graphics.Color.White,
-                )
+                Text("Add ${capturedFriend.fullName}?", fontWeight = FontWeight.SemiBold,
+                    color = androidx.compose.ui.graphics.Color.White)
             },
             text = {
-                androidx.compose.material3.Text(
-                    "Do you want to add $friendName as a friend on FairShare?",
-                    color = androidx.compose.ui.graphics.Color(0xFF8E8E93),
-                    fontSize = 14.sp,
-                )
+                Text("Do you want to add ${capturedFriend.fullName} as a friend on FairShare?",
+                    color = androidx.compose.ui.graphics.Color(0xFF8E8E93), fontSize = 14.sp)
             },
             confirmButton = {
                 androidx.compose.material3.Button(
                     onClick = {
-                        pendingFriendCode = null
-                        pendingFriend = null
+                        pendingFriendCode = null; pendingFriend = null
                         coroutineScope.launch {
-                            val result = viewModel.addByFriendCode(codeToAdd)
-                            resetScanCallback?.invoke()
+                            val result = viewModel.addByFriendCode(capturedFriendCode)
                             when (result) {
-                                is ApiResult.Success -> {
-                                    shellNavController.popBackStack(Screen.Friends.route, false)
+                                is ApiResult.Success  -> {
+                                    shellNavController.navigate(Screen.Friends.route) {
+                                        popUpTo(shellNavController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                     snackbarHostState.showSnackbar("1 friend added!")
                                 }
-                                is ApiResult.Conflict -> snackbarHostState.showSnackbar("You're already friends with $friendName")
+                                is ApiResult.Conflict -> snackbarHostState.showSnackbar("You're already friends with ${capturedFriend.fullName}")
                                 is ApiResult.NotFound -> snackbarHostState.showSnackbar("User not found")
                                 else                  -> snackbarHostState.showSnackbar("Something went wrong")
                             }
                         }
                     },
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = androidx.compose.ui.graphics.Color(0xFF34C759)
-                    ),
-                ) { androidx.compose.material3.Text("Add friend", color = androidx.compose.ui.graphics.Color.Black) }
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF34C759)),
+                ) { Text("Add friend", color = androidx.compose.ui.graphics.Color.Black) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingFriendCode = null; pendingFriend = null; resetScanCallback?.invoke() }) {
-                    androidx.compose.material3.Text("Cancel", color = androidx.compose.ui.graphics.Color(0xFF8E8E93))
+                TextButton(onClick = { pendingFriendCode = null; pendingFriend = null }) {
+                    Text("Cancel", color = androidx.compose.ui.graphics.Color(0xFF8E8E93))
+                }
+            },
+        )
+    }
+
+    // ── Join group via QR dialog ──────────────────────────────────────────────
+    val capturedGroupCode = pendingGroupCode
+    val capturedGroupName = pendingGroupName
+    if (capturedGroupCode != null && capturedGroupName != null) {
+        AlertDialog(
+            onDismissRequest  = { pendingGroupCode = null; pendingGroupName = null },
+            containerColor    = androidx.compose.ui.graphics.Color(0xFF1C1C1E),
+            title = {
+                Text("Join $capturedGroupName?", fontWeight = FontWeight.SemiBold,
+                    color = androidx.compose.ui.graphics.Color.White)
+            },
+            text = {
+                Text("Do you want to join $capturedGroupName on FairShare?",
+                    color = androidx.compose.ui.graphics.Color(0xFF8E8E93), fontSize = 14.sp)
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        pendingGroupCode = null; pendingGroupName = null
+                        coroutineScope.launch {
+                            when (viewModel.joinGroup(capturedGroupCode)) {
+                                is ApiResult.Success  -> {
+                                    shellNavController.navigate(Screen.Groups.route) {
+                                        popUpTo(shellNavController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                    snackbarHostState.showSnackbar("Joined $capturedGroupName!")
+                                }
+                                is ApiResult.Conflict -> snackbarHostState.showSnackbar("You're already in $capturedGroupName")
+                                is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid invite code")
+                                else                  -> snackbarHostState.showSnackbar("Something went wrong")
+                            }
+                        }
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF34C759)),
+                ) { Text("Join group", color = androidx.compose.ui.graphics.Color.Black) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingGroupCode = null; pendingGroupName = null }) {
+                    Text("Cancel", color = androidx.compose.ui.graphics.Color(0xFF8E8E93))
                 }
             },
         )
@@ -552,6 +600,9 @@ fun MainShell(
                     onNavigateToReminders = { gId ->
                         shellNavController.navigate(Screen.Reminders.route(gId))
                     },
+                    onNavigateToInvite = { gId ->
+                        shellNavController.navigate(Screen.GroupInvite.route(gId))
+                    },
                     onNavigateToCurrency = { _ ->
                         shellNavController.navigate(Screen.CurrencySelect.route)
                     },
@@ -590,6 +641,13 @@ fun MainShell(
                         shellNavController.navigate(Screen.SettleUp.route(otherUserId, groupId))
                     },
                 )
+            }
+
+            composable(
+                route     = Screen.GroupInvite.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType }),
+            ) {
+                GroupInviteScreen(onBack = { shellNavController.popBackStack() })
             }
 
             composable(
@@ -1124,9 +1182,8 @@ fun MainShell(
 
             composable(Screen.AddFriendByEmail.route) {
                 AddFriendScreen(
-                    onBack         = { shellNavController.popBackStack() },
-                    onDone         = { shellNavController.popBackStack(Screen.Friends.route, false) },
-                    onNavigateToQr = { shellNavController.navigate(Screen.QrCode.route) },
+                    onBack = { shellNavController.popBackStack() },
+                    onDone = { shellNavController.popBackStack(Screen.Friends.route, false) },
                 )
             }
 
@@ -1137,16 +1194,19 @@ fun MainShell(
                         if (code.startsWith("FAIR-", ignoreCase = true)) {
                             coroutineScope.launch {
                                 when (val result = viewModel.lookupByFriendCode(code)) {
-                                    is ApiResult.Success -> {
-                                        pendingFriendCode = code
-                                        pendingFriend = result.data
-                                    }
+                                    is ApiResult.Success  -> { pendingFriendCode = code; pendingFriend = result.data }
                                     is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
-                                    else -> snackbarHostState.showSnackbar("Could not look up this code")
+                                    else                  -> snackbarHostState.showSnackbar("Could not look up this code")
                                 }
                             }
                         } else {
-                            shellNavController.navigate(Screen.JoinGroup.route(inviteCode = code))
+                            coroutineScope.launch {
+                                when (val result = viewModel.previewGroup(code)) {
+                                    is ApiResult.Success  -> { pendingGroupCode = code; pendingGroupName = result.data.name }
+                                    is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid invite code")
+                                    else                  -> snackbarHostState.showSnackbar("Could not look up this group")
+                                }
+                            }
                         }
                     },
                 )
@@ -1156,19 +1216,25 @@ fun MainShell(
                 QrCodeScreen(
                     onBack = { shellNavController.popBackStack() },
                     onCodeScanned = { code ->
+                        shellNavController.popBackStack()
                         if (code.startsWith("FAIR-", ignoreCase = true)) {
+                            // Friend code — lookup name then show confirm dialog
                             coroutineScope.launch {
                                 when (val result = viewModel.lookupByFriendCode(code)) {
-                                    is ApiResult.Success -> {
-                                        pendingFriendCode = code
-                                        pendingFriend = result.data
-                                    }
+                                    is ApiResult.Success  -> { pendingFriendCode = code; pendingFriend = result.data }
                                     is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
-                                    else -> snackbarHostState.showSnackbar("Could not look up this code")
+                                    else                  -> snackbarHostState.showSnackbar("Could not look up this code")
                                 }
                             }
                         } else {
-                            shellNavController.navigate(Screen.JoinGroup.route(inviteCode = code))
+                            // Group invite code — preview group then show confirm dialog
+                            coroutineScope.launch {
+                                when (val result = viewModel.previewGroup(code)) {
+                                    is ApiResult.Success  -> { pendingGroupCode = code; pendingGroupName = result.data.name }
+                                    is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid invite code")
+                                    else                  -> snackbarHostState.showSnackbar("Could not look up this group")
+                                }
+                            }
                         }
                     },
                 )

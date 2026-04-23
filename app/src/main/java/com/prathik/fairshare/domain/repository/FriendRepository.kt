@@ -20,6 +20,6 @@ interface FriendRepository {
     suspend fun getSentRequests(): ApiResult<List<Friendship>>
     suspend fun getFriendStatus(otherUserId: String): ApiResult<FriendStatus>
     suspend fun getBlocked(): ApiResult<List<Friend>>
-    suspend fun addByFriendCode(code: String): ApiResult<Friendship>
     suspend fun lookupByFriendCode(code: String): ApiResult<Friend>
+    suspend fun addByFriendCode(code: String): ApiResult<Friendship>
 }

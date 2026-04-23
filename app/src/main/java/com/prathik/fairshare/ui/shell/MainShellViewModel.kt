@@ -3,9 +3,11 @@ package com.prathik.fairshare.ui.shell
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.data.model.response.GroupPreviewResponse
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.Friendship
 import com.prathik.fairshare.domain.repository.FriendRepository
+import com.prathik.fairshare.domain.repository.GroupRepository
 import com.prathik.fairshare.domain.usecase.notification.GetUnreadCountUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -27,7 +29,8 @@ import javax.inject.Inject
 @HiltViewModel
 class MainShellViewModel @Inject constructor(
     private val getUnreadCountUseCase: GetUnreadCountUseCase,
-    private val friendRepository: FriendRepository,
+    private val friendRepository     : FriendRepository,
+    private val groupRepository      : GroupRepository,
 ) : ViewModel() {
 
     private val _unreadCount = MutableStateFlow(0)
@@ -82,6 +85,12 @@ class MainShellViewModel @Inject constructor(
 
     suspend fun addByFriendCode(code: String): ApiResult<Friendship> =
         friendRepository.addByFriendCode(code)
+
+    suspend fun previewGroup(inviteCode: String): ApiResult<GroupPreviewResponse> =
+        groupRepository.previewGroup(inviteCode)
+
+    suspend fun joinGroup(inviteCode: String): ApiResult<com.prathik.fairshare.domain.model.GroupMember> =
+        groupRepository.joinGroup(inviteCode)
 
     private suspend fun fetchUnreadCount() {
         when (val result = getUnreadCountUseCase()) {

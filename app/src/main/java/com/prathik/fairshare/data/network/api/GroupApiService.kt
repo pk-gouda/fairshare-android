@@ -7,6 +7,7 @@ import com.prathik.fairshare.data.model.request.UpdateGroupRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.BalanceResponse
 import com.prathik.fairshare.data.model.response.GroupMemberResponse
+import com.prathik.fairshare.data.model.response.GroupPreviewResponse
 import com.prathik.fairshare.data.model.response.GroupResponse
 import com.prathik.fairshare.data.model.response.SettlementResponse
 import okhttp3.ResponseBody
@@ -81,4 +82,10 @@ interface GroupApiService {
 
     @GET("api/groups/{groupId}/settlements")
     suspend fun getGroupSettlements(@Path("groupId") groupId: String): ApiResponse<List<SettlementResponse>>
+
+    @GET("api/groups/preview/{inviteCode}")
+    suspend fun previewGroup(@Path("inviteCode") inviteCode: String): ApiResponse<GroupPreviewResponse>
+
+    @POST("api/groups/{groupId}/regenerate-invite")
+    suspend fun regenerateInviteCode(@Path("groupId") groupId: String): ApiResponse<String>
 }
