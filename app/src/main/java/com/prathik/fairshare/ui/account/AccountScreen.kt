@@ -90,7 +90,6 @@ fun AccountScreen(
 ) {
     val isLoading      by viewModel.isLoading.collectAsState()
     val profile        by viewModel.profile.collectAsState()
-    val balanceSummary by viewModel.balanceSummary.collectAsState()
     val actionState    by viewModel.actionState.collectAsState()
     val snackbarHost   = remember { SnackbarHostState() }
     val context        = LocalContext.current
@@ -188,65 +187,6 @@ fun AccountScreen(
                             )
                         }
                         Text(text = "›", fontSize = 20.sp, color = TextTertiary)
-                    }
-                }
-
-                // ── Overview ──────────────────────────────────────────────────
-                item {
-                    SectionLabel("OVERVIEW")
-                    Row(
-                        modifier              = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Spacing.lg)
-                            .padding(bottom = Spacing.md),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                    ) {
-                        // Total paid
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(Radius.xl))
-                                .background(Surface2)
-                                .padding(Spacing.md),
-                        ) {
-                            Text(text = "Total paid", fontSize = 11.sp, color = TextTertiary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text       = MoneyUtils.format(balanceSummary?.owedToMe ?: 0.0, balanceSummary?.entries?.maxByOrNull { it.owedToMe }?.currency ?: "USD"),
-                                fontSize   = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color      = Green400,
-                            )
-                            Text(
-                                text     = "${(balanceSummary?.owedToMe?.let { (it / 50).toInt() } ?: 0)} expenses",
-                                fontSize = 11.sp,
-                                color    = TextTertiary,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
-                        // Total owed
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(Radius.xl))
-                                .background(Surface2)
-                                .padding(Spacing.md),
-                        ) {
-                            Text(text = "Total owed", fontSize = 11.sp, color = TextTertiary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text       = MoneyUtils.format(balanceSummary?.youOwe ?: 0.0, balanceSummary?.entries?.maxByOrNull { it.youOwe }?.currency ?: "USD"),
-                                fontSize   = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color      = Negative,
-                            )
-                            Text(
-                                text     = "across all groups",
-                                fontSize = 11.sp,
-                                color    = TextTertiary,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
                     }
                 }
 

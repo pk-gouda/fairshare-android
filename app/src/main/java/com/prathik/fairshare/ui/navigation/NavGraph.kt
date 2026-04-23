@@ -20,12 +20,11 @@ import com.prathik.fairshare.ui.auth.VerifyEmailScreen
 import com.prathik.fairshare.ui.shell.MainShell
 
 /**
- * Wires all screens into the navigation graph.
+ * Top-level navigation graph.
  *
- * [verifyDeepLink] — non-null when the app was cold-started or resumed via a
- * fairshare://verify-email deep link. Passed down to VerifyEmailScreen so it
- * can immediately fire the verification API call instead of showing the
- * "waiting" UI.
+ * Only auth screens, the main shell, and routes with deep links live here.
+ * All in-app navigation (groups, expenses, friends, settings, etc.) is
+ * handled by MainShell's own nested NavHost.
  */
 @Composable
 fun NavGraph(
@@ -69,6 +68,7 @@ fun NavGraph(
                 emailChangeToken = emailChangeToken,
             )
         }
+
         composable(Screen.Login.route) {
             LoginScreen(
                 onNavigateToRegister       = { navController.navigate(Screen.Register.route) },
@@ -80,6 +80,7 @@ fun NavGraph(
                 },
             )
         }
+
         composable(Screen.Register.route) {
             RegisterScreen(
                 onNavigateToLogin       = { navController.popBackStack() },
@@ -90,6 +91,7 @@ fun NavGraph(
                 },
             )
         }
+
         composable(
             route     = Screen.VerifyEmail.route,
             arguments = listOf(
@@ -99,11 +101,6 @@ fun NavGraph(
                     defaultValue = null
                 }
             ),
-            // ✅ Deep link: fairshare://verify-email?userId=xxx&token=yyy
-            // Android routes here automatically when the intent filter fires.
-            // userId + token are read from the intent by MainActivity and passed
-            // as verifyDeepLink rather than as nav arguments (since they're query
-            // params on the deep link URI, not path segments).
             deepLinks = listOf(
                 navDeepLink { uriPattern = "fairshare://verify-email" }
             ),
@@ -119,183 +116,12 @@ fun NavGraph(
                 },
             )
         }
+
         composable(Screen.ForgotPassword.route) {
-            ForgotPasswordScreen(
-                onBack = { navController.popBackStack() },
-            )
+            ForgotPasswordScreen(onBack = { navController.popBackStack() })
         }
 
-        // ── Main tabs ─────────────────────────────────────────────────────────
-        composable(Screen.Groups.route) {
-            MainShell(rootNavController = navController, emailChangeToken = emailChangeToken)
-        }
-
-        // ── Group ─────────────────────────────────────────────────────────────
-        composable(
-            route     = Screen.GroupDetail.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Group Detail")
-        }
-        composable(
-            route     = Screen.GroupSettings.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Group Settings")
-        }
-        composable(
-            route     = Screen.GroupMembers.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Group Members")
-        }
-        composable(
-            route     = Screen.AddMember.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Add Member")
-        }
-        composable(
-            route     = Screen.WhoOwesWho.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Who Owes Who")
-        }
-        composable(
-            route     = Screen.TotalsSheet.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Totals Sheet")
-        }
-        composable(
-            route     = Screen.GroupAnalytics.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Group Analytics")
-        }
-        composable(Screen.CreateGroup.route) {
-            PlaceholderScreen("Create Group")
-        }
-        composable(
-            route     = Screen.JoinGroup.route,
-            arguments = listOf(
-                navArgument("inviteCode") {
-                    type         = NavType.StringType
-                    nullable     = true
-                    defaultValue = null
-                }
-            ),
-            deepLinks = listOf(
-                navDeepLink { uriPattern = "fairshare://join/{inviteCode}" },
-                navDeepLink { uriPattern = "https://fairshare.app/join/{inviteCode}" },
-            )
-        ) { backStackEntry ->
-            PlaceholderScreen("Join Group — ${backStackEntry.arguments?.getString("inviteCode")}")
-        }
-
-        // ── Expense ───────────────────────────────────────────────────────────
-        composable(
-            route     = Screen.AddExpense.route,
-            arguments = listOf(
-                navArgument("groupId") {
-                    type         = NavType.StringType
-                    nullable     = true
-                    defaultValue = null
-                }
-            )
-        ) {
-            PlaceholderScreen("Add Expense")
-        }
-        composable(
-            route     = Screen.EditExpense.route,
-            arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Edit Expense")
-        }
-        composable(
-            route     = Screen.ExpenseDetail.route,
-            arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Expense Detail")
-        }
-        composable(
-            route     = Screen.ReceiptScan.route,
-            arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Receipt Scan")
-        }
-        composable(
-            route     = Screen.ItemAssignment.route,
-            arguments = listOf(navArgument("receiptId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Item Assignment")
-        }
-
-        composable(route = Screen.ReviewSubmit.route) { PlaceholderScreen("Review & Submit") }
-
-        composable(
-            route     = Screen.EditItemAssignment.route,
-            arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
-        ) { PlaceholderScreen("Edit Item Assignment") }
-
-        // ── Settlement ────────────────────────────────────────────────────────
-        composable(
-            route     = Screen.SettleUp.route,
-            arguments = listOf(
-                navArgument("otherUserId") { type = NavType.StringType },
-                navArgument("groupId") {
-                    type         = NavType.StringType
-                    nullable     = true
-                    defaultValue = null
-                }
-            )
-        ) {
-            PlaceholderScreen("Settle Up")
-        }
-        composable(
-            route     = Screen.PartialSettle.route,
-            arguments = listOf(
-                navArgument("otherUserId") { type = NavType.StringType },
-                navArgument("groupId") {
-                    type         = NavType.StringType
-                    nullable     = true
-                    defaultValue = null
-                }
-            )
-        ) {
-            PlaceholderScreen("Partial Settle")
-        }
-        composable(
-            route     = Screen.SettlementHistory.route,
-            arguments = listOf(navArgument("otherUserId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Settlement History")
-        }
-
-        // ── Friend ────────────────────────────────────────────────────────────
-        composable(
-            route     = Screen.FriendDetail.route,
-            arguments = listOf(navArgument("friendId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Friend Detail")
-        }
-        composable(
-            route     = Screen.FriendSettings.route,
-            arguments = listOf(navArgument("friendId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Friend Settings")
-        }
-        composable(
-            route     = Screen.FriendAnalytics.route,
-            arguments = listOf(navArgument("friendId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Friend Analytics")
-        }
-        composable(Screen.AddFriend.route) {
-            PlaceholderScreen("Add Friend")
-        }
-
-        // ── Account ───────────────────────────────────────────────────────────
+        // ── Email change deep link ────────────────────────────────────────────
         composable(
             route     = Screen.ConfirmEmailChange.route,
             arguments = listOf(
@@ -309,11 +135,10 @@ fun NavGraph(
                 navDeepLink { uriPattern = "fairshare://confirm-email-change?token={token}" }
             ),
         ) { backStackEntry ->
-            val tokenFromNav  = backStackEntry.arguments?.getString("token")
-            val token = emailChangeToken ?: tokenFromNav
+            val token = emailChangeToken ?: backStackEntry.arguments?.getString("token")
             ConfirmEmailChangeScreen(
-                token         = token,
-                onDone        = {
+                token  = token,
+                onDone = {
                     navController.navigate(Screen.Groups.route) {
                         popUpTo(0) { inclusive = true }
                     }
@@ -321,51 +146,9 @@ fun NavGraph(
             )
         }
 
-        composable(Screen.EditProfile.route) {
-            PlaceholderScreen("Edit Profile")
-        }
-        composable(Screen.ChangePassword.route) {
-            PlaceholderScreen("Change Password")
-        }
-        composable(Screen.MyAnalytics.route) {
-            PlaceholderScreen("My Analytics")
-        }
-        composable(Screen.ImportSplitwise.route) {
-            PlaceholderScreen("Import from Splitwise")
-        }
-
-        // ── Search ────────────────────────────────────────────────────────────
-        composable(
-            route     = Screen.Search.route,
-            arguments = listOf(
-                navArgument("groupId") {
-                    type         = NavType.StringType
-                    nullable     = true
-                    defaultValue = null
-                }
-            )
-        ) {
-            PlaceholderScreen("Search")
-        }
-
-        // ── Recurring + Reminders ─────────────────────────────────────────────
-        composable(
-            route     = Screen.RecurringExpenses.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Recurring Expenses")
-        }
-        composable(
-            route     = Screen.Reminders.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Reminders")
-        }
-        composable(
-            route     = Screen.CreateReminder.route,
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) {
-            PlaceholderScreen("Create Reminder")
+        // ── Main shell (handles all in-app navigation internally) ─────────────
+        composable(Screen.Groups.route) {
+            MainShell(rootNavController = navController, emailChangeToken = emailChangeToken)
         }
     }
 }

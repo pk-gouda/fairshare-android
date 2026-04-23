@@ -519,6 +519,11 @@ fun MainShell(
                     onNavigateToSettlement = { settlementId ->
                         shellNavController.navigate(Screen.SettlementDetail.route(settlementId))
                     },
+                    onNotMember = { groupName ->
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("You're no longer a member of $groupName")
+                        }
+                    },
                 )
             }
             composable(Screen.Account.route) {

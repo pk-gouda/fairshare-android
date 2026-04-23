@@ -71,6 +71,7 @@ fun ActivityScreen(
     onNavigateToFriend: () -> Unit,
     onNavigateToGroup: (String) -> Unit,
     onNavigateToSettlement: (String) -> Unit,
+    onNotMember: (groupName: String) -> Unit = {},
     viewModel: ActivityViewModel = hiltViewModel(),
 ) {
     val isLoading by viewModel.isLoading.collectAsState()
@@ -249,6 +250,7 @@ fun ActivityScreen(
                                     pendingRestoreGroupName = groupName
                                     showRestoreDialog = true
                                 },
+                                onNotMember = onNotMember,
                             )
                             HorizontalDivider(
                                 color = Surface3, thickness = 0.5.dp,
@@ -271,6 +273,7 @@ private fun NotificationRow(
     onNavigateToGroup: (String) -> Unit,
     onNavigateToSettlement: (String) -> Unit,
     onGroupDeleted: (groupId: String, groupName: String) -> Unit,
+    onNotMember: (groupName: String) -> Unit,
 ) {
     val isUnread = !notification.isRead
     val isTappable = when (notification.type) {
@@ -332,6 +335,8 @@ private fun NotificationRow(
                         NotificationType.PLACEHOLDER_ASSIGNED -> {
                             if (notification.isGroupDeleted) {
                                 handleGroupDeleted()
+                            } else if (!notification.isUserMember) {
+                                onNotMember(notification.groupName ?: "this group")
                             } else {
                                 notification.referenceId?.let { onNavigateToGroup(it) }
                             }

@@ -23,6 +23,7 @@ fun NotificationResponse.toDomain(): Notification = Notification(
     groupId        = groupId,
     groupName      = groupName,
     isGroupDeleted = isGroupDeleted,
+    isUserMember   = isUserMember,
 )
 
 private fun String.toNotificationTypeSafe(): NotificationType =

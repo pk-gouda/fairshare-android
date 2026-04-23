@@ -16,4 +16,5 @@ data class NotificationResponse(
     @SerialName("groupId")        val groupId: String? = null,
     @SerialName("groupName")      val groupName: String? = null,
     @SerialName("isGroupDeleted") val isGroupDeleted: Boolean = false,
+    @SerialName("isUserMember")   val isUserMember: Boolean = true,
 )
