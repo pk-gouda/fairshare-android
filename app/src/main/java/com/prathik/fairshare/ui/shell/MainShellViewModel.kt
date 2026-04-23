@@ -3,6 +3,9 @@ package com.prathik.fairshare.ui.shell
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.Friend
+import com.prathik.fairshare.domain.model.Friendship
+import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.usecase.notification.GetUnreadCountUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -24,6 +27,7 @@ import javax.inject.Inject
 @HiltViewModel
 class MainShellViewModel @Inject constructor(
     private val getUnreadCountUseCase: GetUnreadCountUseCase,
+    private val friendRepository: FriendRepository,
 ) : ViewModel() {
 
     private val _unreadCount = MutableStateFlow(0)
@@ -72,6 +76,12 @@ class MainShellViewModel @Inject constructor(
     fun clearUnreadCount() {
         _unreadCount.value = 0
     }
+
+    suspend fun lookupByFriendCode(code: String): ApiResult<Friend> =
+        friendRepository.lookupByFriendCode(code)
+
+    suspend fun addByFriendCode(code: String): ApiResult<Friendship> =
+        friendRepository.addByFriendCode(code)
 
     private suspend fun fetchUnreadCount() {
         when (val result = getUnreadCountUseCase()) {

@@ -55,4 +55,7 @@ interface FriendApiService {
 
     @GET("api/friends/blocked")
     suspend fun getBlocked(): ApiResponse<List<FriendResponse>>
+
+    @GET("api/users/friend-code/{code}")
+    suspend fun lookupByFriendCode(@Path("code") code: String): ApiResponse<FriendResponse>
 }

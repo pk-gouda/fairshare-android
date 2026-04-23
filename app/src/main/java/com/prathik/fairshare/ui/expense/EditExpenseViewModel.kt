@@ -168,8 +168,21 @@ class EditExpenseViewModel @Inject constructor(
         // Template flag — drives date field visibility in EditExpenseScreen
         _isTemplate.value = expense.isTemplate
 
-        // Payer data — from expense.payers
-        _payerData.value = expense.payers.associate { it.userId to it.amountPaid }
+        // Payer data — from expense.payers.
+        // If single payer and their stored amount doesn't match totalAmount
+        // (can happen with Splitwise imports), sync to total to avoid save errors.
+        val rawPayerData = expense.payers.associate { it.userId to it.amountPaid }
+        _payerData.value = if (rawPayerData.size == 1) {
+            val payerAmount = rawPayerData.values.first()
+            val total = expense.totalAmount
+            if (Math.abs(payerAmount - total) > 0.001) {
+                mapOf(rawPayerData.keys.first() to total)
+            } else {
+                rawPayerData
+            }
+        } else {
+            rawPayerData
+        }
 
         // Split data — use the right field per split type:
         //   SHARES     -> shares (integer count, stored as Double)
@@ -197,14 +210,15 @@ class EditExpenseViewModel @Inject constructor(
                 when (val result = getGroupMembersUseCase(gid)) {
                     is ApiResult.Success -> {
                         _members.value = result.data
-                        // Members not in the expense splits were excluded when created
-                        if (expense.splitType == SplitType.EQUAL) {
-                            val splitUserIds = expense.splits.map { it.userId }.toSet()
-                            _equalExcluded.value = result.data
-                                .map { it.userId }
-                                .filter { it !in splitUserIds }
-                                .toSet()
-                        }
+                        // Always compute excluded members from actual splits.
+                        // This handles UNEQUAL expenses (e.g. Splitwise imports) correctly:
+                        // when user switches to EQUAL tab, only members in the original
+                        // splits are pre-selected, not the entire group.
+                        val splitUserIds = expense.splits.map { it.userId }.toSet()
+                        _equalExcluded.value = result.data
+                            .map { it.userId }
+                            .filter { it !in splitUserIds }
+                            .toSet()
                     }
                     else -> {
                         // Fallback: synthesize from expense participants
@@ -350,10 +364,10 @@ class EditExpenseViewModel @Inject constructor(
         val members = _members.value
         if (members.isEmpty()) return
 
-        // Update payer amount if only current user is payer
-        val uid = currentUserId ?: return
-        if (_payerData.value.size == 1 && _payerData.value.containsKey(uid)) {
-            _payerData.value = mapOf(uid to total)
+        // If there's exactly one payer, always keep their amount in sync with the total
+        if (_payerData.value.size == 1) {
+            val singlePayerId = _payerData.value.keys.first()
+            _payerData.value = mapOf(singlePayerId to total)
         }
 
         when (_splitType.value) {

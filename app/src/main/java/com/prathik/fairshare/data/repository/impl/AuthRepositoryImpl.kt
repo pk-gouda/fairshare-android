@@ -153,6 +153,8 @@ class AuthRepositoryImpl @Inject constructor(
                 language            = user.language,
                 notificationEnabled = user.notificationEnabled,
                 isActive            = user.isActive,
+                friendCode          = user.friendCode,
+                timezone            = user.timezone,
             )
         )
     }

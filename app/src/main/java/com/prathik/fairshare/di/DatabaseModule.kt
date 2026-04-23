@@ -45,6 +45,7 @@ object DatabaseModule {
                 FairShareDatabase.MIGRATION_4_5,
                 FairShareDatabase.MIGRATION_5_6,
                 FairShareDatabase.MIGRATION_6_7,
+                FairShareDatabase.MIGRATION_7_8,
             )
             .build()
 

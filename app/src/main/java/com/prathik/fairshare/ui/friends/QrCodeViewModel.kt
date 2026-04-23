@@ -29,7 +29,7 @@ class QrCodeViewModel @Inject constructor(
 
     init { loadFriendCode() }
 
-    private fun loadFriendCode() {
+    fun loadFriendCode() {
         viewModelScope.launch {
             _isLoading.value = true
             when (val result = getMyProfileUseCase()) {
@@ -54,6 +54,7 @@ class QrCodeViewModel @Inject constructor(
         }
     }
 
+    fun retryLoad() { loadFriendCode() }
     fun resetActionState() { _actionState.value = QrCodeActionState.Idle }
 }
 

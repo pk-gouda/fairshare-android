@@ -130,6 +130,8 @@ class UserRepositoryImpl @Inject constructor(
         language = language,
         notificationEnabled = notificationEnabled,
         isActive = isActive,
+        friendCode = friendCode,
+        timezone = timezone,
     )
 
     private fun UserEntity.toDomain() = User(
@@ -142,6 +144,6 @@ class UserRepositoryImpl @Inject constructor(
         language = language,
         notificationEnabled = notificationEnabled,
         isActive = isActive,
-        friendCode = null, // not stored in Room — fetched from network
+        friendCode = friendCode,
     )
 }

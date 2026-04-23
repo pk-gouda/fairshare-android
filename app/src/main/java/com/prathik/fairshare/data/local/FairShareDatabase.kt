@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         InvitedFriendEntity::class,
         FriendEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -118,6 +118,14 @@ abstract class FairShareDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE groups ADD COLUMN isDeleted INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE groups ADD COLUMN deletedAt TEXT")
+            }
+        }
+
+        /** 7 → 8: Add friendCode and timezone to users cache. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE users ADD COLUMN friendCode TEXT")
+                db.execSQL("ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'")
             }
         }
     }

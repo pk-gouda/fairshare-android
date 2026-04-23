@@ -18,5 +18,7 @@ data class UserEntity(
     val language: String,
     val notificationEnabled: Boolean,
     val isActive: Boolean,
+    val friendCode: String? = null,
+    val timezone: String = "UTC",
     val cachedAt: Long = System.currentTimeMillis(),
 )

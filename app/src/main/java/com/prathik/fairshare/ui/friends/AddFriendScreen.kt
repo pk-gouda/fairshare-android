@@ -80,9 +80,10 @@ import com.prathik.fairshare.ui.theme.TextTertiary
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddFriendScreen(
-    onBack: () -> Unit,
-    onDone: () -> Unit,
-    viewModel: AddFriendViewModel = hiltViewModel(),
+    onBack         : () -> Unit,
+    onDone         : () -> Unit,
+    onNavigateToQr : () -> Unit = {},
+    viewModel      : AddFriendViewModel = hiltViewModel(),
 ) {
     val screen by viewModel.screen.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -152,6 +153,17 @@ fun AddFriendScreen(
                     onClick = {
                         showAddNewSheet = false
                         viewModel.showInviteForm(mode = InviteMode.Placeholder)
+                    },
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                // Option 3 — Scan QR code
+                SheetOption(
+                    emoji = "📷",
+                    title = "Scan QR code",
+                    subtitle = "Scan or share your code",
+                    onClick = {
+                        showAddNewSheet = false
+                        onNavigateToQr()
                     },
                 )
             }

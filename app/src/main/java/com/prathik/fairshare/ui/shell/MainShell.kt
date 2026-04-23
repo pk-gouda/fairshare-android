@@ -35,6 +35,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -65,7 +67,6 @@ import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.friends.FriendsScreen
 import com.prathik.fairshare.ui.friends.AddFriendScreen
 import com.prathik.fairshare.ui.friends.QrCodeScreen
-import com.prathik.fairshare.ui.friends.ScanQrCodeScreen
 import com.prathik.fairshare.ui.friends.FriendDetailScreen
 import com.prathik.fairshare.ui.friends.FriendSettingsScreen
 import com.prathik.fairshare.ui.activity.ActivityScreen
@@ -99,6 +100,12 @@ import com.prathik.fairshare.ui.expense.ExpenseDetailScreen
 import com.prathik.fairshare.ui.settlement.EditSettlementScreen
 import com.prathik.fairshare.ui.settlement.SettlementDetailScreen
 import com.prathik.fairshare.ui.settlement.SettleUpScreen
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.Friend
 
 
 /**
@@ -159,6 +166,11 @@ fun MainShell(
     )
 
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    var pendingFriendCode by remember { mutableStateOf<String?>(null) }
+    var pendingFriend by remember { mutableStateOf<Friend?>(null) }
+    var resetScanCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
     val shellNavController = rememberNavController()
 
     // ── Handle email change deep link when app is already open ────────────────
@@ -200,8 +212,64 @@ fun MainShell(
         else -> true
     }
 
+
+    val capturedFriend = pendingFriend
+    val capturedCode   = pendingFriendCode
+    if (capturedFriend != null && capturedCode != null) {
+        val friendName = capturedFriend.fullName
+        val codeToAdd  = capturedCode
+        AlertDialog(
+            onDismissRequest = { pendingFriendCode = null; pendingFriend = null },
+            containerColor = androidx.compose.ui.graphics.Color(0xFF1C1C1E),
+            title = {
+                androidx.compose.material3.Text(
+                    "Add $friendName?",
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color = androidx.compose.ui.graphics.Color.White,
+                )
+            },
+            text = {
+                androidx.compose.material3.Text(
+                    "Do you want to add $friendName as a friend on FairShare?",
+                    color = androidx.compose.ui.graphics.Color(0xFF8E8E93),
+                    fontSize = 14.sp,
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        pendingFriendCode = null
+                        pendingFriend = null
+                        coroutineScope.launch {
+                            val result = viewModel.addByFriendCode(codeToAdd)
+                            resetScanCallback?.invoke()
+                            when (result) {
+                                is ApiResult.Success -> {
+                                    shellNavController.popBackStack(Screen.Friends.route, false)
+                                    snackbarHostState.showSnackbar("1 friend added!")
+                                }
+                                is ApiResult.Conflict -> snackbarHostState.showSnackbar("You're already friends with $friendName")
+                                is ApiResult.NotFound -> snackbarHostState.showSnackbar("User not found")
+                                else                  -> snackbarHostState.showSnackbar("Something went wrong")
+                            }
+                        }
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF34C759)
+                    ),
+                ) { androidx.compose.material3.Text("Add friend", color = androidx.compose.ui.graphics.Color.Black) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingFriendCode = null; pendingFriend = null; resetScanCallback?.invoke() }) {
+                    androidx.compose.material3.Text("Cancel", color = androidx.compose.ui.graphics.Color(0xFF8E8E93))
+                }
+            },
+        )
+    }
+
     Scaffold(
         containerColor = Surface0,
+        snackbarHost   = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (showBottomBar) Box {
                 NavigationBar(
@@ -1056,23 +1124,52 @@ fun MainShell(
 
             composable(Screen.AddFriendByEmail.route) {
                 AddFriendScreen(
-                    onBack = { shellNavController.popBackStack() },
-                    onDone = { shellNavController.popBackStack(Screen.Friends.route, false) },
+                    onBack         = { shellNavController.popBackStack() },
+                    onDone         = { shellNavController.popBackStack(Screen.Friends.route, false) },
+                    onNavigateToQr = { shellNavController.navigate(Screen.QrCode.route) },
                 )
             }
 
             composable(Screen.QrCode.route) {
                 QrCodeScreen(
                     onBack = { shellNavController.popBackStack() },
+                    onCodeScanned = { code ->
+                        if (code.startsWith("FAIR-", ignoreCase = true)) {
+                            coroutineScope.launch {
+                                when (val result = viewModel.lookupByFriendCode(code)) {
+                                    is ApiResult.Success -> {
+                                        pendingFriendCode = code
+                                        pendingFriend = result.data
+                                    }
+                                    is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
+                                    else -> snackbarHostState.showSnackbar("Could not look up this code")
+                                }
+                            }
+                        } else {
+                            shellNavController.navigate(Screen.JoinGroup.route(inviteCode = code))
+                        }
+                    },
                 )
             }
 
             composable(Screen.ScanQrCode.route) {
-                ScanQrCodeScreen(
+                QrCodeScreen(
                     onBack = { shellNavController.popBackStack() },
                     onCodeScanned = { code ->
-                        shellNavController.popBackStack()
-                        shellNavController.navigate(Screen.AddFriendByEmail.route + "?code=$code")
+                        if (code.startsWith("FAIR-", ignoreCase = true)) {
+                            coroutineScope.launch {
+                                when (val result = viewModel.lookupByFriendCode(code)) {
+                                    is ApiResult.Success -> {
+                                        pendingFriendCode = code
+                                        pendingFriend = result.data
+                                    }
+                                    is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
+                                    else -> snackbarHostState.showSnackbar("Could not look up this code")
+                                }
+                            }
+                        } else {
+                            shellNavController.navigate(Screen.JoinGroup.route(inviteCode = code))
+                        }
                     },
                 )
             }

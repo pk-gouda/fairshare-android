@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
         android:name=".FairShareApplication"
@@ -32,13 +34,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Join group deep link — existing -->
+            <!-- Join group deep link -->
             <intent-filter android:autoVerify="true"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="fairshare" android:host="join" />
+            </intent-filter>
+
+            <!-- Add friend deep link: fairshare://friend/{friendCode} -->
+            <intent-filter android:autoVerify="true"
+                tools:ignore="AppLinkUrlError">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fairshare" android:host="friend" />
             </intent-filter>
 
             <intent-filter android:autoVerify="true"
@@ -56,7 +67,7 @@
                 <data android:scheme="fairshare" android:host="confirm-email-change" />
             </intent-filter>
 
-
+            <!-- https://fairshare.app/join/... -->
             <intent-filter android:autoVerify="true"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
@@ -65,9 +76,16 @@
                 <data android:scheme="https" android:host="fairshare.app" android:pathPrefix="/join" />
             </intent-filter>
 
-            <!-- ✅ Email verification deep link -->
-            <!-- Triggered by verify.html on the server after user taps the email link -->
-            <!-- URL format: fairshare://verify-email?userId=xxx&token=yyy -->
+            <!-- https://fairshare.app/friend/... -->
+            <intent-filter android:autoVerify="true"
+                tools:ignore="AppLinkUrlError">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="fairshare.app" android:pathPrefix="/friend" />
+            </intent-filter>
+
+            <!-- Email verification deep link -->
             <intent-filter android:autoVerify="true"
                 tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />

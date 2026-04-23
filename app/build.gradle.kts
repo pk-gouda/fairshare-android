@@ -98,8 +98,15 @@ dependencies {
     implementation(libs.retrofit.kotlinx.serialization)
     implementation(libs.kotlinx.serialization.json)
 
-
+    // QR code generation
     implementation("com.google.zxing:core:3.5.2")
+
+    // CameraX + ML Kit barcode — for QR scanner
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
@@ -112,10 +119,10 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
 
+    // ML Kit document scanner — for receipt scanning
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
 
     implementation(libs.androidx.security.crypto)
-
     implementation(libs.androidx.biometric)
 
     // Testing
