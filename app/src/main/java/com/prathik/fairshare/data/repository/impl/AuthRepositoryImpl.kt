@@ -81,6 +81,7 @@ class AuthRepositoryImpl @Inject constructor(
                     phoneNumber       = phoneNumber,
                     preferredCurrency = preferredCurrency,
                     language          = language,
+                    timezone          = java.util.TimeZone.getDefault().id,
                 )
             )
         }

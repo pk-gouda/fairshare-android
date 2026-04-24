@@ -12,6 +12,7 @@ data class RegisterRequest(
     @SerialName("phoneNumber")       val phoneNumber: String? = null,
     @SerialName("preferredCurrency") val preferredCurrency: String? = null,
     @SerialName("language")          val language: String? = null,
+    @SerialName("timezone")          val timezone: String? = null,
 )
 
 @Serializable
