@@ -357,6 +357,13 @@ class EditExpenseViewModel @Inject constructor(
         _splitData.value = newSplitData
     }
 
+    /**
+     * Called from ItemAssignment edit flow — stores assignments and updates splitData.
+     */
+    fun setItemAssignments(assignments: Map<String, List<String>>, splitData: Map<String, Double>) {
+        _splitData.value = splitData
+    }
+
     // ── Split recalculation ───────────────────────────────────────────────────
 
     private fun recalculateSplits() {

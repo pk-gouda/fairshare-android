@@ -114,7 +114,7 @@ fun ExpenseDetailScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.loadExpense()
+            viewModel.forceRefresh()
         }
     }
 
@@ -232,14 +232,14 @@ fun ExpenseDetailScreen(
 
 @Composable
 private fun ExpenseDetailContent(
-    expense          : Expense,
-    currentUserId    : String?,
-    items            : List<com.prathik.fairshare.domain.model.ExpenseItem>,
-    onSettle         : (String) -> Unit,
-    isDeleting       : Boolean,
-    changeLog        : List<ExpenseChangeLog>,
-    changeLogLoading : Boolean,
-    onRestore        : () -> Unit = {},
+    expense               : Expense,
+    currentUserId         : String?,
+    items                 : List<com.prathik.fairshare.domain.model.ExpenseItem>,
+    onSettle              : (String) -> Unit,
+    isDeleting            : Boolean,
+    changeLog             : List<ExpenseChangeLog>,
+    changeLogLoading      : Boolean,
+    onRestore             : () -> Unit = {},
 ) {
     var showItemBreakdown by remember { mutableStateOf(false) }
     Column(

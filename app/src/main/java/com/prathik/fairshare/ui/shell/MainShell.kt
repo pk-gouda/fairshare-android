@@ -78,6 +78,7 @@ import com.prathik.fairshare.ui.groups.AddMemberScreen
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
 import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.groups.GroupMembersScreen
+import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.ui.groups.RemindersScreen
 import com.prathik.fairshare.ui.groups.CreateReminderScreen
 import com.prathik.fairshare.ui.groups.RecurringExpensesScreen
@@ -94,7 +95,10 @@ import com.prathik.fairshare.ui.expense.CurrencySelectScreen
 import com.prathik.fairshare.ui.expense.AddExpenseViewModel
 import com.prathik.fairshare.ui.expense.EditExpenseScreen
 import com.prathik.fairshare.ui.expense.EditExpenseViewModel
+import com.prathik.fairshare.ui.expense.EditSaveState
 import com.prathik.fairshare.ui.expense.ExpenseDetailScreen
+import com.prathik.fairshare.ui.expense.ExpenseDetailViewModel
+import com.prathik.fairshare.ui.expense.ExpenseDetailUiState
 import com.prathik.fairshare.ui.settlement.EditSettlementScreen
 import com.prathik.fairshare.ui.settlement.SettlementDetailScreen
 import com.prathik.fairshare.ui.settlement.SettleUpScreen
@@ -996,37 +1000,116 @@ fun MainShell(
                 route = Screen.EditItemAssignment.route,
                 arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
             ) { backStackEntry ->
-                val expenseId = backStackEntry.arguments?.getString("expenseId") ?: return@composable
-                val editExpenseEntry = remember(backStackEntry) {
+                val expenseId           = backStackEntry.arguments?.getString("expenseId") ?: return@composable
+                val itemAssignViewModel  = hiltViewModel<ItemAssignmentViewModel>()
+                // EditExpense is on the backstack — share its ViewModel for members/currency
+                val editExpenseEntry    = remember(backStackEntry) {
                     shellNavController.getBackStackEntry(Screen.EditExpense.route)
                 }
-                val editExpenseViewModel = hiltViewModel<EditExpenseViewModel>(editExpenseEntry)
-                val itemAssignViewModel  = hiltViewModel<ItemAssignmentViewModel>()
-                val members  by editExpenseViewModel.members.collectAsState()
-                val currency by editExpenseViewModel.currency.collectAsState()
-                val items       by itemAssignViewModel.items.collectAsState()
-                val saveState   by itemAssignViewModel.saveState.collectAsState()
+                val editExpenseVm       = hiltViewModel<EditExpenseViewModel>(editExpenseEntry)
+                val members  by editExpenseVm.members.collectAsState()
+                val currency by editExpenseVm.currency.collectAsState()
 
                 androidx.compose.runtime.LaunchedEffect(expenseId) {
-                    itemAssignViewModel.loadItemsForExpense(expenseId)
-                }
-
-                androidx.compose.runtime.LaunchedEffect(saveState) {
-                    if (saveState is SaveState.Success) {
-                        itemAssignViewModel.resetSaveState()
-                        shellNavController.popBackStack()
-                    }
+                    itemAssignViewModel.loadItemsForEdit(expenseId)
                 }
 
                 ItemAssignmentScreen(
-                    receiptId          = "",  // not used in edit mode
+                    receiptId          = "",
                     members            = members,
                     currency           = currency,
                     onBack             = { shellNavController.popBackStack() },
-                    onDone             = { _ ->
-                        itemAssignViewModel.saveAssignments(expenseId)
+                    onDone             = { assignments ->
+                        val rawSplitData  = itemAssignViewModel.buildSplitData()
+                        val itemSubtotal  = rawSplitData.values.sum()
+                        val expenseTotal  = editExpenseVm.amount.value.toDoubleOrNull() ?: itemSubtotal
+                        val extraTotal    = expenseTotal - itemSubtotal
+
+                        // Distribute tax/fees proportionally — same logic as the add flow
+                        val adjustedSplitData: Map<String, Double> =
+                            if (extraTotal != 0.0 && itemSubtotal > 0.0) {
+                                val entries = rawSplitData.entries.toList()
+                                val rounded = entries.map { (uid, itemAmount) ->
+                                    val proportion = itemAmount / itemSubtotal
+                                    val adjusted   = itemAmount + (extraTotal * proportion)
+                                    uid to (Math.round(adjusted * 100) / 100.0)
+                                }.toMutableList()
+                                // Fix any rounding residual on the last entry so sum == expenseTotal exactly
+                                val roundedSum = rounded.sumOf { it.second }
+                                val residual   = Math.round((expenseTotal - roundedSum) * 100) / 100.0
+                                if (residual != 0.0 && rounded.isNotEmpty()) {
+                                    val last = rounded.last()
+                                    rounded[rounded.lastIndex] = last.first to (last.second + residual)
+                                }
+                                rounded.toMap()
+                            } else rawSplitData
+
+                        editExpenseVm.setItemAssignments(assignments, adjustedSplitData)
                     },
-                    onNavigateToReview = {},  // no review step in edit mode
+                    onNavigateToReview = {
+                        shellNavController.navigate(Screen.EditReviewSubmit.route)
+                    },
+                )
+            }
+
+            // ── Edit review + submit (edit itemized flow) ─────────────────────────
+            composable(route = Screen.EditReviewSubmit.route) { backStackEntry ->
+                val editExpenseEntry    = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.EditExpense.route)
+                }
+                val itemAssignEntry     = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.EditItemAssignment.route)
+                }
+                val editExpenseVm       = hiltViewModel<EditExpenseViewModel>(editExpenseEntry)
+                val itemAssignViewModel  = hiltViewModel<ItemAssignmentViewModel>(itemAssignEntry)
+
+                val items    by itemAssignViewModel.items.collectAsState()
+                val members  by editExpenseVm.members.collectAsState()
+                val currency by editExpenseVm.currency.collectAsState()
+                val saveState by editExpenseVm.saveState.collectAsState()
+                val amountStr by editExpenseVm.amount.collectAsState()
+                val amount = amountStr.toDoubleOrNull() ?: 0.0
+
+                // Synthetic receipt so ReviewSubmitScreen can display totals
+                val syntheticReceipt = com.prathik.fairshare.domain.model.Receipt(
+                    id              = "",
+                    expenseId       = null,
+                    scannedById     = "",
+                    imageUrl        = null,
+                    merchantName    = null,
+                    merchantAddress = null,
+                    subtotal        = amount,
+                    taxAmount       = null,
+                    tipAmount       = null,
+                    totalAmount     = amount,
+                    currency        = currency,
+                    paymentMethod   = null,
+                    receiptDate     = null,
+                    scanConfidence  = null,
+                    itemCount       = items.size,
+                    createdAt       = "",
+                )
+
+                val expenseId = itemAssignEntry.arguments?.getString("expenseId") ?: ""
+
+                androidx.compose.runtime.LaunchedEffect(saveState) {
+                    if (saveState is EditSaveState.Success) {
+                        // Save item assignments (who owns which items) then pop
+                        itemAssignViewModel.saveAssignments(expenseId)
+                        editExpenseVm.resetSaveState()
+                        shellNavController.popBackStack(Screen.EditExpense.route, inclusive = true)
+                    }
+                }
+
+                ReviewSubmitScreen(
+                    receipt   = syntheticReceipt,
+                    items     = items,
+                    splitData = itemAssignViewModel.buildSplitData(),
+                    members   = members,
+                    currency  = currency,
+                    isLoading = saveState is EditSaveState.Loading,
+                    onBack    = { shellNavController.popBackStack() },
+                    onSubmit  = { editExpenseVm.save() },
                 )
             }
 

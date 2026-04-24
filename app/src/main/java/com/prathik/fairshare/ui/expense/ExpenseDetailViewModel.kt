@@ -80,6 +80,15 @@ class ExpenseDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Forces a full reload of the expense — called after editing item assignments
+     * so the item breakdown reflects the latest saved state.
+     */
+    fun forceRefresh() {
+        hasLoadedOnce = false
+        loadExpense()
+    }
+
     fun loadItems() {
         viewModelScope.launch {
             _itemsLoading.value = true

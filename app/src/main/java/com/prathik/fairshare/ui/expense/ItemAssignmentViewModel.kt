@@ -225,6 +225,26 @@ class ItemAssignmentViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Load itemized expense items for EDIT mode.
+     * Uses the expense ID to fetch existing item assignments from the server.
+     */
+    fun loadItemsForEdit(expenseId: String) {
+        if (_items.value.isNotEmpty()) return
+        viewModelScope.launch {
+            _isLoading.value = true
+            when (val result = safeApiCall { expenseApiService.getExpenseItems(expenseId) }) {
+                is ApiResult.Success -> {
+                    val items = result.data.map { it.toDomain() }
+                    _items.value = items
+                    initShareStates(items)
+                }
+                else -> _error.value = "Failed to load expense items"
+            }
+            _isLoading.value = false
+        }
+    }
+
     fun loadItemsForExpense(expenseId: String) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -253,9 +273,13 @@ class ItemAssignmentViewModel @Inject constructor(
     private fun initShareStates(items: List<ExpenseItem>) {
         _shareStates.value = buildMap {
             items.forEach { item ->
-                put("${item.id}-0", ShareUiState(item.id, 0, item.totalPrice))
+                // Pre-populate selected users from saved assignments (edit flow)
+                val preSelected = item.assignedTo.map { it.userId }
+                put("${item.id}-0", ShareUiState(item.id, 0, item.totalPrice,
+                    selected = preSelected))
                 if ((item.quantity ?: 1) > 1)
-                    put("${item.id}-1", ShareUiState(item.id, 1, item.price))
+                    put("${item.id}-1", ShareUiState(item.id, 1, item.price,
+                        selected = preSelected))
             }
         }
         _separateItems.value = emptySet()
