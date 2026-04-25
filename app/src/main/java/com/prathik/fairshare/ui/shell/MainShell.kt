@@ -1315,10 +1315,16 @@ fun MainShell(
                                 }
                             }
                         } else {
-                            // Group invite code — preview group then show confirm dialog
+                            // Group invite code — QR encodes the full URL (e.g. https://fairshareapp.app/join/XXXXXXXX).
+                            // Extract just the invite code from the last path segment so previewGroup gets a bare code.
+                            val inviteCode = code
+                                .trimEnd('/')
+                                .substringAfterLast('/')
+                                .substringAfterLast("?code=")
+                                .trim()
                             coroutineScope.launch {
-                                when (val result = viewModel.previewGroup(code)) {
-                                    is ApiResult.Success  -> { pendingGroupCode = code; pendingGroupName = result.data.name }
+                                when (val result = viewModel.previewGroup(inviteCode)) {
+                                    is ApiResult.Success  -> { pendingGroupCode = inviteCode; pendingGroupName = result.data.name }
                                     is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid invite code")
                                     else                  -> snackbarHostState.showSnackbar("Could not look up this group")
                                 }

@@ -86,6 +86,7 @@ class ExpenseDetailViewModel @Inject constructor(
      */
     fun forceRefresh() {
         hasLoadedOnce = false
+        _items.value = emptyList()
         loadExpense()
     }
 
