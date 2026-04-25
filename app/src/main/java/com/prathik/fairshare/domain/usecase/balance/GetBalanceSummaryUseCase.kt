@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.usecase.balance
 
+import com.prathik.fairshare.data.model.response.BalanceSummaryResponse
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import javax.inject.Inject
@@ -12,7 +13,7 @@ import javax.inject.Inject
 class GetBalanceSummaryUseCase @Inject constructor(
     private val balanceRepository: BalanceRepository,
 ) {
-    suspend operator fun invoke(): ApiResult<Map<String, Any>> {
+    suspend operator fun invoke(): ApiResult<BalanceSummaryResponse> {
         return balanceRepository.getBalanceSummary()
     }
 }

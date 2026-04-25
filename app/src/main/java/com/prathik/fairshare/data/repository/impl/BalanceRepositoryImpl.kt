@@ -4,6 +4,7 @@ import com.prathik.fairshare.data.local.BalanceDao
 import com.prathik.fairshare.data.local.BalanceEntity
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.model.response.BalanceSummaryResponse
 import com.prathik.fairshare.data.network.api.BalanceApiService
 import com.prathik.fairshare.data.network.mapSuccess
 import com.prathik.fairshare.data.network.safeApiCall
@@ -68,9 +69,8 @@ class BalanceRepositoryImpl @Inject constructor(
         safeApiCall { balanceService.getBalanceWithUser(otherUserId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
-    override suspend fun getBalanceSummary(): ApiResult<Map<String, Any>> =
+    override suspend fun getBalanceSummary(): ApiResult<BalanceSummaryResponse> =
         safeApiCall { balanceService.getBalanceSummary() }
-            .mapSuccess { it }
 
     private fun BalanceEntity.toDomain() = Balance(
         userId            = userId,

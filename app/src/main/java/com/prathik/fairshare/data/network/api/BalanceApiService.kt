@@ -2,6 +2,7 @@ package com.prathik.fairshare.data.network.api
 
 import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.BalanceResponse
+import com.prathik.fairshare.data.model.response.BalanceSummaryResponse
 import retrofit2.http.GET
 import retrofit2.http.Path
 
@@ -20,7 +21,6 @@ interface BalanceApiService {
         @Path("otherUserId") otherUserId: String,
     ): ApiResponse<List<BalanceResponse>>
 
-    //backend returns mixed types (BigDecimal serialized as Number)
     @GET("api/balances/summary")
-    suspend fun getBalanceSummary(): ApiResponse<Map<String, Double>>
+    suspend fun getBalanceSummary(): ApiResponse<BalanceSummaryResponse>
 }

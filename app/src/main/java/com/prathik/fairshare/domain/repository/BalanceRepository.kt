@@ -2,6 +2,7 @@ package com.prathik.fairshare.domain.repository
 
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
+import com.prathik.fairshare.data.model.response.BalanceSummaryResponse
 
 /**
  * Contract for balance-related operations.
@@ -49,5 +50,5 @@ interface BalanceRepository {
      * - Net balance
      * Used by the Groups Home screen balance hero section.
      */
-    suspend fun getBalanceSummary(): ApiResult<Map<String, Any>>
+    suspend fun getBalanceSummary(): ApiResult<BalanceSummaryResponse>
 }
