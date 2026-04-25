@@ -193,23 +193,45 @@ class FriendDetailViewModel @Inject constructor(
         }
     }
 
-    fun deleteSettlement(settlementId: String) {
+    fun cancelSettlement(settlementId: String) {
         viewModelScope.launch {
-            when (val result = settlementRepository.deleteSettlement(settlementId)) {
+            when (val result = settlementRepository.cancelSettlement(settlementId)) {
                 is ApiResult.Success -> {
-                    // Remove from local list immediately
-                    _settlements.value = _settlements.value.filter { it.id != settlementId }
-                    // Refresh balances since delete reverses them
+                    // Update in-place — row stays visible with CANCELLED status
+                    _settlements.value = _settlements.value.map { s ->
+                        if (s.id == settlementId) result.data else s
+                    }
                     refreshExpenses()
-                    _actionState.value = FriendDetailActionState.Success("Settlement deleted")
+                    _actionState.value = FriendDetailActionState.Success("Settlement cancelled")
                 }
                 is ApiResult.NetworkError ->
                     _actionState.value = FriendDetailActionState.Error("No internet connection.")
                 else ->
-                    _actionState.value = FriendDetailActionState.Error("Failed to delete settlement.")
+                    _actionState.value = FriendDetailActionState.Error("Failed to cancel settlement.")
             }
         }
     }
+
+    fun restoreSettlement(settlementId: String) {
+        viewModelScope.launch {
+            when (val result = settlementRepository.restoreSettlement(settlementId)) {
+                is ApiResult.Success -> {
+                    _settlements.value = _settlements.value.map { s ->
+                        if (s.id == settlementId) result.data else s
+                    }
+                    refreshExpenses()
+                    _actionState.value = FriendDetailActionState.Success("Settlement restored")
+                }
+                is ApiResult.NetworkError ->
+                    _actionState.value = FriendDetailActionState.Error("No internet connection.")
+                else ->
+                    _actionState.value = FriendDetailActionState.Error("Failed to restore settlement.")
+            }
+        }
+    }
+
+    /** @deprecated Use cancelSettlement() */
+    fun deleteSettlement(settlementId: String) = cancelSettlement(settlementId)
 
     fun assignFriendPlaceholder(placeholderUserId: String, friendUserId: String) {
         viewModelScope.launch {

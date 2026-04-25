@@ -63,6 +63,14 @@ interface SettlementRepository {
     suspend fun deleteSettlement(settlementId: String): ApiResult<Unit>
 
     /**
+     * Restores a CANCELLED settlement to COMPLETED by re-applying its allocation rows.
+     * This is the exact inverse of deleteSettlement (soft-cancel).
+     * Returns [ApiResult.Forbidden] if user is not involved.
+     * Returns [ApiResult.Conflict] if settlement is already active or not cancellable.
+     */
+    suspend fun restoreSettlement(settlementId: String): ApiResult<Settlement>
+
+    /**
      * Fetches a single settlement by ID.
      * Only participants (payer or receiver) can view.
      */

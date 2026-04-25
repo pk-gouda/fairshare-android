@@ -16,14 +16,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,11 +47,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.data.model.response.SettlementChangeLogResponse
 import com.prathik.fairshare.domain.model.Settlement
+import com.prathik.fairshare.domain.model.SettlementStatus
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsIconButton
@@ -81,7 +87,8 @@ fun SettlementDetailScreen(
     val actionState  by viewModel.actionState.collectAsState()
     val changeLog    by viewModel.changeLog.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showCancelDialog  by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -92,8 +99,17 @@ fun SettlementDetailScreen(
 
     LaunchedEffect(actionState) {
         when (val s = actionState) {
-            is SettlementDetailActionState.Deleted -> { onDeleted(); viewModel.resetActionState() }
-            is SettlementDetailActionState.Error   -> {
+            is SettlementDetailActionState.Cancelled -> {
+                snackbarHost.showSnackbar("Settlement cancelled")
+                viewModel.load()
+                viewModel.resetActionState()
+            }
+            is SettlementDetailActionState.Restored -> {
+                snackbarHost.showSnackbar("Settlement restored")
+                viewModel.load()
+                viewModel.resetActionState()
+            }
+            is SettlementDetailActionState.Error -> {
                 snackbarHost.showSnackbar(s.message)
                 viewModel.resetActionState()
             }
@@ -103,41 +119,36 @@ fun SettlementDetailScreen(
 
     val settlement     = (state as? SettlementDetailUiState.Success)?.settlement
     val isFullySettled = settlement?.isFullSettle == true
-
-    // Edit: either payer or receiver can edit, including fully-settled records
-    val canEdit = settlement != null && (
-            viewModel.isRecordedByMe(settlement) ||
-                    settlement.payerId == viewModel.currentUserId ||
-                    settlement.receiverId == viewModel.currentUserId
-            )
-
-    // Delete: either payer or receiver can delete
-    val canDelete = settlement != null && (
-            viewModel.isRecordedByMe(settlement) ||
-                    settlement.payerId == viewModel.currentUserId ||
-                    settlement.receiverId == viewModel.currentUserId
-            )
+    val isCompleted    = settlement?.status == SettlementStatus.COMPLETED
+    val isCancelled    = settlement?.status == SettlementStatus.CANCELLED
+    val canAct         = settlement != null && viewModel.isParticipant(settlement)
 
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
         topBar = {
             FsTopBar(
-                title   = if (isFullySettled) "Settled up" else "Payment",
+                title  = when {
+                    isCancelled    -> "Payment cancelled"
+                    isFullySettled -> "Settled up"
+                    else           -> "Payment"
+                },
                 onBack  = onBack,
                 actions = {
-                    if (canEdit) {
+                    // Only COMPLETED settlements show Edit button
+                    if (isCompleted && canAct) {
                         FsIconButton(
                             icon               = Icons.Filled.Edit,
                             contentDescription = "Edit",
                             onClick            = { onNavigateToEdit(viewModel.settlementId) },
                         )
                     }
-                    if (canDelete) {
+                    // COMPLETED → Cancel button; CANCELLED → no destructive action in topbar
+                    if (isCompleted && canAct) {
                         FsIconButton(
-                            icon               = Icons.Filled.Delete,
-                            contentDescription = "Delete",
-                            onClick            = { showDeleteDialog = true },
+                            icon               = Icons.Filled.Close,
+                            contentDescription = "Cancel settlement",
+                            onClick            = { showCancelDialog = true },
                         )
                     }
                 },
@@ -150,31 +161,57 @@ fun SettlementDetailScreen(
                     FsLoadingScreen()
                 is SettlementDetailUiState.Error ->
                     FsErrorScreen(message = s.message, onRetry = { viewModel.load() })
+                is SettlementDetailUiState.NotFound,
                 is SettlementDetailUiState.Deleted ->
                     FsErrorScreen(message = "This settlement no longer exists.")
                 is SettlementDetailUiState.Success ->
-                    if (s.settlement.isFullSettle && s.settlement.settleType == "ALL") {
+                    if (s.settlement.isFullSettle && s.settlement.settleType == "ALL" && isCompleted) {
                         FullySettledContent(settlement = s.settlement)
                     } else {
-                        SettlementDetailContent(settlement = s.settlement, changeLog = changeLog)
+                        SettlementDetailContent(
+                            settlement  = s.settlement,
+                            changeLog   = changeLog,
+                            isCancelled = isCancelled,
+                            canRestore  = isCancelled && canAct,
+                            onRestore   = { showRestoreDialog = true },
+                        )
                     }
             }
         }
     }
 
-    if (showDeleteDialog) {
+    // ── Cancel confirmation dialog ─────────────────────────────────────────
+    if (showCancelDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title   = { Text("Delete payment?") },
-            text    = { Text("This will reverse the balance changes. This cannot be undone.") },
+            onDismissRequest = { showCancelDialog = false },
+            title   = { Text("Cancel this settlement?") },
+            text    = { Text("This will reverse the settlement and restore the previous balances.") },
             confirmButton = {
                 TextButton(onClick = {
-                    showDeleteDialog = false
-                    viewModel.deleteSettlement()
-                }) { Text("Delete", color = Negative) }
+                    showCancelDialog = false
+                    viewModel.cancelSettlement()
+                }) { Text("Cancel settlement", color = Negative) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showCancelDialog = false }) { Text("Keep") }
+            },
+        )
+    }
+
+    // ── Restore confirmation dialog ────────────────────────────────────────
+    if (showRestoreDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            title   = { Text("Restore this settlement?") },
+            text    = { Text("This will apply the settlement again and update balances.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestoreDialog = false
+                    viewModel.restoreSettlement()
+                }) { Text("Restore", color = Green400) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreDialog = false }) { Text("Cancel") }
             },
         )
     }
@@ -397,12 +434,28 @@ private fun groupColor(name: String): Color {
 // ── Standard payment detail screen ───────────────────────────────────────────
 
 @Composable
-private fun SettlementDetailContent(settlement: Settlement, changeLog: List<SettlementChangeLogResponse>) {
+private fun SettlementDetailContent(
+    settlement  : Settlement,
+    changeLog   : List<SettlementChangeLogResponse>,
+    isCancelled : Boolean = false,
+    canRestore  : Boolean = false,
+    onRestore   : () -> Unit = {},
+) {
     val displayDate = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
             dt.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
         } catch (e: Exception) { settlement.settlementDate }
+    }
+
+    val cancelledDate = remember(settlement.cancelledAt) {
+        try {
+            if (settlement.cancelledAt == null) null
+            else {
+                val dt = LocalDateTime.parse(settlement.cancelledAt, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                dt.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+            }
+        } catch (e: Exception) { settlement.cancelledAt }
     }
 
     Column(
@@ -414,13 +467,26 @@ private fun SettlementDetailContent(settlement: Settlement, changeLog: List<Sett
     ) {
         Spacer(modifier = Modifier.height(Spacing.xl))
 
-        // Money icon
+        // ── CANCELLED badge ───────────────────────────────────────────────
+        if (isCancelled) {
+            SuggestionChip(
+                onClick = {},
+                label   = { Text("CANCELLED", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp) },
+                colors  = SuggestionChipDefaults.suggestionChipColors(
+                    containerColor = Negative.copy(alpha = 0.15f),
+                    labelColor     = Negative,
+                ),
+            )
+            Spacer(modifier = Modifier.height(Spacing.sm))
+        }
+
+        // Money icon — dimmed when cancelled
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(72.dp)
                 .clip(RoundedCornerShape(Radius.xl))
-                .background(Green400.copy(alpha = 0.12f)),
+                .background((if (isCancelled) TextTertiary else Green400).copy(alpha = 0.12f)),
         ) { Text("💸", fontSize = 32.sp) }
 
         Spacer(modifier = Modifier.height(Spacing.lg))
@@ -429,18 +495,20 @@ private fun SettlementDetailContent(settlement: Settlement, changeLog: List<Sett
             text       = "${settlement.payerName} paid ${settlement.receiverName}",
             fontSize   = 18.sp,
             fontWeight = FontWeight.SemiBold,
-            color      = TextPrimary,
+            color      = if (isCancelled) TextSecondary else TextPrimary,
             textAlign  = TextAlign.Center,
             modifier   = Modifier.padding(horizontal = Spacing.lg),
         )
 
         Spacer(modifier = Modifier.height(Spacing.sm))
 
+        // Amount — strikethrough when cancelled
         Text(
-            text       = MoneyUtils.format(settlement.amount, settlement.currency),
-            fontSize   = 38.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color      = Green400,
+            text           = MoneyUtils.format(settlement.amount, settlement.currency),
+            fontSize       = 38.sp,
+            fontWeight     = FontWeight.ExtraBold,
+            color          = if (isCancelled) TextTertiary else Green400,
+            textDecoration = if (isCancelled) TextDecoration.LineThrough else TextDecoration.None,
         )
 
         Spacer(modifier = Modifier.height(Spacing.sm))
@@ -451,7 +519,7 @@ private fun SettlementDetailContent(settlement: Settlement, changeLog: List<Sett
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(28.dp).clip(CircleShape).background(Surface2),
-            ) { Text("→", fontSize = 14.sp, color = Green400, fontWeight = FontWeight.Bold) }
+            ) { Text("→", fontSize = 14.sp, color = if (isCancelled) TextTertiary else Green400, fontWeight = FontWeight.Bold) }
             Spacer(modifier = Modifier.width(Spacing.lg))
             FsAvatar(name = settlement.receiverName, userId = settlement.receiverId, size = ComponentSize.avatarLg)
         }
@@ -494,18 +562,52 @@ private fun SettlementDetailContent(settlement: Settlement, changeLog: List<Sett
             HorizontalDivider(color = Surface3, thickness = 0.5.dp,
                 modifier = Modifier.padding(horizontal = Spacing.lg))
             MetaRow(label = "Recorded by", value = settlement.recordedByName)
+
+            // Show who cancelled and when
+            if (isCancelled && !settlement.cancelledByName.isNullOrBlank()) {
+                HorizontalDivider(color = Surface3, thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = Spacing.lg))
+                MetaRow(
+                    label = "Cancelled by",
+                    value = if (cancelledDate != null) "${settlement.cancelledByName} on $cancelledDate"
+                    else settlement.cancelledByName,
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(Spacing.xl))
 
-        Text(
-            text      = "This payment was added using the \"record a payment\" feature. No money has been moved.",
-            fontSize  = 12.sp,
-            color     = TextTertiary,
-            textAlign = TextAlign.Center,
-            modifier  = Modifier.padding(horizontal = Spacing.xl),
-        )
+        if (isCancelled) {
+            Text(
+                text      = "This settlement was cancelled. Balances have been restored.",
+                fontSize  = 12.sp,
+                color     = Negative.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center,
+                modifier  = Modifier.padding(horizontal = Spacing.xl),
+            )
+        } else {
+            Text(
+                text      = "This payment was added using the \"record a payment\" feature. No money has been moved.",
+                fontSize  = 12.sp,
+                color     = TextTertiary,
+                textAlign = TextAlign.Center,
+                modifier  = Modifier.padding(horizontal = Spacing.xl),
+            )
+        }
 
+        // ── Restore button (CANCELLED only) ───────────────────────────────
+        if (canRestore) {
+            Spacer(modifier = Modifier.height(Spacing.xl))
+            Button(
+                onClick  = onRestore,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg),
+                colors   = ButtonDefaults.buttonColors(containerColor = Green400),
+            ) {
+                Text("Restore settlement", fontWeight = FontWeight.SemiBold)
+            }
+        }
 
         // ── Edit history ─────────────────────────────────────────────────────
         if (changeLog.isNotEmpty()) {

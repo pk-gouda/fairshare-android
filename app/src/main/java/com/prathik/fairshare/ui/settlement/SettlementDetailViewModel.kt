@@ -53,7 +53,7 @@ class SettlementDetailViewModel @Inject constructor(
                         else -> Unit
                     }
                 }
-                is ApiResult.NotFound -> _state.value = SettlementDetailUiState.Deleted
+                is ApiResult.NotFound -> _state.value = SettlementDetailUiState.NotFound
                 is ApiResult.NetworkError -> {
                     if (!hasLoadedOnce) _state.value = SettlementDetailUiState.Error("No internet connection.")
                 }
@@ -64,36 +64,75 @@ class SettlementDetailViewModel @Inject constructor(
         }
     }
 
-    fun deleteSettlement() {
+    /**
+     * Soft-cancels a COMPLETED settlement via DELETE endpoint.
+     * Backend now returns 200 with CANCELLED status instead of deleting.
+     * Screen reloads to show CANCELLED state with Restore option.
+     */
+    fun cancelSettlement() {
         viewModelScope.launch {
             _actionState.value = SettlementDetailActionState.Loading
-            when (settlementRepository.deleteSettlement(settlementId)) {
-                is ApiResult.Success -> _actionState.value = SettlementDetailActionState.Deleted
+            when (settlementRepository.cancelSettlement(settlementId)) {
+                is ApiResult.Success -> _actionState.value = SettlementDetailActionState.Cancelled
                 is ApiResult.NetworkError -> _actionState.value =
                     SettlementDetailActionState.Error("No internet connection.")
+                is ApiResult.Forbidden -> _actionState.value =
+                    SettlementDetailActionState.Error("You don't have permission to cancel this settlement.")
                 else -> _actionState.value =
-                    SettlementDetailActionState.Error("Failed to delete settlement.")
+                    SettlementDetailActionState.Error("Failed to cancel settlement.")
             }
         }
     }
 
+    /**
+     * Restores a CANCELLED settlement to COMPLETED.
+     * Re-applies existing allocation rows — no new rows created.
+     * Screen reloads to show COMPLETED state.
+     */
+    fun restoreSettlement() {
+        viewModelScope.launch {
+            _actionState.value = SettlementDetailActionState.Loading
+            when (settlementRepository.restoreSettlement(settlementId)) {
+                is ApiResult.Success -> _actionState.value = SettlementDetailActionState.Restored
+                is ApiResult.NetworkError -> _actionState.value =
+                    SettlementDetailActionState.Error("No internet connection.")
+                is ApiResult.Forbidden -> _actionState.value =
+                    SettlementDetailActionState.Error("You don't have permission to restore this settlement.")
+                is ApiResult.Conflict -> _actionState.value =
+                    SettlementDetailActionState.Error("Settlement is already active.")
+                else -> _actionState.value =
+                    SettlementDetailActionState.Error("Failed to restore settlement.")
+            }
+        }
+    }
+
+    /** @deprecated Use cancelSettlement() — kept for backward compat with any callers */
+    fun deleteSettlement() = cancelSettlement()
+
     fun resetActionState() { _actionState.value = SettlementDetailActionState.Idle }
 
-    /** True if current user recorded this settlement (can edit/delete). */
-    fun isRecordedByMe(settlement: Settlement) =
-        settlement.recordedById == currentUserId
+    /** True if current user is involved (payer, receiver, or recorder). */
+    fun isParticipant(settlement: Settlement) =
+        settlement.recordedById == currentUserId ||
+                settlement.payerId == currentUserId ||
+                settlement.receiverId == currentUserId
 }
 
 sealed class SettlementDetailUiState {
-    object Loading : SettlementDetailUiState()
-    object Deleted : SettlementDetailUiState()
+    object Loading  : SettlementDetailUiState()
+    object NotFound : SettlementDetailUiState()
+    /** @deprecated kept for backward compat — use NotFound */
+    object Deleted  : SettlementDetailUiState()
     data class Success(val settlement: Settlement) : SettlementDetailUiState()
     data class Error(val message: String) : SettlementDetailUiState()
 }
 
 sealed class SettlementDetailActionState {
-    object Idle    : SettlementDetailActionState()
-    object Loading : SettlementDetailActionState()
-    object Deleted : SettlementDetailActionState()
+    object Idle      : SettlementDetailActionState()
+    object Loading   : SettlementDetailActionState()
+    /** Settlement was soft-cancelled — reload screen to show CANCELLED state. */
+    object Cancelled : SettlementDetailActionState()
+    /** Settlement was restored to COMPLETED — reload screen. */
+    object Restored  : SettlementDetailActionState()
     data class Error(val message: String) : SettlementDetailActionState()
 }

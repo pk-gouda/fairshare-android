@@ -29,4 +29,8 @@ data class SettlementResponse(
     @SerialName("isFullSettle")          val isFullSettle: Boolean = false,
     // JSON snapshot of per-group balances at time of ALL settle
     @SerialName("groupBalanceSnapshot")  val groupBalanceSnapshot: String? = null,
+    // Populated when status == CANCELLED
+    @SerialName("cancelledAt")           val cancelledAt: String? = null,
+    @SerialName("cancelledByName")       val cancelledByName: String? = null,
+    @SerialName("cancelledById")         val cancelledById: String? = null,
 )

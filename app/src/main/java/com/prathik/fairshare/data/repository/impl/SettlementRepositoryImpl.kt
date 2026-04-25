@@ -59,6 +59,10 @@ class SettlementRepositoryImpl @Inject constructor(
         safeApiCall { settlementService.cancelSettlement(settlementId) }
             .mapSuccess { it.toDomain() }
 
+    override suspend fun restoreSettlement(settlementId: String): ApiResult<Settlement> =
+        safeApiCall { settlementService.restoreSettlement(settlementId) }
+            .mapSuccess { it.toDomain() }
+
     override suspend fun deleteSettlement(settlementId: String): ApiResult<Unit> {
         val result = safeApiCall { settlementService.deleteSettlement(settlementId) }
         return when (result) {

@@ -88,6 +88,10 @@ import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
 import com.prathik.fairshare.ui.theme.Surface3
 import com.prathik.fairshare.ui.theme.Surface4
+import com.prathik.fairshare.domain.model.SettlementStatus
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.prathik.fairshare.ui.theme.TextPrimary
 import com.prathik.fairshare.ui.theme.TextSecondary
 import com.prathik.fairshare.ui.theme.TextTertiary
@@ -206,12 +210,48 @@ fun FriendDetailScreen(
     val groupBalanceSum = groupByCurrency.values.sumOf { it }
     val nonGroupBalance = nonGroupByCurrency.values.sumOf { it }
 
+    val snackbarHost  = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Internal representation of one settleable balance context.
+    // groupId == null → NON_GROUP/DIRECT; groupId != null → GROUP.
+    data class SettleContext(val groupId: String?, val currency: String, val amount: Double)
+
     val handleSettle: () -> Unit = {
-        if (netBalance != 0.0 || groupBalances.isNotEmpty()) showBalanceSheet = true
-        else showPayerSheet = true
+        // Build list of non-zero settleable contexts.
+        val contexts = mutableListOf<SettleContext>()
+
+        // One GROUP entry per non-zero group balance
+        groupBalances
+            .filter { it.groupId != null && Math.abs(it.amount) > 0.01 }
+            .forEach { contexts.add(SettleContext(it.groupId, it.currency, it.amount)) }
+
+        // One NON_GROUP entry per currency with non-zero direct balance
+        nonGroupByCurrency.forEach { (cur, amt) ->
+            contexts.add(SettleContext(null, cur, amt))
+        }
+
+        when (contexts.size) {
+            0 -> coroutineScope.launch {
+                snackbarHost.showSnackbar("No balance to settle")
+            }
+            1 -> {
+                // Single context — skip the chooser and navigate directly.
+                // For GROUP: pass groupId so SettleUpScreen scopes to that group.
+                // For NON_GROUP: pass currency as the 4th arg (payerName slot) — matches
+                // the existing convention used by the balance sheet for non-group navigation.
+                val ctx = contexts.first()
+                onNavigateToSettle(
+                    viewModel.friendId,
+                    ctx.groupId,
+                    null,
+                    if (ctx.groupId == null) ctx.currency else null,
+                )
+            }
+            else -> showBalanceSheet = true   // multiple contexts — show chooser as usual
+        }
     }
 
-    val snackbarHost  = remember { SnackbarHostState() }
     val lazyListState = rememberLazyListState()
 
     val showTopBarName by remember {
@@ -604,13 +644,17 @@ fun FriendDetailScreen(
                             is FriendExpensesState.Success -> {
                                 val allItems = buildList<FriendTimelineItem> {
                                     groupBalances.forEach { add(FriendTimelineItem.GroupBalanceItem(it)) }
-                                    state.expenses.forEach { add(FriendTimelineItem.DirectExpenseItem(it)) }
-                                    settlements.forEach { s ->
-                                        if (s.isFullSettle && s.settleType == "ALL") {
-                                            add(FriendTimelineItem.FullySettledItem(s))
+                                    state.expenses
+                                        .filter { !it.isDeleted }
+                                        .forEach { add(FriendTimelineItem.DirectExpenseItem(it)) }
+                                    settlements
+                                        .filter { it.status == SettlementStatus.COMPLETED }
+                                        .forEach { s ->
+                                            if (s.isFullSettle && s.settleType == "ALL") {
+                                                add(FriendTimelineItem.FullySettledItem(s))
+                                            }
+                                            add(FriendTimelineItem.SettlementItem(s))
                                         }
-                                        add(FriendTimelineItem.SettlementItem(s))
-                                    }
                                 }.sortedByDescending { it.sortDate }
 
                                 if (allItems.isEmpty()) {
@@ -683,7 +727,8 @@ fun FriendDetailScreen(
                                                             settlement   = item.settlement,
                                                             showDateRail = showDateRail,
                                                             onClick      = { onNavigateToSettlement(item.settlement.id) },
-                                                            onDelete     = { viewModel.deleteSettlement(item.settlement.id) },
+                                                            onDelete     = { viewModel.cancelSettlement(item.settlement.id) },
+                                                            onRestore    = { viewModel.restoreSettlement(item.settlement.id) },
                                                         )
                                                     is FriendTimelineItem.FullySettledItem ->
                                                         FriendFullySettledRow(
@@ -1411,27 +1456,46 @@ private fun FriendSettlementRow(
     showDateRail: Boolean,
     onClick     : () -> Unit,
     onDelete    : () -> Unit,
+    onRestore   : (() -> Unit)? = null,
 ) {
+    val isCancelled = settlement.status == SettlementStatus.CANCELLED
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
             dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
         } catch (e: Exception) { "—" to "—" }
     }
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showCancelDialog  by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
 
-    if (showDeleteDialog) {
+    if (showCancelDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title   = { Text("Delete settlement?") },
-            text    = { Text("This will reverse the balance changes. This cannot be undone.") },
+            onDismissRequest = { showCancelDialog = false },
+            title   = { Text("Cancel settlement?") },
+            text    = { Text("This will reverse the balance changes.") },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false; onDelete() }) {
-                    Text("Delete", color = Negative)
+                androidx.compose.material3.TextButton(onClick = { showCancelDialog = false; onDelete() }) {
+                    Text("Cancel settlement", color = Negative)
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = { showCancelDialog = false }) { Text("Keep") }
+            },
+        )
+    }
+
+    if (showRestoreDialog && onRestore != null) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            title   = { Text("Restore settlement?") },
+            text    = { Text("This will apply the settlement again and update balances.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showRestoreDialog = false; onRestore() }) {
+                    Text("Restore", color = Green400)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showRestoreDialog = false }) { Text("Cancel") }
             },
         )
     }
@@ -1439,7 +1503,13 @@ private fun FriendSettlementRow(
     Row(
         modifier          = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = { showDeleteDialog = true })
+            .combinedClickable(
+                onClick     = onClick,
+                onLongClick = {
+                    if (isCancelled) { if (onRestore != null) showRestoreDialog = true }
+                    else showCancelDialog = true
+                },
+            )
             .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1462,19 +1532,34 @@ private fun FriendSettlementRow(
         ) {
             Box(contentAlignment = Alignment.Center,
                 modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF00C896).copy(alpha = 0.12f))) {
-                Text("🤝", fontSize = 20.sp)
+                    .background((if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896)).copy(alpha = 0.12f))) {
+                Text(if (isCancelled) "↩️" else "🤝", fontSize = 20.sp)
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("${settlement.payerName} paid ${settlement.receiverName}", fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium, color = Color(0xFF00C896),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(settlement.notes?.takeIf { it.isNotBlank() } ?: "Payment",
-                    fontSize = 12.sp, color = Color(0xFF6B7280))
+                Text(
+                    text           = "${settlement.payerName} paid ${settlement.receiverName}",
+                    fontSize       = 14.sp,
+                    fontWeight     = FontWeight.Medium,
+                    color          = if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896),
+                    maxLines       = 1,
+                    overflow       = TextOverflow.Ellipsis,
+                    textDecoration = if (isCancelled) TextDecoration.LineThrough else TextDecoration.None,
+                )
+                Text(
+                    text     = if (isCancelled) "Payment cancelled" else
+                        settlement.notes?.takeIf { it.isNotBlank() } ?: "Payment",
+                    fontSize = 12.sp,
+                    color    = Color(0xFF6B7280),
+                )
             }
-            Text(MoneyUtils.format(settlement.amount, settlement.currency), fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold, color = Color(0xFF00C896))
+            Text(
+                text           = MoneyUtils.format(settlement.amount, settlement.currency),
+                fontSize       = 14.sp,
+                fontWeight     = FontWeight.SemiBold,
+                color          = if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896),
+                textDecoration = if (isCancelled) TextDecoration.LineThrough else TextDecoration.None,
+            )
         }
     }
 }

@@ -90,6 +90,8 @@ import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
 import com.prathik.fairshare.ui.theme.Surface2
+import com.prathik.fairshare.domain.model.SettlementStatus
+import androidx.compose.ui.text.style.TextDecoration
 import com.prathik.fairshare.ui.theme.Surface3
 import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextDisabled
@@ -356,8 +358,12 @@ fun GroupDetailScreen(
                                 }
                                 is ExpensesUiState.Success -> {
                                     val timeline = buildList {
-                                        expenses.expenses.forEach { add(TimelineItem.ExpenseItem(it)) }
-                                        settlements.forEach { add(TimelineItem.SettlementItem(it)) }
+                                        expenses.expenses
+                                            .filter { !it.isDeleted }
+                                            .forEach { add(TimelineItem.ExpenseItem(it)) }
+                                        settlements
+                                            .filter { it.status == SettlementStatus.COMPLETED }
+                                            .forEach { add(TimelineItem.SettlementItem(it)) }
                                     }.sortedByDescending { it.date }
 
                                     if (timeline.isEmpty()) {
@@ -436,7 +442,8 @@ fun GroupDetailScreen(
                                                                     settlement   = item.settlement,
                                                                     showDateRail = isFirstOfDay,
                                                                     onClick      = { onNavigateToSettlement(item.settlement.id) },
-                                                                    onDelete     = { viewModel.deleteSettlement(item.settlement.id) },
+                                                                    onDelete     = { viewModel.cancelSettlement(item.settlement.id) },
+                                                                    onRestore    = { viewModel.restoreSettlement(item.settlement.id) },
                                                                 )
                                                             }
                                                     }
@@ -1202,7 +1209,9 @@ private fun SettlementRow(
     showDateRail: Boolean,
     onClick     : () -> Unit,
     onDelete    : () -> Unit,
+    onRestore   : (() -> Unit)? = null,
 ) {
+    val isCancelled = settlement.status == SettlementStatus.CANCELLED
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
             val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -1210,20 +1219,37 @@ private fun SettlementRow(
         } catch (e: Exception) { "" to "" }
     }
 
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showCancelDialog  by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
 
-    if (showDeleteDialog) {
+    if (showCancelDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title   = { Text("Delete settlement?") },
+            onDismissRequest = { showCancelDialog = false },
+            title   = { Text("Cancel settlement?") },
             text    = { Text("This will reverse the balance changes.") },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false; onDelete() }) {
-                    Text("Delete", color = Negative)
+                androidx.compose.material3.TextButton(onClick = { showCancelDialog = false; onDelete() }) {
+                    Text("Cancel settlement", color = Negative)
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = { showCancelDialog = false }) { Text("Keep") }
+            },
+        )
+    }
+
+    if (showRestoreDialog && onRestore != null) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            title   = { Text("Restore settlement?") },
+            text    = { Text("This will apply the settlement again and update balances.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showRestoreDialog = false; onRestore() }) {
+                    Text("Restore", color = Green400)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showRestoreDialog = false }) { Text("Cancel") }
             },
         )
     }
@@ -1231,7 +1257,13 @@ private fun SettlementRow(
     Row(
         modifier          = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = { showDeleteDialog = true })
+            .combinedClickable(
+                onClick     = onClick,
+                onLongClick = {
+                    if (isCancelled) { if (onRestore != null) showRestoreDialog = true }
+                    else showCancelDialog = true
+                },
+            )
             .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1249,6 +1281,7 @@ private fun SettlementRow(
 
         Spacer(Modifier.width(10.dp))
 
+        val rowAlpha = if (isCancelled) 0.5f else 1f
         Row(
             modifier          = Modifier
                 .weight(1f)
@@ -1262,27 +1295,33 @@ private fun SettlementRow(
                 modifier         = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF00C896).copy(alpha = 0.12f)),
+                    .background((if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896)).copy(alpha = 0.12f)),
             ) {
-                Text("🤝", fontSize = 20.sp)
+                Text(if (isCancelled) "↩️" else "🤝", fontSize = 20.sp)
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text       = "${settlement.payerName} paid ${settlement.receiverName}",
-                    fontSize   = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color      = Color(0xFF00C896),
-                    maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis,
+                    text           = "${settlement.payerName} paid ${settlement.receiverName}",
+                    fontSize       = 14.sp,
+                    fontWeight     = FontWeight.Medium,
+                    color          = if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896),
+                    maxLines       = 1,
+                    overflow       = TextOverflow.Ellipsis,
+                    textDecoration = if (isCancelled) TextDecoration.LineThrough else TextDecoration.None,
                 )
-                Text("Payment", fontSize = 12.sp, color = Color(0xFF6B7280))
+                Text(
+                    text  = if (isCancelled) "Payment cancelled" else "Payment",
+                    fontSize = 12.sp,
+                    color    = Color(0xFF6B7280),
+                )
             }
             Text(
-                text       = MoneyUtils.format(settlement.amount, settlement.currency),
-                fontSize   = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color      = Color(0xFF00C896),
+                text           = MoneyUtils.format(settlement.amount, settlement.currency),
+                fontSize       = 14.sp,
+                fontWeight     = FontWeight.SemiBold,
+                color          = if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896),
+                textDecoration = if (isCancelled) TextDecoration.LineThrough else TextDecoration.None,
             )
         }
     }

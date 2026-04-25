@@ -155,27 +155,47 @@ class GroupDetailViewModel @Inject constructor(
     private val _settlementActionState = MutableStateFlow<SettlementActionState>(SettlementActionState.Idle)
     val settlementActionState: StateFlow<SettlementActionState> = _settlementActionState.asStateFlow()
 
-    fun deleteSettlement(settlementId: String) {
+    fun cancelSettlement(settlementId: String) {
         viewModelScope.launch {
             _settlementActionState.value = SettlementActionState.Loading
-            when (val result = settlementRepository.deleteSettlement(settlementId)) {
+            when (val result = settlementRepository.cancelSettlement(settlementId)) {
                 is ApiResult.Success -> {
-                    // ✅ Fix 3: removed loadData() here — calling loadData() triggered
-                    // another RESUMED refresh immediately after, causing a double load.
-                    // Instead: filter local state instantly (no flicker) then do a
-                    // lightweight refreshExpenses() to sync balances from the server.
-                    _settlements.value = _settlements.value.filter { it.id != settlementId }
+                    // Update in-place so the row remains visible with CANCELLED status.
+                    _settlements.value = _settlements.value.map { s ->
+                        if (s.id == settlementId) result.data else s
+                    }
                     refreshExpenses()
-                    _settlementActionState.value = SettlementActionState.Deleted
+                    _settlementActionState.value = SettlementActionState.Cancelled
                 }
                 is ApiResult.NetworkError -> _settlementActionState.value =
                     SettlementActionState.Error("No internet connection.")
                 else -> _settlementActionState.value =
-                    SettlementActionState.Error("Failed to delete settlement.")
+                    SettlementActionState.Error("Failed to cancel settlement.")
             }
         }
     }
 
+    fun restoreSettlement(settlementId: String) {
+        viewModelScope.launch {
+            _settlementActionState.value = SettlementActionState.Loading
+            when (val result = settlementRepository.restoreSettlement(settlementId)) {
+                is ApiResult.Success -> {
+                    _settlements.value = _settlements.value.map { s ->
+                        if (s.id == settlementId) result.data else s
+                    }
+                    refreshExpenses()
+                    _settlementActionState.value = SettlementActionState.Restored
+                }
+                is ApiResult.NetworkError -> _settlementActionState.value =
+                    SettlementActionState.Error("No internet connection.")
+                else -> _settlementActionState.value =
+                    SettlementActionState.Error("Failed to restore settlement.")
+            }
+        }
+    }
+
+    /** @deprecated Use cancelSettlement() */
+    fun deleteSettlement(settlementId: String) = cancelSettlement(settlementId)
     fun resetSettlementActionState() { _settlementActionState.value = SettlementActionState.Idle }
 }
 
@@ -197,8 +217,11 @@ sealed class TimelineItem(val date: String) {
 }
 
 sealed class SettlementActionState {
-    object Idle    : SettlementActionState()
-    object Loading : SettlementActionState()
-    object Deleted : SettlementActionState()
+    object Idle      : SettlementActionState()
+    object Loading   : SettlementActionState()
+    object Cancelled : SettlementActionState()
+    object Restored  : SettlementActionState()
+    /** @deprecated kept for backward compat */
+    object Deleted   : SettlementActionState()
     data class Error(val message: String) : SettlementActionState()
 }

@@ -28,6 +28,9 @@ fun SettlementResponse.toDomain(): Settlement = Settlement(
     settleType           = settleType,
     isFullSettle         = isFullSettle,
     groupBalanceSnapshot = groupBalanceSnapshot,
+    cancelledAt          = cancelledAt,
+    cancelledByName      = cancelledByName,
+    cancelledById        = cancelledById,
 )
 
 private fun String.toSettlementStatusSafe(): SettlementStatus =

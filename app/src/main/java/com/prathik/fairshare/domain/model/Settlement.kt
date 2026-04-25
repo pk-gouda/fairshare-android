@@ -28,4 +28,8 @@ data class Settlement(
     val isFullSettle: Boolean,
     // JSON snapshot of per-group balances — only non-null for ALL+isFullSettle
     val groupBalanceSnapshot: String?,
+    // Populated when status == CANCELLED
+    val cancelledAt: String?,
+    val cancelledByName: String?,
+    val cancelledById: String?,
 ) : Parcelable

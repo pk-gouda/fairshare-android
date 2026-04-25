@@ -277,9 +277,7 @@ private fun NotificationRow(
 ) {
     val isUnread = !notification.isRead
     val isTappable = when (notification.type) {
-        NotificationType.SETTLEMENT_CANCELLED,
         NotificationType.GROUP_MEMBER_REMOVED -> false
-
         else -> notification.referenceId != null
     }
 
@@ -314,7 +312,9 @@ private fun NotificationRow(
                         }
 
                         NotificationType.SETTLEMENT_RECEIVED,
-                        NotificationType.SETTLEMENT_CONFIRMED -> notification.referenceId?.let {
+                        NotificationType.SETTLEMENT_CONFIRMED,
+                        NotificationType.SETTLEMENT_CANCELLED,
+                        NotificationType.SETTLEMENT_RESTORED -> notification.referenceId?.let {
                             onNavigateToSettlement(it)
                         }
 
@@ -406,6 +406,7 @@ private fun notificationEmoji(type: NotificationType): String = when (type) {
     NotificationType.SETTLEMENT_RECEIVED -> "💸"
     NotificationType.SETTLEMENT_CONFIRMED -> "✅"
     NotificationType.SETTLEMENT_CANCELLED -> "❌"
+    NotificationType.SETTLEMENT_RESTORED -> "↩️"
     NotificationType.FRIEND_REQUEST_RECEIVED -> "👤"
     NotificationType.FRIEND_REQUEST_ACCEPTED -> "🤝"
     NotificationType.GROUP_INVITE_RECEIVED -> "👥"
@@ -433,7 +434,8 @@ private fun notificationBgColor(type: NotificationType): Color = when (type) {
 
     NotificationType.EXPENSE_RESTORED -> Color(0xFF1A2A2A)
     NotificationType.SETTLEMENT_RECEIVED,
-    NotificationType.SETTLEMENT_CONFIRMED -> Color(0xFF1A3A1A)
+    NotificationType.SETTLEMENT_CONFIRMED,
+    NotificationType.SETTLEMENT_RESTORED -> Color(0xFF1A3A1A)
 
     NotificationType.SETTLEMENT_CANCELLED -> Color(0xFF2A1A1A)
     NotificationType.FRIEND_REQUEST_RECEIVED,

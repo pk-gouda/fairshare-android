@@ -23,6 +23,9 @@ interface SettlementApiService {
     @POST("api/settlements/{settlementId}/cancel")
     suspend fun cancelSettlement(@Path("settlementId") settlementId: String): ApiResponse<SettlementResponse>
 
+    @POST("api/settlements/{settlementId}/restore")
+    suspend fun restoreSettlement(@Path("settlementId") settlementId: String): ApiResponse<SettlementResponse>
+
     @GET("api/settlements/history/{otherUserId}")
     suspend fun getHistory(@Path("otherUserId") otherUserId: String): ApiResponse<List<SettlementResponse>>
 
