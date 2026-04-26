@@ -95,6 +95,24 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Disable AndroidX Startup's automatic WorkManager initialization so that
+             FairShareApplication.workManagerConfiguration (which sets HiltWorkerFactory)
+             is used instead of the default factory. Without this, WorkManager initializes
+             itself via InitializationProvider before our custom config is applied, causing
+             SyncWorker instantiation to fail with NoSuchMethodException. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="merge">
+
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+
+        </provider>
+
     </application>
 
 </manifest>

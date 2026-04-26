@@ -4,9 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.network.api.ExpenseApiService
 import com.prathik.fairshare.data.network.safeApiCall
-import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseChangeLog
@@ -21,17 +21,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Wave 2D scope: delete and restore are online-only for now.
+ * Queue-backed offline retry for these operation types will be
+ * wired in Wave 2D-2 once SyncWorker actually replays them.
+ */
 @HiltViewModel
 class ExpenseDetailViewModel @Inject constructor(
-    private val getExpenseUseCase    : GetExpenseUseCase,
-    private val deleteExpenseUseCase  : DeleteExpenseUseCase,
-    private val restoreExpenseUseCase : RestoreExpenseUseCase,
-    private val expenseApiService    : ExpenseApiService,
-    private val tokenStore           : EncryptedTokenStore,
-    savedStateHandle                 : SavedStateHandle,
+    private val getExpenseUseCase: GetExpenseUseCase,
+    private val deleteExpenseUseCase: DeleteExpenseUseCase,
+    private val restoreExpenseUseCase: RestoreExpenseUseCase,
+    private val expenseApiService: ExpenseApiService,
+    private val tokenStore: EncryptedTokenStore,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    val expenseId    : String  = savedStateHandle.get<String>("expenseId") ?: ""
+    val expenseId: String = savedStateHandle.get<String>("expenseId") ?: ""
     val currentUserId: String? = tokenStore.getUserId()
 
     private val _expenseState = MutableStateFlow<ExpenseDetailUiState>(ExpenseDetailUiState.Loading)
@@ -52,7 +57,9 @@ class ExpenseDetailViewModel @Inject constructor(
     private val _changeLogLoading = MutableStateFlow(false)
     val changeLogLoading: StateFlow<Boolean> = _changeLogLoading.asStateFlow()
 
-    init { loadExpense() }
+    init {
+        loadExpense()
+    }
 
     private var hasLoadedOnce = false
 
@@ -63,27 +70,24 @@ class ExpenseDetailViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     _expenseState.value = ExpenseDetailUiState.Success(result.data)
                     hasLoadedOnce = true
-                    // Always load items — itemCount may be 0 due to lazy loading on backend
-                    if (_items.value.isEmpty()) {
-                        loadItems()
-                    }
+                    if (_items.value.isEmpty()) loadItems()
                     loadChangeLog()
                 }
+
                 is ApiResult.NotFound -> _expenseState.value = ExpenseDetailUiState.Deleted
                 is ApiResult.NetworkError -> {
-                    if (!hasLoadedOnce) _expenseState.value = ExpenseDetailUiState.Error("No internet connection.", true)
+                    if (!hasLoadedOnce) _expenseState.value =
+                        ExpenseDetailUiState.Error("No internet connection.", true)
                 }
+
                 else -> {
-                    if (!hasLoadedOnce) _expenseState.value = ExpenseDetailUiState.Error("Failed to load expense.", false)
+                    if (!hasLoadedOnce) _expenseState.value =
+                        ExpenseDetailUiState.Error("Failed to load expense.", false)
                 }
             }
         }
     }
 
-    /**
-     * Forces a full reload of the expense — called after editing item assignments
-     * so the item breakdown reflects the latest saved state.
-     */
     fun forceRefresh() {
         hasLoadedOnce = false
         _items.value = emptyList()
@@ -108,14 +112,14 @@ class ExpenseDetailViewModel @Inject constructor(
             if (result is ApiResult.Success) {
                 _changeLog.value = result.data.map { entry ->
                     ExpenseChangeLog(
-                        changedById   = entry.changedById,
+                        changedById = entry.changedById,
                         changedByName = entry.changedByName,
-                        changedAt     = entry.changedAt,
-                        changes       = entry.changes.map { fc ->
+                        changedAt = entry.changedAt,
+                        changes = entry.changes.map { fc ->
                             ExpenseChangeLog.FieldChange(
                                 fieldName = fc.fieldName,
-                                oldValue  = fc.oldValue,
-                                newValue  = fc.newValue,
+                                oldValue = fc.oldValue,
+                                newValue = fc.newValue,
                             )
                         }
                     )
@@ -130,9 +134,11 @@ class ExpenseDetailViewModel @Inject constructor(
             _actionState.value = ExpenseActionState.Loading
             val idempotencyKey = java.util.UUID.randomUUID().toString()
             when (val result = deleteExpenseUseCase(expenseId, idempotencyKey)) {
-                is ApiResult.Success    -> _actionState.value = ExpenseActionState.Deleted
-                is ApiResult.NetworkError -> _actionState.value = ExpenseActionState.Error("No internet connection.")
-                else                    -> _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
+                is ApiResult.Success -> _actionState.value = ExpenseActionState.Deleted
+                is ApiResult.NetworkError -> _actionState.value =
+                    ExpenseActionState.Error("No internet connection. Please try again.")
+
+                else -> _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
             }
         }
     }
@@ -142,14 +148,18 @@ class ExpenseDetailViewModel @Inject constructor(
             _actionState.value = ExpenseActionState.Loading
             val idempotencyKey = java.util.UUID.randomUUID().toString()
             when (restoreExpenseUseCase(expenseId, idempotencyKey)) {
-                is ApiResult.Success    -> _actionState.value = ExpenseActionState.Restored
-                is ApiResult.NetworkError -> _actionState.value = ExpenseActionState.Error("No internet connection.")
-                else                    -> _actionState.value = ExpenseActionState.Error("Failed to restore expense.")
+                is ApiResult.Success -> _actionState.value = ExpenseActionState.Restored
+                is ApiResult.NetworkError -> _actionState.value =
+                    ExpenseActionState.Error("No internet connection. Please try again.")
+
+                else -> _actionState.value = ExpenseActionState.Error("Failed to restore expense.")
             }
         }
     }
 
-    fun resetActionState() { _actionState.value = ExpenseActionState.Idle }
+    fun resetActionState() {
+        _actionState.value = ExpenseActionState.Idle
+    }
 }
 
 sealed class ExpenseDetailUiState {
@@ -160,7 +170,7 @@ sealed class ExpenseDetailUiState {
 }
 
 sealed class ExpenseActionState {
-    object Idle    : ExpenseActionState()
+    object Idle : ExpenseActionState()
     object Loading : ExpenseActionState()
     object Deleted : ExpenseActionState()
     object Restored : ExpenseActionState()

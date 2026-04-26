@@ -1,9 +1,14 @@
 package com.prathik.fairshare.ui.expense
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.model.request.CreateExpenseRequest
+import com.prathik.fairshare.data.sync.OperationType
+import com.prathik.fairshare.data.sync.PendingOperationRepository
+import com.prathik.fairshare.data.sync.SyncWorker
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.ExpenseCategory
 import com.prathik.fairshare.domain.model.Friend
@@ -18,10 +23,13 @@ import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import com.prathik.fairshare.domain.usecase.receipt.ScanReceiptUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.time.LocalDateTime
 import javax.inject.Inject
 
@@ -35,6 +43,9 @@ class AddExpenseViewModel @Inject constructor(
     private val getFriendsUseCase: GetFriendsUseCase,
     private val scanReceiptUseCase: ScanReceiptUseCase,
     private val tokenStore: EncryptedTokenStore,
+    private val pendingOperationRepository: PendingOperationRepository,
+    private val json: Json,
+    @ApplicationContext private val appContext: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -304,124 +315,57 @@ class AddExpenseViewModel @Inject constructor(
         val lower = description.lowercase()
         return when {
             lower.containsAny(
-                "dinner",
-                "lunch",
-                "breakfast",
-                "restaurant",
-                "food",
-                "cafe",
-                "coffee",
-                "eat",
-                "pizza",
-                "burger",
-                "sushi"
+                "dinner", "lunch", "breakfast", "restaurant", "food",
+                "cafe", "coffee", "eat", "pizza", "burger", "sushi"
             ) -> ExpenseCategory.DINING_OUT
 
             lower.containsAny(
-                "grocery",
-                "groceries",
-                "walmart",
-                "target",
-                "supermarket",
-                "vegetables",
-                "fruit",
-                "milk"
+                "grocery", "groceries", "walmart", "target",
+                "supermarket", "vegetables", "fruit", "milk"
             ) -> ExpenseCategory.GROCERIES
 
-            lower.containsAny(
-                "uber",
-                "lyft",
-                "taxi",
-                "cab",
-                "ola",
-                "rapido"
-            ) -> ExpenseCategory.TAXI
+            lower.containsAny("uber", "lyft", "taxi", "cab", "ola", "rapido") -> ExpenseCategory.TAXI
 
-            lower.containsAny(
-                "bus",
-                "train",
-                "metro",
-                "subway",
-                "commute"
-            ) -> ExpenseCategory.BUS_TRAIN
+            lower.containsAny("bus", "train", "metro", "subway", "commute") -> ExpenseCategory.BUS_TRAIN
 
             lower.containsAny("rent", "apartment", "flat", "lease") -> ExpenseCategory.RENT
             lower.containsAny("electric", "electricity", "power") -> ExpenseCategory.ELECTRICITY
             lower.containsAny("water") -> ExpenseCategory.WATER
             lower.containsAny("gas", "fuel", "petrol", "shell", "pump") -> ExpenseCategory.GAS_FUEL
             lower.containsAny(
-                "internet",
-                "wifi",
-                "phone",
-                "broadband",
-                "sim"
+                "internet", "wifi", "phone", "broadband", "sim"
             ) -> ExpenseCategory.TV_PHONE_INTERNET
 
             lower.containsAny(
-                "movie",
-                "netflix",
-                "hulu",
-                "cinema",
-                "theatre",
-                "amazon prime",
-                "disney"
+                "movie", "netflix", "hulu", "cinema", "theatre",
+                "amazon prime", "disney"
             ) -> ExpenseCategory.MOVIES
 
             lower.containsAny("parking", "park") -> ExpenseCategory.PARKING
             lower.containsAny(
-                "hotel",
-                "airbnb",
-                "hostel",
-                "motel",
-                "resort"
+                "hotel", "airbnb", "hostel", "motel", "resort"
             ) -> ExpenseCategory.HOTEL
 
             lower.containsAny(
-                "flight",
-                "plane",
-                "airline",
-                "airport",
-                "indigo",
-                "air india"
+                "flight", "plane", "airline", "airport", "indigo", "air india"
             ) -> ExpenseCategory.PLANE
 
             lower.containsAny(
-                "medical",
-                "doctor",
-                "hospital",
-                "pharmacy",
-                "medicine",
-                "clinic"
+                "medical", "doctor", "hospital", "pharmacy", "medicine", "clinic"
             ) -> ExpenseCategory.MEDICAL
 
             lower.containsAny(
-                "gym",
-                "sport",
-                "football",
-                "cricket",
-                "badminton",
-                "fitness"
+                "gym", "sport", "football", "cricket", "badminton", "fitness"
             ) -> ExpenseCategory.SPORTS
 
             lower.containsAny("gift", "birthday", "present") -> ExpenseCategory.GIFTS
             lower.containsAny(
-                "beer",
-                "wine",
-                "alcohol",
-                "bar",
-                "pub",
-                "whiskey",
-                "vodka"
+                "beer", "wine", "alcohol", "bar", "pub", "whiskey", "vodka"
             ) -> ExpenseCategory.LIQUOR
 
             lower.containsAny("pet", "dog", "cat", "vet") -> ExpenseCategory.PETS
             lower.containsAny(
-                "cloth",
-                "shirt",
-                "shoes",
-                "fashion",
-                "zara",
-                "h&m"
+                "cloth", "shirt", "shoes", "fashion", "zara", "h&m"
             ) -> ExpenseCategory.CLOTHING
 
             else -> null
@@ -492,8 +436,7 @@ class AddExpenseViewModel @Inject constructor(
                 }.toMap()
             }
 
-            SplitType.UNEQUAL, SplitType.PERCENTAGE, SplitType.SHARES -> { /* manual */
-            }
+            SplitType.UNEQUAL, SplitType.PERCENTAGE, SplitType.SHARES -> { /* manual */ }
         }
     }
 
@@ -503,9 +446,7 @@ class AddExpenseViewModel @Inject constructor(
             try {
                 val base64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     var bitmap = android.graphics.BitmapFactory.decodeByteArray(
-                        imageBytes,
-                        0,
-                        imageBytes.size
+                        imageBytes, 0, imageBytes.size
                     )
                     if (bitmap == null) return@withContext null
                     if (bitmap.width > 1000) {
@@ -516,8 +457,7 @@ class AddExpenseViewModel @Inject constructor(
                     val outputStream = java.io.ByteArrayOutputStream()
                     bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, outputStream)
                     android.util.Base64.encodeToString(
-                        outputStream.toByteArray(),
-                        android.util.Base64.NO_WRAP
+                        outputStream.toByteArray(), android.util.Base64.NO_WRAP
                     )
                 }
                 if (base64 == null) {
@@ -537,8 +477,6 @@ class AddExpenseViewModel @Inject constructor(
                         if (receipt.totalAmount > 0) {
                             _amount.value = receipt.totalAmount.toString()
                         }
-                        // Always use today's date — the receipt date is when the
-                        // merchant printed the receipt, not when the expense was split.
                         _expenseDate.value = java.time.LocalDateTime.now().toString()
                         receipt.currency?.let { _currency.value = it }
                         _receiptState.value = ReceiptScanState.Success(receipt)
@@ -594,11 +532,7 @@ class AddExpenseViewModel @Inject constructor(
             }
         }
 
-        // Determine the split data to send:
-        // - If item assignments were done, use the accurate per-person amounts from the
-        //   assignment screen. This prevents the backend from falling back to splitting
-        //   equally among ALL group members (which would include unassigned members).
-        // - Otherwise use the manual _splitData (equal/unequal/percent/shares).
+        // Determine the split data to send.
         val effectiveSplitData: Map<String, Double>? = when {
             _itemSplitData.value.isNotEmpty() -> _itemSplitData.value
             _splitData.value.isNotEmpty() -> _splitData.value
@@ -610,36 +544,113 @@ class AddExpenseViewModel @Inject constructor(
         }
 
         val finalCategory = _category.value ?: ExpenseCategory.GENERAL
+        val userId = currentUserId ?: run {
+            _uiState.value = AddExpenseUiState.Error("Not logged in. Please sign in again.")
+            return
+        }
 
         viewModelScope.launch {
             _uiState.value = AddExpenseUiState.Loading
-            // Generate once per submit action. Stable across retries of this same
-            // submit — a new UUID is only created when the user taps Submit again
-            // after a failure, which is the correct idempotency boundary.
-            val idempotencyKey = java.util.UUID.randomUUID().toString()
+
+            // Build request for JSON storage (needed for SyncWorker replay).
+            val effectiveSplitType = if (_itemSplitData.value.isNotEmpty()) SplitType.UNEQUAL
+            else _splitType.value
+            val request = CreateExpenseRequest(
+                groupId          = groupId,
+                description      = description,
+                totalAmount      = amount,
+                currency         = _currency.value,
+                splitType        = effectiveSplitType,
+                category         = finalCategory,
+                notes            = _notes.value.ifBlank { null },
+                expenseDate      = _expenseDate.value,
+                payerData        = _payerData.value,
+                splitData        = effectiveSplitData,
+                receiptId        = scannedReceiptId,
+                remainderPointer = _pointerAtCreation,
+                itemAssignments  = _itemAssignments.value.ifEmpty { null },
+                repeatInterval   = _repeatInterval.value,
+                // idempotencyKey is omitted here — it comes from the pending operation below
+            )
+
+            // Wave 2D-1: enqueue BEFORE network call.
+            // The stable idempotencyKey from the queue row is used for the backend request
+            // so the backend can deduplicate on any retry.
+            val enqueued = pendingOperationRepository.enqueue(
+                userId          = userId,
+                operationType   = OperationType.CREATE_EXPENSE,
+                endpoint        = "/api/expenses",
+                method          = "POST",
+                requestBodyJson = json.encodeToString(request),
+            )
+
             when (val result = createExpenseUseCase(
-                groupId = groupId,
-                description = description,
-                totalAmount = amount,
-                currency = _currency.value,
-                splitType = if (_itemSplitData.value.isNotEmpty()) SplitType.UNEQUAL else _splitType.value,
-                category = finalCategory,
-                notes = _notes.value.ifBlank { null },
-                expenseDate = _expenseDate.value,
-                payerData = _payerData.value,
-                splitData = effectiveSplitData,
-                receiptId = scannedReceiptId,
-                idempotencyKey   = idempotencyKey,
+                groupId          = groupId,
+                description      = description,
+                totalAmount      = amount,
+                currency         = _currency.value,
+                splitType        = effectiveSplitType,
+                category         = finalCategory,
+                notes            = _notes.value.ifBlank { null },
+                expenseDate      = _expenseDate.value,
+                payerData        = _payerData.value,
+                splitData        = effectiveSplitData,
+                receiptId        = scannedReceiptId,
+                idempotencyKey   = enqueued.idempotencyKey,
                 remainderPointer = _pointerAtCreation,
                 itemAssignments  = _itemAssignments.value.ifEmpty { null },
                 repeatInterval   = _repeatInterval.value,
             )) {
-                is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
-                is ApiResult.NetworkError -> _uiState.value =
-                    AddExpenseUiState.Error("No internet connection.")
+                is ApiResult.Success -> {
+                    // Online success — mark the operation done and store the server ID.
+                    pendingOperationRepository.markSynced(
+                        operationId      = enqueued.operationId,
+                        serverResourceId = result.data.id,
+                    )
+                    _uiState.value = AddExpenseUiState.Success
+                }
 
-                else -> _uiState.value =
-                    AddExpenseUiState.Error("Failed to create expense. Please try again.")
+                is ApiResult.NetworkError -> {
+                    // Wave 2D-3: keep the pending operation for SyncWorker to retry later.
+                    pendingOperationRepository.markRetryable(
+                        operationId = enqueued.operationId,
+                        error       = result.exception.message ?: "Network error",
+                    )
+                    // Schedule an immediate sync attempt — WorkManager will hold it until
+                    // network is available, then send with the same idempotencyKey.
+                    SyncWorker.triggerImmediateSync(appContext)
+                    _uiState.value = AddExpenseUiState.SavedOffline
+                }
+
+                is ApiResult.ValidationError -> {
+                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    _uiState.value = AddExpenseUiState.Error(result.message)
+                }
+
+                is ApiResult.Forbidden -> {
+                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    _uiState.value = AddExpenseUiState.Error(result.message)
+                }
+
+                is ApiResult.Unauthorized -> {
+                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    _uiState.value = AddExpenseUiState.Error(result.message)
+                }
+
+                is ApiResult.Conflict -> {
+                    // 409 from backend means the idempotency key was already used with a
+                    // different body — treat as permanent (user must retry from scratch).
+                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    _uiState.value = AddExpenseUiState.Error("Expense already exists. Please try again.")
+                }
+
+                else -> {
+                    // Other 4xx/5xx — permanent failure, don't queue for retry.
+                    pendingOperationRepository.markFailed(
+                        enqueued.operationId, "HTTP error creating expense"
+                    )
+                    _uiState.value = AddExpenseUiState.Error("Failed to create expense. Please try again.")
+                }
             }
         }
     }
@@ -664,29 +675,72 @@ class AddExpenseViewModel @Inject constructor(
             _uiState.value = AddExpenseUiState.Error("Please enter a valid amount."); return
         }
 
+        val userId = currentUserId ?: run {
+            _uiState.value = AddExpenseUiState.Error("Not logged in. Please sign in again.")
+            return
+        }
+
+        val transferDescription =
+            "${members.value.find { it.userId == fromId }?.fullName ?: "Someone"} → " +
+                    "${members.value.find { it.userId == toId }?.fullName ?: "Someone"}"
+
         viewModelScope.launch {
             _uiState.value = AddExpenseUiState.Loading
-            val idempotencyKey = java.util.UUID.randomUUID().toString()
-            when (val result = createExpenseUseCase(
-                groupId = groupId,
-                description = "${members.value.find { it.userId == fromId }?.fullName ?: "Someone"} → ${members.value.find { it.userId == toId }?.fullName ?: "Someone"}",
-                totalAmount = amount,
-                currency = _currency.value,
-                splitType = SplitType.UNEQUAL,
-                category = ExpenseCategory.GENERAL,
-                notes = _notes.value.ifBlank { null },
-                expenseDate = _expenseDate.value,
-                payerData = mapOf(fromId to amount),
-                splitData = mapOf(toId to amount),
-                receiptId = null,
-                idempotencyKey = idempotencyKey,
-            )) {
-                is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
-                is ApiResult.NetworkError -> _uiState.value =
-                    AddExpenseUiState.Error("No internet connection.")
 
-                else -> _uiState.value =
-                    AddExpenseUiState.Error("Failed to save transfer. Please try again.")
+            val request = CreateExpenseRequest(
+                groupId     = groupId,
+                description = transferDescription,
+                totalAmount = amount,
+                currency    = _currency.value,
+                splitType   = SplitType.UNEQUAL,
+                category    = ExpenseCategory.GENERAL,
+                notes       = _notes.value.ifBlank { null },
+                expenseDate = _expenseDate.value,
+                payerData   = mapOf(fromId to amount),
+                splitData   = mapOf(toId to amount),
+            )
+
+            val enqueued = pendingOperationRepository.enqueue(
+                userId          = userId,
+                operationType   = OperationType.CREATE_EXPENSE,
+                endpoint        = "/api/expenses",
+                method          = "POST",
+                requestBodyJson = json.encodeToString(request),
+            )
+
+            when (val result = createExpenseUseCase(
+                groupId        = groupId,
+                description    = transferDescription,
+                totalAmount    = amount,
+                currency       = _currency.value,
+                splitType      = SplitType.UNEQUAL,
+                category       = ExpenseCategory.GENERAL,
+                notes          = _notes.value.ifBlank { null },
+                expenseDate    = _expenseDate.value,
+                payerData      = mapOf(fromId to amount),
+                splitData      = mapOf(toId to amount),
+                receiptId      = null,
+                idempotencyKey = enqueued.idempotencyKey,
+            )) {
+                is ApiResult.Success -> {
+                    pendingOperationRepository.markSynced(enqueued.operationId, result.data.id)
+                    _uiState.value = AddExpenseUiState.Success
+                }
+
+                is ApiResult.NetworkError -> {
+                    pendingOperationRepository.markRetryable(
+                        enqueued.operationId, result.exception.message ?: "Network error"
+                    )
+                    SyncWorker.triggerImmediateSync(appContext)
+                    _uiState.value = AddExpenseUiState.SavedOffline
+                }
+
+                else -> {
+                    pendingOperationRepository.markFailed(
+                        enqueued.operationId, "Failed to save transfer"
+                    )
+                    _uiState.value = AddExpenseUiState.Error("Failed to save transfer. Please try again.")
+                }
             }
         }
     }
@@ -702,6 +756,8 @@ sealed class AddExpenseUiState {
     object Idle : AddExpenseUiState()
     object Loading : AddExpenseUiState()
     object Success : AddExpenseUiState()
+    /** Wave 2D-3: expense saved locally and queued for sync when network returns. */
+    object SavedOffline : AddExpenseUiState()
     data class Error(val message: String) : AddExpenseUiState()
 }
 

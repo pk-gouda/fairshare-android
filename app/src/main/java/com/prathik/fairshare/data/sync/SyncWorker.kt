@@ -11,8 +11,11 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.prathik.fairshare.data.model.request.CreateExpenseRequest
+import com.prathik.fairshare.domain.repository.ExpenseRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.serialization.json.Json
 import java.util.concurrent.TimeUnit
 
 /**
@@ -22,14 +25,16 @@ import java.util.concurrent.TimeUnit
  * and FAILED_RETRYABLE operations (respecting dependency order) and attempts
  * to sync each one to the backend.
  *
- * Wave 2C: Skeleton only.
- * - Queue loading and status transitions are implemented.
- * - Actual API calls are stubbed with TODO comments per OperationType.
- * - Wave 2D will fill in the real API call implementations.
+ * Wave 2D-4: CREATE_EXPENSE operations are fully wired. The worker
+ * deserialises the stored [CreateExpenseRequest] JSON and calls the expense
+ * repository using the stable [PendingOperationEntity.idempotencyKey] so the
+ * backend deduplicates any duplicate submissions automatically.
  *
- * Scheduling:
- * - Periodic: runs every 15 minutes when network is available.
- * - One-shot: triggered immediately when a new operation is enqueued.
+ * UPDATE_EXPENSE / DELETE_EXPENSE / RESTORE_EXPENSE operations are enqueued
+ * and marked SYNCED inline by their ViewModels while online; the stubs here
+ * handle the case where the ViewModel failed and the queue contains a
+ * FAILED_RETRYABLE row from a previous session. Full retry logic for those
+ * types comes in Wave 2D-2 follow-up.
  *
  * Idempotency guarantee:
  * - Each operation carries a stable [PendingOperationEntity.idempotencyKey].
@@ -41,6 +46,8 @@ class SyncWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val pendingOperationRepository: PendingOperationRepository,
+    private val expenseRepository: ExpenseRepository,
+    private val json: Json,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -50,34 +57,40 @@ class SyncWorker @AssistedInject constructor(
 
         if (allWork.isEmpty()) return Result.success()
 
-        var anyFailure = false
+        var anyRetryableFailure = false
 
         for (operation in allWork) {
-            val result = syncOperation(
-                operationId    = operation.operationId,
-                operationType  = operation.operationType,
-                idempotencyKey = operation.idempotencyKey,
+            val succeeded = syncOperation(
+                operationId      = operation.operationId,
+                operationType    = operation.operationType,
+                idempotencyKey   = operation.idempotencyKey,
+                requestBodyJson  = operation.requestBodyJson,
+                endpoint         = operation.endpoint,
             )
-            if (!result) anyFailure = true
+            if (!succeeded) anyRetryableFailure = true
         }
 
-        return if (anyFailure) Result.retry() else Result.success()
+        // Clean up old SYNCED / CANCELLED rows on each pass (7-day TTL).
+        pendingOperationRepository.cleanupCompleted()
+
+        return if (anyRetryableFailure) Result.retry() else Result.success()
     }
 
     /**
      * Attempt to sync one pending operation to the backend.
      *
-     * Takes only String primitives — NOT PendingOperationEntity — to avoid a KSP
-     * ordering issue where the Hilt/AssistedInject processor runs before Room has
-     * resolved the entity type, causing error.NonExistentClass compile errors.
+     * String primitives only — avoids KSP ordering issues where the
+     * Hilt/AssistedInject processor runs before Room resolves entity types.
      *
-     * @return true if the operation succeeded or was permanently failed (no retry needed);
-     *         false if a retryable error occurred and the worker should retry.
+     * @return true  → operation succeeded or permanently failed (no worker retry needed).
+     *         false → retryable failure occurred; worker should schedule a retry.
      */
     private suspend fun syncOperation(
-        operationId: String,
-        operationType: String,
-        idempotencyKey: String,
+        operationId    : String,
+        operationType  : String,
+        idempotencyKey : String,
+        requestBodyJson: String?,
+        endpoint       : String,
     ): Boolean {
         pendingOperationRepository.markSyncing(operationId)
         pendingOperationRepository.incrementRetry(operationId)
@@ -89,46 +102,46 @@ class SyncWorker @AssistedInject constructor(
                 pendingOperationRepository.markFailed(
                     operationId, "Unknown operation type: $operationType"
                 )
-                return true
+                return true // permanent — don't block the worker
             }
 
             when (type) {
-                OperationType.CREATE_EXPENSE -> {
-                    // TODO Wave 2D: deserialize requestBodyJson and call
-                    // expenseService.createExpense(idempotencyKey = idempotencyKey, ...)
-                    pendingOperationRepository.markFailed(operationId, "Wave 2D not yet implemented for CREATE_EXPENSE")
-                    true
-                }
-                OperationType.UPDATE_EXPENSE -> {
-                    pendingOperationRepository.markFailed(operationId, "Wave 2D not yet implemented for UPDATE_EXPENSE")
-                    true
-                }
-                OperationType.DELETE_EXPENSE -> {
-                    pendingOperationRepository.markFailed(operationId, "Wave 2D not yet implemented for DELETE_EXPENSE")
-                    true
-                }
+                OperationType.CREATE_EXPENSE -> syncCreateExpense(
+                    operationId    = operationId,
+                    idempotencyKey = idempotencyKey,
+                    requestBodyJson = requestBodyJson,
+                )
+
+                OperationType.UPDATE_EXPENSE,
+                OperationType.DELETE_EXPENSE,
                 OperationType.RESTORE_EXPENSE -> {
-                    pendingOperationRepository.markFailed(operationId, "Wave 2D not yet implemented for RESTORE_EXPENSE")
+                    // These are handled inline by their ViewModels while online.
+                    // A FAILED_RETRYABLE row here means the ViewModel got a network
+                    // error after enqueueing but before the response arrived.
+                    // Full offline retry for these types is Wave 2D-2 follow-up;
+                    // for now mark FAILED_PERMANENT so the queue doesn't loop.
+                    pendingOperationRepository.markFailed(
+                        operationId,
+                        "Offline retry for $operationType requires Wave 2D-2 follow-up. " +
+                                "Please re-open the expense and try again."
+                    )
                     true
                 }
-                OperationType.CREATE_SETTLEMENT -> {
-                    pendingOperationRepository.markFailed(operationId, "Wave 2E not yet implemented for CREATE_SETTLEMENT")
-                    true
-                }
-                OperationType.UPDATE_SETTLEMENT -> {
-                    pendingOperationRepository.markFailed(operationId, "Wave 2E not yet implemented for UPDATE_SETTLEMENT")
-                    true
-                }
-                OperationType.CANCEL_SETTLEMENT -> {
-                    pendingOperationRepository.markFailed(operationId, "Wave 2E not yet implemented for CANCEL_SETTLEMENT")
-                    true
-                }
+
+                OperationType.CREATE_SETTLEMENT,
+                OperationType.UPDATE_SETTLEMENT,
+                OperationType.CANCEL_SETTLEMENT,
                 OperationType.RESTORE_SETTLEMENT -> {
-                    pendingOperationRepository.markFailed(operationId, "Wave 2E not yet implemented for RESTORE_SETTLEMENT")
+                    pendingOperationRepository.markFailed(
+                        operationId, "Wave 2E not yet implemented for $operationType"
+                    )
                     true
                 }
+
                 OperationType.ASSIGN_EXPENSE_ITEMS -> {
-                    pendingOperationRepository.markFailed(operationId, "Wave 2D not yet implemented for ASSIGN_EXPENSE_ITEMS")
+                    pendingOperationRepository.markFailed(
+                        operationId, "Wave 2D not yet implemented for ASSIGN_EXPENSE_ITEMS"
+                    )
                     true
                 }
             }
@@ -139,12 +152,103 @@ class SyncWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * Wave 2D-4: replay a CREATE_EXPENSE pending operation.
+     *
+     * Deserialises the stored [CreateExpenseRequest] JSON and calls the
+     * repository with the original stable [idempotencyKey]. The backend's
+     * idempotency_keys table guarantees exactly-once financial mutation even
+     * if this runs multiple times.
+     */
+    private suspend fun syncCreateExpense(
+        operationId    : String,
+        idempotencyKey : String,
+        requestBodyJson: String?,
+    ): Boolean {
+        if (requestBodyJson == null) {
+            pendingOperationRepository.markFailed(
+                operationId, "CREATE_EXPENSE pending operation has no requestBodyJson"
+            )
+            return true
+        }
+
+        val request = try {
+            json.decodeFromString<CreateExpenseRequest>(requestBodyJson)
+        } catch (e: Exception) {
+            pendingOperationRepository.markFailed(
+                operationId, "Failed to deserialise CREATE_EXPENSE body: ${e.message}"
+            )
+            return true
+        }
+
+        val result = expenseRepository.createExpense(
+            groupId          = request.groupId,
+            description      = request.description,
+            totalAmount      = request.totalAmount,
+            currency         = request.currency,
+            splitType        = request.splitType,
+            category         = request.category,
+            notes            = request.notes,
+            expenseDate      = request.expenseDate,
+            payerData        = request.payerData,
+            splitData        = request.splitData,
+            receiptId        = request.receiptId,
+            idempotencyKey   = idempotencyKey,   // stable key — never regenerated
+            remainderPointer = request.remainderPointer,
+            itemAssignments  = request.itemAssignments,
+            repeatInterval   = request.repeatInterval,
+        )
+
+        return when (result) {
+            is com.prathik.fairshare.domain.model.ApiResult.Success -> {
+                pendingOperationRepository.markSynced(operationId, result.data.id)
+                true
+            }
+
+            is com.prathik.fairshare.domain.model.ApiResult.NetworkError -> {
+                pendingOperationRepository.markRetryable(
+                    operationId, result.exception.message ?: "Network error"
+                )
+                false // signal worker to schedule a retry
+            }
+
+            // 409 Conflict — backend already processed this idempotency key with a
+            // different body. Treat as permanent; user must recreate from scratch.
+            is com.prathik.fairshare.domain.model.ApiResult.Conflict -> {
+                pendingOperationRepository.markFailed(operationId, result.message)
+                true
+            }
+
+            // 401 / 403 — permanent; user must re-authenticate or fix permissions.
+            is com.prathik.fairshare.domain.model.ApiResult.Unauthorized,
+            is com.prathik.fairshare.domain.model.ApiResult.Forbidden -> {
+                pendingOperationRepository.markFailed(
+                    operationId,
+                    (result as? com.prathik.fairshare.domain.model.ApiResult.Forbidden)?.message
+                        ?: "Unauthorized"
+                )
+                true
+            }
+
+            // 400 validation — permanent; stored body is malformed.
+            is com.prathik.fairshare.domain.model.ApiResult.ValidationError -> {
+                pendingOperationRepository.markFailed(operationId, result.message)
+                true
+            }
+
+            // 5xx and other transient errors — keep retrying.
+            else -> {
+                pendingOperationRepository.markRetryable(operationId, "Server error, will retry")
+                false
+            }
+        }
+    }
+
     companion object {
         private const val PERIODIC_WORK_NAME   = "fairshare_sync_periodic"
         private const val ONETIME_WORK_NAME    = "fairshare_sync_onetime"
         private const val BACKOFF_DELAY_MILLIS = 30_000L // 30 seconds
 
-        /** Network-required constraint shared by both schedule methods. */
         private val networkConstraint = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()

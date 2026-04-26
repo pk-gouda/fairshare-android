@@ -8,13 +8,22 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * Result returned by [PendingOperationRepository.enqueue].
+ * Both values are generated once at enqueue time and never change.
+ *
+ * @param operationId   Primary key of the pending_operations row.
+ * @param idempotencyKey Stable key to pass to the backend on every attempt.
+ */
+data class EnqueueResult(
+    val operationId: String,
+    val idempotencyKey: String,
+)
+
+/**
  * Repository for the pending operation queue.
  *
  * All writes to [PendingOperationDao] go through here so the rest of the
  * app deals with [PendingOperationEntity] without touching DAO directly.
- *
- * Wave 2C: Foundation only. Enqueue methods exist but are not yet called by
- * create/update/delete/restore screens — that wiring happens in Wave 2D.
  */
 @Singleton
 class PendingOperationRepository @Inject constructor(
@@ -43,10 +52,14 @@ class PendingOperationRepository @Inject constructor(
     // ── Write ─────────────────────────────────────────────────────────────────
 
     /**
-     * Enqueue a new operation. The idempotencyKey is generated once here
-     * and stored with the operation — it must never be regenerated on retry.
+     * Enqueue a new operation. Both [EnqueueResult.operationId] and
+     * [EnqueueResult.idempotencyKey] are generated once here and stored with
+     * the operation — they must never be regenerated on retry.
      *
-     * @return The operationId (primary key) of the inserted row.
+     * The caller should use [EnqueueResult.idempotencyKey] for the backend
+     * request so the backend can deduplicate on retry.
+     *
+     * @return [EnqueueResult] containing the stable operationId and idempotencyKey.
      */
     suspend fun enqueue(
         userId: String,
@@ -56,8 +69,8 @@ class PendingOperationRepository @Inject constructor(
         requestBodyJson: String?,
         localResourceId: String? = null,
         dependsOnOperationId: String? = null,
-    ): String {
-        val operationId   = UUID.randomUUID().toString()
+    ): EnqueueResult {
+        val operationId    = UUID.randomUUID().toString()
         val idempotencyKey = UUID.randomUUID().toString()
         val now            = System.currentTimeMillis()
 
@@ -77,7 +90,7 @@ class PendingOperationRepository @Inject constructor(
             dependsOnOperationId = dependsOnOperationId,
         )
         dao.insertOperation(entity)
-        return operationId
+        return EnqueueResult(operationId = operationId, idempotencyKey = idempotencyKey)
     }
 
     /** Mark an operation as currently in-flight. */
