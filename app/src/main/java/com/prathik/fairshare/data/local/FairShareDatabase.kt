@@ -17,11 +17,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 6 → 7: Added isDeleted/deletedAt to groups cache
  * 7 → 8: Added friendCode/timezone to users cache
  * 8 → 9: Added pending_operations table for Wave 2C durable sync queue
+ * 9 → 10: Added expense_payers and expense_splits tables for Wave 2D-2B full offline edit
  */
 @Database(
     entities = [
         GroupEntity::class,
         ExpenseEntity::class,
+        ExpensePayerEntity::class,
+        ExpenseSplitEntity::class,
         BalanceEntity::class,
         UserEntity::class,
         PendingActionEntity::class,
@@ -29,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FriendEntity::class,
         PendingOperationEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -40,6 +43,8 @@ abstract class FairShareDatabase : RoomDatabase() {
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun invitedFriendDao(): InvitedFriendDao
     abstract fun friendDao(): FriendDao
+    abstract fun expensePayerDao(): ExpensePayerDao
+    abstract fun expenseSplitDao(): ExpenseSplitDao
     abstract fun pendingOperationDao(): PendingOperationDao
 
     companion object {
@@ -182,6 +187,49 @@ abstract class FairShareDatabase : RoomDatabase() {
                     """
                     CREATE UNIQUE INDEX IF NOT EXISTS index_pending_operations_idempotencyKey
                     ON pending_operations(idempotencyKey)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /** 9 → 10: Add expense_payers and expense_splits for full offline edit cache. */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS expense_payers (
+                        id         TEXT    NOT NULL PRIMARY KEY,
+                        expenseId  TEXT    NOT NULL,
+                        userId     TEXT    NOT NULL,
+                        fullName   TEXT    NOT NULL,
+                        amountPaid REAL    NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_expense_payers_expenseId
+                    ON expense_payers(expenseId)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS expense_splits (
+                        id         TEXT    NOT NULL PRIMARY KEY,
+                        expenseId  TEXT    NOT NULL,
+                        userId     TEXT    NOT NULL,
+                        fullName   TEXT    NOT NULL,
+                        amountOwed REAL    NOT NULL,
+                        percentage REAL,
+                        shares     INTEGER,
+                        isSettled  INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_expense_splits_expenseId
+                    ON expense_splits(expenseId)
                     """.trimIndent()
                 )
             }

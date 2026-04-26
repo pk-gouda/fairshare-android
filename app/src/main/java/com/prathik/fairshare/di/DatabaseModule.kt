@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import com.prathik.fairshare.data.local.BalanceDao
 import com.prathik.fairshare.data.local.ExpenseDao
+import com.prathik.fairshare.data.local.ExpensePayerDao
+import com.prathik.fairshare.data.local.ExpenseSplitDao
 import com.prathik.fairshare.data.local.FairShareDatabase
 import com.prathik.fairshare.data.local.GroupDao
 import com.prathik.fairshare.data.local.FriendDao
@@ -48,6 +50,7 @@ object DatabaseModule {
                 FairShareDatabase.MIGRATION_6_7,
                 FairShareDatabase.MIGRATION_7_8,
                 FairShareDatabase.MIGRATION_8_9,
+                FairShareDatabase.MIGRATION_9_10,
             )
             .build()
 
@@ -90,4 +93,14 @@ object DatabaseModule {
     @Singleton
     fun providePendingOperationDao(database: FairShareDatabase): PendingOperationDao =
         database.pendingOperationDao()
+
+    @Provides
+    @Singleton
+    fun provideExpensePayerDao(database: FairShareDatabase): ExpensePayerDao =
+        database.expensePayerDao()
+
+    @Provides
+    @Singleton
+    fun provideExpenseSplitDao(database: FairShareDatabase): ExpenseSplitDao =
+        database.expenseSplitDao()
 }

@@ -1,6 +1,10 @@
 package com.prathik.fairshare.data.repository.impl
 
 import com.prathik.fairshare.data.local.ExpenseDao
+import com.prathik.fairshare.data.local.ExpensePayerDao
+import com.prathik.fairshare.data.local.ExpensePayerEntity
+import com.prathik.fairshare.data.local.ExpenseSplitDao
+import com.prathik.fairshare.data.local.ExpenseSplitEntity
 import com.prathik.fairshare.data.local.ExpenseEntity
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.AddCommentRequest
@@ -27,6 +31,8 @@ import kotlinx.coroutines.launch
 class ExpenseRepositoryImpl @Inject constructor(
     private val expenseService: ExpenseApiService,
     private val expenseDao: ExpenseDao,
+    private val expensePayerDao: ExpensePayerDao,
+    private val expenseSplitDao: ExpenseSplitDao,
 ) : ExpenseRepository {
 
     override suspend fun getGroupExpenses(groupId: String): ApiResult<List<Expense>> {
@@ -51,14 +57,34 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun getExpense(expenseId: String): ApiResult<Expense> {
         val result = safeApiCall { expenseService.getExpense(expenseId) }
         if (result is ApiResult.Success) {
-            // Cache the full response so EditExpenseScreen can load offline.
-            expenseDao.insert(result.data.toEntity())
-            return result.mapSuccess { it.toDomain() }
+            val response = result.data
+            // Cache the basic entity for list-level operations.
+            expenseDao.insert(response.toEntity())
+            // Cache full payer and split rows so offline edit has complete data.
+            expensePayerDao.deleteByExpenseId(expenseId)
+            expensePayerDao.insertAll(
+                (response.payers ?: emptyList()).map { it.toPayerEntity(expenseId) }
+            )
+            expenseSplitDao.deleteByExpenseId(expenseId)
+            expenseSplitDao.insertAll(
+                (response.splits ?: emptyList()).map { it.toSplitEntity(expenseId) }
+            )
+            return ApiResult.Success(response.toDomain())
         }
-        // Network failed — try the local cache.
-        val cached = expenseDao.getById(expenseId)
-        if (cached != null) return ApiResult.Success(cached.toDomain())
-        return result.mapSuccess { it.toDomain() }
+        // Network failed — reconstruct from cache.
+        val cached = expenseDao.getById(expenseId) ?: return result.mapSuccess { it.toDomain() }
+        val cachedPayers = expensePayerDao.getByExpenseId(expenseId)
+        val cachedSplits = expenseSplitDao.getByExpenseId(expenseId)
+        // Full offline edit is only safe when BOTH payer and split rows are cached.
+        // If either is missing (e.g. old cache before Wave 2D-2B, or a partially
+        // written cache), fall back to the lightweight toDomain() so EditExpenseViewModel
+        // stays in metadata-only mode instead of enabling financial edits with
+        // incomplete data.
+        return if (cachedPayers.isNotEmpty() && cachedSplits.isNotEmpty()) {
+            ApiResult.Success(cached.toDomain(cachedPayers, cachedSplits))
+        } else {
+            ApiResult.Success(cached.toDomain())
+        }
     }
 
     override suspend fun createExpense(
@@ -141,6 +167,9 @@ class ExpenseRepositoryImpl @Inject constructor(
         val result = safeApiCall { expenseService.deleteExpense(expenseId, idempotencyKey) }
         return when (result) {
             is ApiResult.Success -> {
+                // Clean up all cached rows for this expense to avoid orphaned data.
+                expensePayerDao.deleteByExpenseId(expenseId)
+                expenseSplitDao.deleteByExpenseId(expenseId)
                 expenseDao.deleteById(expenseId)
                 ApiResult.Success(Unit)
             }
@@ -200,6 +229,11 @@ class ExpenseRepositoryImpl @Inject constructor(
             updatedAt    = updatedAt,
         )
 
+    /**
+     * Basic cache mapping — payers and splits are empty.
+     * Used by list-level operations ([getGroupExpenses]) where payer detail is not needed.
+     * For single-expense detail with full offline edit support, use [toDomain(payers, splits)].
+     */
     private fun com.prathik.fairshare.data.local.ExpenseEntity.toDomain() = Expense(
         id           = id,
         description  = description,
@@ -226,5 +260,92 @@ class ExpenseRepositoryImpl @Inject constructor(
         yourBalance  = yourBalance,
         createdAt    = createdAt,
         updatedAt    = updatedAt,
+    )
+
+    /**
+     * Full cache mapping — reconstructs a complete [Expense] with payers and splits
+     * from separately cached [ExpensePayerEntity] and [ExpenseSplitEntity] rows.
+     *
+     * Only called from [getExpense] offline fallback when BOTH [payers] and [splits]
+     * are non-empty. The call site enforces this guard:
+     *
+     *   if (cachedPayers.isNotEmpty() && cachedSplits.isNotEmpty())
+     *       cached.toDomain(cachedPayers, cachedSplits)
+     *   else
+     *       cached.toDomain()   // metadata-only fallback
+     *
+     * This ensures [EditExpenseViewModel] only enables full financial offline edit
+     * when complete payer and split data is available. Partial data is never passed
+     * to this overload.
+     */
+    private fun com.prathik.fairshare.data.local.ExpenseEntity.toDomain(
+        payers: List<ExpensePayerEntity>,
+        splits: List<ExpenseSplitEntity>,
+    ) = Expense(
+        id           = id,
+        description  = description,
+        totalAmount  = totalAmount,
+        currency     = currency,
+        groupId      = groupId,
+        groupName    = groupName,
+        addedById    = addedById,
+        addedByName  = addedByName,
+        splitType    = com.prathik.fairshare.domain.model.SplitType.valueOf(splitType),
+        category     = category?.let {
+            try { com.prathik.fairshare.domain.model.ExpenseCategory.valueOf(it) }
+            catch (e: IllegalArgumentException) { null }
+        },
+        notes        = notes,
+        expenseDate  = expenseDate,
+        isDeleted    = isDeleted,
+        payers       = payers.map { p ->
+            com.prathik.fairshare.domain.model.Expense.PayerDetail(
+                userId     = p.userId,
+                fullName   = p.fullName,
+                amountPaid = p.amountPaid,
+            )
+        },
+        splits       = splits.map { s ->
+            com.prathik.fairshare.domain.model.Expense.SplitDetail(
+                userId     = s.userId,
+                fullName   = s.fullName,
+                amountOwed = s.amountOwed,
+                percentage = s.percentage,
+                shares     = s.shares,
+                isSettled  = s.isSettled,
+            )
+        },
+        commentCount = commentCount,
+        itemCount    = itemCount,
+        yourPaid     = yourPaid,
+        yourShare    = yourShare,
+        yourBalance  = yourBalance,
+        createdAt    = createdAt,
+        updatedAt    = updatedAt,
+    )
+
+    // ── Payer / split entity helpers ──────────────────────────────────────────
+
+    private fun com.prathik.fairshare.data.model.response.ExpenseResponse.PayerDetail.toPayerEntity(
+        expenseId: String,
+    ) = ExpensePayerEntity(
+        id         = "${expenseId}_${userId}",
+        expenseId  = expenseId,
+        userId     = userId,
+        fullName   = fullName,
+        amountPaid = amountPaid,
+    )
+
+    private fun com.prathik.fairshare.data.model.response.ExpenseResponse.SplitDetail.toSplitEntity(
+        expenseId: String,
+    ) = ExpenseSplitEntity(
+        id         = "${expenseId}_${userId}",
+        expenseId  = expenseId,
+        userId     = userId,
+        fullName   = fullName,
+        amountOwed = amountOwed,
+        percentage = percentage,
+        shares     = shares,
+        isSettled  = isSettled,
     )
 }
