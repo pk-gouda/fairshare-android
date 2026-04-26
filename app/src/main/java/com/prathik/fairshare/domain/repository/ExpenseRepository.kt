@@ -67,18 +67,20 @@ interface ExpenseRepository {
         repeatInterval: String? = null,
         clearRepeat: Boolean? = null,
         nextRepeatDate: String? = null,
+        idempotencyKey: String? = null,
     ): ApiResult<Expense>
 
     /**
      * Soft deletes an expense — can be restored later.
-     * Returns [ApiResult.Forbidden] if user didn't add this expense.
+     * idempotencyKey prevents balance reversal from happening twice on retry.
      */
-    suspend fun deleteExpense(expenseId: String): ApiResult<Unit>
+    suspend fun deleteExpense(expenseId: String, idempotencyKey: String? = null): ApiResult<Unit>
 
     /**
      * Restores a previously soft-deleted expense.
+     * idempotencyKey prevents balance re-apply from happening twice on retry.
      */
-    suspend fun restoreExpense(expenseId: String): ApiResult<Expense>
+    suspend fun restoreExpense(expenseId: String, idempotencyKey: String? = null): ApiResult<Expense>
 
     /**
      * Searches expenses by description keyword across all groups.

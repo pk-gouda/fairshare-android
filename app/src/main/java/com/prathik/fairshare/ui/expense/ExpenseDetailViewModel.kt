@@ -128,7 +128,8 @@ class ExpenseDetailViewModel @Inject constructor(
     fun deleteExpense() {
         viewModelScope.launch {
             _actionState.value = ExpenseActionState.Loading
-            when (val result = deleteExpenseUseCase(expenseId)) {
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
+            when (val result = deleteExpenseUseCase(expenseId, idempotencyKey)) {
                 is ApiResult.Success    -> _actionState.value = ExpenseActionState.Deleted
                 is ApiResult.NetworkError -> _actionState.value = ExpenseActionState.Error("No internet connection.")
                 else                    -> _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
@@ -139,7 +140,8 @@ class ExpenseDetailViewModel @Inject constructor(
     fun restoreExpense() {
         viewModelScope.launch {
             _actionState.value = ExpenseActionState.Loading
-            when (restoreExpenseUseCase(expenseId)) {
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
+            when (restoreExpenseUseCase(expenseId, idempotencyKey)) {
                 is ApiResult.Success    -> _actionState.value = ExpenseActionState.Restored
                 is ApiResult.NetworkError -> _actionState.value = ExpenseActionState.Error("No internet connection.")
                 else                    -> _actionState.value = ExpenseActionState.Error("Failed to restore expense.")

@@ -105,6 +105,7 @@ class ExpenseRepositoryImpl @Inject constructor(
         repeatInterval: String?,
         clearRepeat: Boolean?,
         nextRepeatDate: String?,
+        idempotencyKey: String?,
     ): ApiResult<Expense> =
         safeApiCall {
             expenseService.updateExpense(
@@ -122,12 +123,13 @@ class ExpenseRepositoryImpl @Inject constructor(
                     repeatInterval = repeatInterval,
                     clearRepeat    = clearRepeat,
                     nextRepeatDate = nextRepeatDate,
+                    idempotencyKey = idempotencyKey,
                 )
             )
         }.mapSuccess { it.toDomain() }
 
-    override suspend fun deleteExpense(expenseId: String): ApiResult<Unit> {
-        val result = safeApiCall { expenseService.deleteExpense(expenseId) }
+    override suspend fun deleteExpense(expenseId: String, idempotencyKey: String?): ApiResult<Unit> {
+        val result = safeApiCall { expenseService.deleteExpense(expenseId, idempotencyKey) }
         return when (result) {
             is ApiResult.Success -> {
                 expenseDao.deleteById(expenseId)
@@ -143,8 +145,8 @@ class ExpenseRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun restoreExpense(expenseId: String): ApiResult<Expense> =
-        safeApiCall { expenseService.restoreExpense(expenseId) }.mapSuccess { it.toDomain() }
+    override suspend fun restoreExpense(expenseId: String, idempotencyKey: String?): ApiResult<Expense> =
+        safeApiCall { expenseService.restoreExpense(expenseId, idempotencyKey) }.mapSuccess { it.toDomain() }
 
     override suspend fun searchExpenses(query: String): ApiResult<List<Expense>> =
         safeApiCall { expenseService.searchExpenses(query) }

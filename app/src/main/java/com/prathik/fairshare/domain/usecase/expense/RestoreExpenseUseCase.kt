@@ -8,6 +8,6 @@ import javax.inject.Inject
 class RestoreExpenseUseCase @Inject constructor(
     private val expenseRepository: ExpenseRepository,
 ) {
-    suspend operator fun invoke(expenseId: String): ApiResult<Expense> =
-        expenseRepository.restoreExpense(expenseId)
+    suspend operator fun invoke(expenseId: String, idempotencyKey: String? = null): ApiResult<Expense> =
+        expenseRepository.restoreExpense(expenseId, idempotencyKey)
 }

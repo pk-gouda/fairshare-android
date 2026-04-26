@@ -27,6 +27,7 @@ class UpdateExpenseUseCase @Inject constructor(
         splitData: Map<String, Double>?,
         repeatInterval: String? = null,
         clearRepeat: Boolean? = null,
+        idempotencyKey: String? = null,
     ): ApiResult<Expense> {
         if (expenseId.isBlank()) {
             return ApiResult.ValidationError("Expense ID cannot be empty")
@@ -50,6 +51,7 @@ class UpdateExpenseUseCase @Inject constructor(
             splitData      = splitData,
             repeatInterval = repeatInterval,
             clearRepeat    = clearRepeat,
+            idempotencyKey = idempotencyKey,
         )
     }
 }

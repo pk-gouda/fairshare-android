@@ -11,10 +11,10 @@ import javax.inject.Inject
 class DeleteExpenseUseCase @Inject constructor(
     private val expenseRepository: ExpenseRepository,
 ) {
-    suspend operator fun invoke(expenseId: String): ApiResult<Unit> {
+    suspend operator fun invoke(expenseId: String, idempotencyKey: String? = null): ApiResult<Unit> {
         if (expenseId.isBlank()) {
             return ApiResult.ValidationError("Expense ID cannot be empty")
         }
-        return expenseRepository.deleteExpense(expenseId)
+        return expenseRepository.deleteExpense(expenseId, idempotencyKey)
     }
 }

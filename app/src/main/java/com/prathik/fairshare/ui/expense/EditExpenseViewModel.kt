@@ -472,6 +472,7 @@ class EditExpenseViewModel @Inject constructor(
 
         viewModelScope.launch {
             _saveState.value = EditSaveState.Loading
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
             val result = updateExpenseUseCase(
                 expenseId   = expenseId,
                 description = desc,
@@ -485,6 +486,7 @@ class EditExpenseViewModel @Inject constructor(
                 splitData      = _splitData.value.filter { it.value > 0.0 },
                 repeatInterval = if (_clearRepeat.value) null else _repeatInterval.value,
                 clearRepeat    = if (_clearRepeat.value) true else null,
+                idempotencyKey = idempotencyKey,
             )
             when (result) {
                 is ApiResult.Success -> _saveState.value = EditSaveState.Success

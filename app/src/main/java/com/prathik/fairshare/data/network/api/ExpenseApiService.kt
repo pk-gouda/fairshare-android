@@ -12,6 +12,7 @@ import com.prathik.fairshare.data.model.response.ExpenseResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -32,10 +33,16 @@ interface ExpenseApiService {
     ): ApiResponse<ExpenseResponse>
 
     @DELETE("api/expenses/{expenseId}")
-    suspend fun deleteExpense(@Path("expenseId") expenseId: String): ApiResponse<String?>
+    suspend fun deleteExpense(
+        @Path("expenseId") expenseId: String,
+        @Header("Idempotency-Key") idempotencyKey: String? = null,
+    ): ApiResponse<String?>
 
     @POST("api/expenses/{expenseId}/restore")
-    suspend fun restoreExpense(@Path("expenseId") expenseId: String): ApiResponse<ExpenseResponse>
+    suspend fun restoreExpense(
+        @Path("expenseId") expenseId: String,
+        @Header("Idempotency-Key") idempotencyKey: String? = null,
+    ): ApiResponse<ExpenseResponse>
 
     @GET("api/groups/{groupId}/expenses")
     suspend fun getGroupExpenses(@Path("groupId") groupId: String): ApiResponse<List<ExpenseResponse>>
