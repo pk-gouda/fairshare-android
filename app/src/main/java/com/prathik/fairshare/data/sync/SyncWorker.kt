@@ -12,6 +12,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.prathik.fairshare.data.model.request.CreateExpenseRequest
+import com.prathik.fairshare.data.model.request.UpdateExpenseRequest
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -112,18 +113,20 @@ class SyncWorker @AssistedInject constructor(
                     requestBodyJson = requestBodyJson,
                 )
 
-                OperationType.UPDATE_EXPENSE,
+                OperationType.UPDATE_EXPENSE -> syncUpdateExpense(
+                    operationId     = operationId,
+                    idempotencyKey  = idempotencyKey,
+                    requestBodyJson = requestBodyJson,
+                    endpoint        = endpoint,
+                )
+
                 OperationType.DELETE_EXPENSE,
                 OperationType.RESTORE_EXPENSE -> {
-                    // These are handled inline by their ViewModels while online.
-                    // A FAILED_RETRYABLE row here means the ViewModel got a network
-                    // error after enqueueing but before the response arrived.
-                    // Full offline retry for these types is Wave 2D-2 follow-up;
-                    // for now mark FAILED_PERMANENT so the queue doesn't loop.
+                    // Online-only until Wave 2D-3. Mark permanent so the queue
+                    // does not loop — user must retry manually.
                     pendingOperationRepository.markFailed(
                         operationId,
-                        "Offline retry for $operationType requires Wave 2D-2 follow-up. " +
-                                "Please re-open the expense and try again."
+                        "Offline retry for $operationType not yet supported. Please try again when online."
                     )
                     true
                 }
@@ -232,6 +235,112 @@ class SyncWorker @AssistedInject constructor(
 
             // 400 validation — permanent; stored body is malformed.
             is com.prathik.fairshare.domain.model.ApiResult.ValidationError -> {
+                pendingOperationRepository.markFailed(operationId, result.message)
+                true
+            }
+
+            // 5xx and other transient errors — keep retrying.
+            else -> {
+                pendingOperationRepository.markRetryable(operationId, "Server error, will retry")
+                false
+            }
+        }
+    }
+
+    /**
+     * Wave 2D-2: replay an UPDATE_EXPENSE pending operation.
+     *
+     * The expenseId is stored in [endpoint] as /api/expenses/{expenseId} and also
+     * in [PendingOperationEntity.localResourceId]. We read it from the endpoint to
+     * keep the function self-contained without needing the full entity.
+     *
+     * The same stable [idempotencyKey] is sent on every attempt so the backend's
+     * idempotency_keys table prevents a double balance reversal/re-application.
+     */
+    private suspend fun syncUpdateExpense(
+        operationId    : String,
+        idempotencyKey : String,
+        requestBodyJson: String?,
+        endpoint       : String,
+    ): Boolean {
+        if (requestBodyJson == null) {
+            pendingOperationRepository.markFailed(
+                operationId, "UPDATE_EXPENSE pending operation has no requestBodyJson"
+            )
+            return true
+        }
+
+        // Endpoint format: /api/expenses/{expenseId}
+        val expenseId = endpoint.removePrefix("/api/expenses/").trim()
+        if (expenseId.isBlank()) {
+            pendingOperationRepository.markFailed(
+                operationId, "Could not parse expenseId from endpoint: $endpoint"
+            )
+            return true
+        }
+
+        val request = try {
+            json.decodeFromString<UpdateExpenseRequest>(requestBodyJson)
+        } catch (e: Exception) {
+            pendingOperationRepository.markFailed(
+                operationId, "Failed to deserialise UPDATE_EXPENSE body: ${e.message}"
+            )
+            return true
+        }
+
+        val result = expenseRepository.updateExpense(
+            expenseId      = expenseId,
+            description    = request.description,
+            totalAmount    = request.totalAmount,
+            currency       = request.currency,
+            splitType      = request.splitType,
+            category       = request.category,
+            notes          = request.notes,
+            expenseDate    = request.expenseDate,
+            payerData      = request.payerData,
+            splitData      = request.splitData,
+            repeatInterval = request.repeatInterval,
+            clearRepeat    = request.clearRepeat,
+            idempotencyKey = idempotencyKey,   // stable key — never regenerated
+        )
+
+        return when (result) {
+            is com.prathik.fairshare.domain.model.ApiResult.Success -> {
+                pendingOperationRepository.markSynced(operationId, expenseId)
+                true
+            }
+
+            is com.prathik.fairshare.domain.model.ApiResult.NetworkError -> {
+                pendingOperationRepository.markRetryable(
+                    operationId, result.exception.message ?: "Network error"
+                )
+                false // signal worker to retry
+            }
+
+            // 404 — expense was deleted while we were offline. Permanent.
+            is com.prathik.fairshare.domain.model.ApiResult.NotFound -> {
+                pendingOperationRepository.markFailed(operationId, "Expense no longer exists")
+                true
+            }
+
+            // 403/401 — permission changed or session expired. Permanent.
+            is com.prathik.fairshare.domain.model.ApiResult.Forbidden,
+            is com.prathik.fairshare.domain.model.ApiResult.Unauthorized -> {
+                pendingOperationRepository.markFailed(
+                    operationId,
+                    (result as? com.prathik.fairshare.domain.model.ApiResult.Forbidden)?.message
+                        ?: "Unauthorized"
+                )
+                true
+            }
+
+            // 400 validation / 409 conflict — stored body is rejected. Permanent.
+            is com.prathik.fairshare.domain.model.ApiResult.ValidationError -> {
+                pendingOperationRepository.markFailed(operationId, result.message)
+                true
+            }
+
+            is com.prathik.fairshare.domain.model.ApiResult.Conflict -> {
                 pendingOperationRepository.markFailed(operationId, result.message)
                 true
             }

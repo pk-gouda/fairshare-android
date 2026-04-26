@@ -1,9 +1,14 @@
 package com.prathik.fairshare.ui.expense
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.model.request.UpdateExpenseRequest
+import com.prathik.fairshare.data.sync.OperationType
+import com.prathik.fairshare.data.sync.PendingOperationRepository
+import com.prathik.fairshare.data.sync.SyncWorker
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
@@ -14,22 +19,26 @@ import com.prathik.fairshare.domain.usecase.expense.UpdateExpenseUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.time.LocalDateTime
 import javax.inject.Inject
 
 /**
  * ViewModel for EditExpenseScreen.
  *
- * Loads an existing expense by ID and pre-populates all form fields.
- * On save, calls UpdateExpenseUseCase with the current form state.
- *
- * Wave 2D scope: update is online-only for now. Queue-backed offline
- * update/delete/restore will be wired in Wave 2D-2 once SyncWorker
- * actually replays those operation types.
+ * Wave 2D-2: UPDATE_EXPENSE is now queue-backed.
+ * - A PendingOperation is enqueued before the network call.
+ * - The stable idempotencyKey from the queue row is sent to the backend,
+ *   preventing a double balance reversal/re-apply on retry.
+ * - On NetworkError the operation is marked FAILED_RETRYABLE and
+ *   SyncWorker will replay it when connectivity returns.
+ * - Delete/restore remain online-only until Wave 2D-3.
  */
 @HiltViewModel
 class EditExpenseViewModel @Inject constructor(
@@ -38,6 +47,9 @@ class EditExpenseViewModel @Inject constructor(
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
     private val getGroupUseCase: GetGroupUseCase,
     private val tokenStore: EncryptedTokenStore,
+    private val pendingOperationRepository: PendingOperationRepository,
+    private val json: Json,
+    @ApplicationContext private val appContext: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -110,6 +122,16 @@ class EditExpenseViewModel @Inject constructor(
     private val _saveState = MutableStateFlow<EditSaveState>(EditSaveState.Idle)
     val saveState: StateFlow<EditSaveState> = _saveState.asStateFlow()
 
+    /**
+     * True when the expense was loaded from local Room cache (offline fallback).
+     * In this state, payers and splits are empty because the cache only stores
+     * the lightweight summary. The save() function sends null for payerData/splitData
+     * so the backend preserves the existing allocation unchanged.
+     * The screen shows an info banner when this is true.
+     */
+    private val _isFromCache = MutableStateFlow(false)
+    val isFromCache: StateFlow<Boolean> = _isFromCache.asStateFlow()
+
     init {
         loadExpense()
     }
@@ -122,20 +144,22 @@ class EditExpenseViewModel @Inject constructor(
             when (val result = getExpenseUseCase(expenseId)) {
                 is ApiResult.Success -> {
                     val expense = result.data
+                    // Detect a cache-only load: payers and splits are always empty
+                    // in ExpenseEntity.toDomain() because the entity stores only
+                    // the lightweight summary fields.
+                    _isFromCache.value = expense.payers.isEmpty() && expense.splits.isEmpty()
                     populateForm(expense)
                     loadMembers(expense)
                     _loadState.value = EditLoadState.Success
                 }
 
-                is ApiResult.NetworkError -> {
+                is ApiResult.NetworkError ->
                     _loadState.value =
                         EditLoadState.Error("No internet connection.", isNetwork = true)
-                }
 
-                else -> {
+                else ->
                     _loadState.value =
                         EditLoadState.Error("Failed to load expense.", isNetwork = false)
-                }
             }
         }
     }
@@ -162,11 +186,8 @@ class EditExpenseViewModel @Inject constructor(
         _payerData.value = if (rawPayerData.size == 1) {
             val payerAmount = rawPayerData.values.first()
             val total = expense.totalAmount
-            if (Math.abs(payerAmount - total) > 0.001) {
-                mapOf(rawPayerData.keys.first() to total)
-            } else {
-                rawPayerData
-            }
+            if (Math.abs(payerAmount - total) > 0.001) mapOf(rawPayerData.keys.first() to total)
+            else rawPayerData
         } else {
             rawPayerData
         }
@@ -180,6 +201,18 @@ class EditExpenseViewModel @Inject constructor(
         }
 
         _itemCount.value = expense.itemCount
+
+        // When loaded from cache, payers and splits are empty (not stored in Room).
+        // Synthesize display values from the lightweight yourPaid/yourShare fields
+        // so the form shows something useful. These are NOT sent to the backend on
+        // save — save() sends null instead so the backend preserves existing allocation.
+        if (expense.payers.isEmpty() && currentUserId != null) {
+            val displayPaid = if (expense.yourPaid > 0) expense.yourPaid else expense.totalAmount
+            _payerData.value = mapOf(currentUserId to displayPaid)
+        }
+        if (expense.splits.isEmpty() && currentUserId != null && expense.yourShare > 0) {
+            _splitData.value = mapOf(currentUserId to expense.yourShare)
+        }
     }
 
     private fun loadMembers(expense: Expense) {
@@ -196,9 +229,7 @@ class EditExpenseViewModel @Inject constructor(
                             .toSet()
                     }
 
-                    else -> {
-                        _members.value = synthesizeMembers(expense)
-                    }
+                    else -> _members.value = synthesizeMembers(expense)
                 }
             }
         } else {
@@ -209,30 +240,22 @@ class EditExpenseViewModel @Inject constructor(
     private fun synthesizeMembers(expense: Expense): List<GroupMember> {
         val now = LocalDateTime.now().toString()
         val userMap = mutableMapOf<String, GroupMember>()
-
         expense.payers.forEach { payer ->
             userMap[payer.userId] = GroupMember(
-                id = payer.userId,
-                userId = payer.userId,
+                id = payer.userId, userId = payer.userId,
                 fullName = if (payer.userId == currentUserId) "You" else payer.fullName,
-                email = "",
-                profilePictureUrl = null,
-                joinedAt = now,
+                email = "", profilePictureUrl = null, joinedAt = now,
             )
         }
         expense.splits.forEach { split ->
             if (!userMap.containsKey(split.userId)) {
                 userMap[split.userId] = GroupMember(
-                    id = split.userId,
-                    userId = split.userId,
+                    id = split.userId, userId = split.userId,
                     fullName = if (split.userId == currentUserId) "You" else split.fullName,
-                    email = "",
-                    profilePictureUrl = null,
-                    joinedAt = now,
+                    email = "", profilePictureUrl = null, joinedAt = now,
                 )
             }
         }
-
         return userMap.values.toList()
     }
 
@@ -240,14 +263,11 @@ class EditExpenseViewModel @Inject constructor(
 
     fun onDescriptionChanged(value: String) {
         _description.value = value
-        if (!categoryManuallySet) {
-            _category.value = detectCategory(value)
-        }
+        if (!categoryManuallySet) _category.value = detectCategory(value)
     }
 
     fun onAmountChanged(value: String) {
-        _amount.value = value
-        recalculateSplits()
+        _amount.value = value; recalculateSplits()
     }
 
     fun onCurrencyChanged(value: String) {
@@ -255,25 +275,18 @@ class EditExpenseViewModel @Inject constructor(
     }
 
     fun onSplitTypeChanged(value: SplitType) {
-        val previousType = _splitType.value
+        val prev = _splitType.value
         _splitType.value = value
-
-        if (previousType != value) {
-            val wasEqual = previousType == SplitType.EQUAL
-            val isNowNonEqual = value != SplitType.EQUAL
-            if (wasEqual && isNowNonEqual) {
-                _splitData.value = emptyMap()
-            } else if (!wasEqual && isNowNonEqual && previousType != value) {
-                _splitData.value = emptyMap()
-            }
+        if (prev != value) {
+            if (prev == SplitType.EQUAL && value != SplitType.EQUAL) _splitData.value = emptyMap()
+            else if (prev != SplitType.EQUAL && value != SplitType.EQUAL) _splitData.value =
+                emptyMap()
         }
-
         recalculateSplits()
     }
 
     fun onCategoryChanged(value: ExpenseCategory?) {
-        _category.value = value
-        categoryManuallySet = value != null
+        _category.value = value; categoryManuallySet = value != null
     }
 
     fun onNotesChanged(value: String) {
@@ -286,8 +299,7 @@ class EditExpenseViewModel @Inject constructor(
     }
 
     fun onClearRepeat() {
-        _clearRepeat.value = true
-        _repeatInterval.value = null
+        _clearRepeat.value = true; _repeatInterval.value = null
     }
 
     fun onDateChanged(value: String) {
@@ -309,11 +321,9 @@ class EditExpenseViewModel @Inject constructor(
     fun onToggleEqualMember(userId: String) {
         val current = _equalExcluded.value.toMutableSet()
         val included = _members.value.count { !current.contains(it.userId) }
-        if (current.contains(userId)) {
-            current.remove(userId)
-        } else {
-            if (included <= 1) return
-            current.add(userId)
+        if (current.contains(userId)) current.remove(userId)
+        else {
+            if (included <= 1) return; current.add(userId)
         }
         _equalExcluded.value = current
         recalculateSplits()
@@ -335,8 +345,7 @@ class EditExpenseViewModel @Inject constructor(
         if (members.isEmpty()) return
 
         if (_payerData.value.size == 1) {
-            val singlePayerId = _payerData.value.keys.first()
-            _payerData.value = mapOf(singlePayerId to total)
+            _payerData.value = mapOf(_payerData.value.keys.first() to total)
         }
 
         when (_splitType.value) {
@@ -346,26 +355,17 @@ class EditExpenseViewModel @Inject constructor(
                 val totalCents = Math.round(total * 100)
                 val shareCents = totalCents / included.size
                 val remainderCents = totalCents - (shareCents * included.size)
-
                 val pointer = _lastRemainderIndex.value
-                val startIndex = if (remainderCents > 0 && included.isNotEmpty())
-                    pointer % included.size else 0
-
+                val startIndex = if (remainderCents > 0) pointer % included.size else 0
                 val rotated = included.drop(startIndex) + included.take(startIndex)
-
-                val includedSplits = rotated.mapIndexed { index, member ->
-                    val amount = if (index < remainderCents) (shareCents + 1) / 100.0
-                    else shareCents / 100.0
-                    member.userId to amount
+                val includedSplits = rotated.mapIndexed { i, m ->
+                    m.userId to if (i < remainderCents) (shareCents + 1) / 100.0 else shareCents / 100.0
                 }.toMap()
-                _splitData.value = members.associate { m ->
-                    m.userId to (includedSplits[m.userId] ?: 0.0)
-                }
+                _splitData.value =
+                    members.associate { m -> m.userId to (includedSplits[m.userId] ?: 0.0) }
             }
 
-            SplitType.UNEQUAL,
-            SplitType.PERCENTAGE,
-            SplitType.SHARES -> { /* manual */
+            SplitType.UNEQUAL, SplitType.PERCENTAGE, SplitType.SHARES -> { /* manual */
             }
         }
     }
@@ -451,18 +451,21 @@ class EditExpenseViewModel @Inject constructor(
 
             lower.containsAny("pet", "dog", "cat", "vet") -> ExpenseCategory.PETS
             lower.containsAny(
-                "cloth", "shirt", "shoes", "fashion",
-                "zara", "h&m"
+                "cloth",
+                "shirt",
+                "shoes",
+                "fashion",
+                "zara",
+                "h&m"
             ) -> ExpenseCategory.CLOTHING
 
             else -> null
         }
     }
 
-    private fun String.containsAny(vararg keywords: String) =
-        keywords.any { this.contains(it) }
+    private fun String.containsAny(vararg keywords: String) = keywords.any { this.contains(it) }
 
-    // ── Submit update — online only (Wave 2D scope) ───────────────────────────
+    // ── Submit update (Wave 2D-2 — queue-backed offline) ─────────────────────
 
     fun save() {
         val desc = _description.value.trim()
@@ -471,59 +474,142 @@ class EditExpenseViewModel @Inject constructor(
         if (desc.isBlank()) {
             _saveState.value = EditSaveState.Error("Please enter a description."); return
         }
-        if (amt == null || amt <= 0) {
-            _saveState.value = EditSaveState.Error("Please enter a valid amount."); return
+
+        val userId = currentUserId ?: run {
+            _saveState.value = EditSaveState.Error("Not logged in. Please sign in again.")
+            return
         }
-        if (_payerData.value.isEmpty()) {
-            _saveState.value = EditSaveState.Error("Please select who paid."); return
-        }
-        if (_splitData.value.isEmpty()) {
-            _saveState.value = EditSaveState.Error("Please set how to split."); return
+
+        // Financial field validation only applies when loaded online with full payer/split data.
+        // In cache mode, amount/currency/payer/split are nulled before sending so the backend
+        // preserves existing allocation. Validating them here would be incorrect.
+        val fromCache = _isFromCache.value
+        if (!fromCache) {
+            if (amt == null || amt <= 0) {
+                _saveState.value = EditSaveState.Error("Please enter a valid amount."); return
+            }
+            if (_payerData.value.isEmpty()) {
+                _saveState.value = EditSaveState.Error("Please select who paid."); return
+            }
+            if (_splitData.value.isEmpty()) {
+                _saveState.value = EditSaveState.Error("Please set how to split."); return
+            }
         }
 
         val finalCategory = _category.value ?: ExpenseCategory.GENERAL
+        val filteredSplitData = _splitData.value.filter { it.value > 0.0 }
+        val repeatIntervalSend = if (_clearRepeat.value) null else _repeatInterval.value
+        val clearRepeatSend = if (_clearRepeat.value) true else null
 
         viewModelScope.launch {
             _saveState.value = EditSaveState.Loading
-            val idempotencyKey = java.util.UUID.randomUUID().toString()
-            val result = updateExpenseUseCase(
-                expenseId = expenseId,
+
+            // Build the full request body for queue storage.
+            // idempotencyKey is intentionally absent here — it comes from the
+            // pending operation row so every retry reuses the same key.
+            // Cache-mode: only metadata fields are sent. Financial fields (amount,
+            // currency, splitType, payerData, splitData) are nulled so the backend
+            // preserves the existing allocation. Sending a new totalAmount with null
+            // payer/split rows would cause balance drift.
+            val effectiveTotalAmount = if (fromCache) null else amt
+            val effectiveCurrency = if (fromCache) null else _currency.value
+            val effectiveSplitType = if (fromCache) null else _splitType.value
+            val effectivePayerData = if (fromCache) null else _payerData.value
+            val effectiveSplitData = if (fromCache) null else filteredSplitData
+
+            val request = UpdateExpenseRequest(
                 description = desc,
-                totalAmount = amt,
-                currency = _currency.value,
-                splitType = _splitType.value,
+                totalAmount = effectiveTotalAmount,
+                currency = effectiveCurrency,
+                splitType = effectiveSplitType,
                 category = finalCategory,
                 notes = _notes.value.ifBlank { null },
                 expenseDate = _expenseDate.value,
-                payerData = _payerData.value,
-                splitData = _splitData.value.filter { it.value > 0.0 },
-                repeatInterval = if (_clearRepeat.value) null else _repeatInterval.value,
-                clearRepeat = if (_clearRepeat.value) true else null,
-                idempotencyKey = idempotencyKey,
+                payerData = effectivePayerData,
+                splitData = effectiveSplitData,
+                repeatInterval = repeatIntervalSend,
+                clearRepeat = clearRepeatSend,
             )
+
+            // Enqueue BEFORE the network call.
+            // localResourceId = serverResourceId = expenseId so SyncWorker
+            // never needs to parse the endpoint string to know which expense
+            // it is updating.
+            val enqueued = pendingOperationRepository.enqueue(
+                userId = userId,
+                operationType = OperationType.UPDATE_EXPENSE,
+                endpoint = "/api/expenses/$expenseId",
+                method = "PUT",
+                requestBodyJson = json.encodeToString(request),
+                localResourceId = expenseId,
+            )
+
+            val result = updateExpenseUseCase(
+                expenseId = expenseId,
+                description = desc,
+                totalAmount = effectiveTotalAmount,
+                currency = effectiveCurrency,
+                splitType = effectiveSplitType,
+                category = finalCategory,
+                notes = _notes.value.ifBlank { null },
+                expenseDate = _expenseDate.value,
+                payerData = effectivePayerData,
+                splitData = effectiveSplitData,
+                repeatInterval = repeatIntervalSend,
+                clearRepeat = clearRepeatSend,
+                idempotencyKey = enqueued.idempotencyKey,
+            )
+
             when (result) {
-                is ApiResult.Success -> _saveState.value = EditSaveState.Success
-                is ApiResult.NetworkError -> {
-                    android.util.Log.e(
-                        "EditExpenseVM",
-                        "NetworkError: ${result.exception}",
-                        result.exception
-                    )
-                    _saveState.value =
-                        EditSaveState.Error("No internet connection. Please try again.")
+                is ApiResult.Success -> {
+                    pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
+                    _saveState.value = EditSaveState.Success
                 }
 
-                is ApiResult.ValidationError -> _saveState.value =
-                    EditSaveState.Error(result.message)
+                is ApiResult.NetworkError -> {
+                    pendingOperationRepository.markRetryable(
+                        enqueued.operationId, result.exception.message ?: "Network error"
+                    )
+                    SyncWorker.triggerImmediateSync(appContext)
+                    android.util.Log.w(
+                        "EditExpenseVM",
+                        "Offline edit queued: ${enqueued.operationId}"
+                    )
+                    _saveState.value = EditSaveState.SavedOffline
+                }
 
-                is ApiResult.Forbidden -> _saveState.value = EditSaveState.Error(result.message)
-                is ApiResult.Unauthorized -> _saveState.value = EditSaveState.Error(result.message)
-                is ApiResult.NotFound -> _saveState.value =
-                    EditSaveState.Error("Expense not found. It may have been deleted.")
+                is ApiResult.ValidationError -> {
+                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    _saveState.value = EditSaveState.Error(result.message)
+                }
 
-                is ApiResult.Conflict -> _saveState.value = EditSaveState.Error(result.message)
-                is ApiResult.HttpError -> _saveState.value =
-                    EditSaveState.Error("HTTP ${result.code}: ${result.message}")
+                is ApiResult.Forbidden -> {
+                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    _saveState.value = EditSaveState.Error(result.message)
+                }
+
+                is ApiResult.Unauthorized -> {
+                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    _saveState.value = EditSaveState.Error(result.message)
+                }
+
+                is ApiResult.NotFound -> {
+                    pendingOperationRepository.markFailed(enqueued.operationId, "Expense not found")
+                    _saveState.value =
+                        EditSaveState.Error("Expense not found. It may have been deleted.")
+                }
+
+                is ApiResult.Conflict -> {
+                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    _saveState.value = EditSaveState.Error(result.message)
+                }
+
+                is ApiResult.HttpError -> {
+                    pendingOperationRepository.markFailed(
+                        enqueued.operationId, "HTTP ${result.code}: ${result.message}"
+                    )
+                    _saveState.value = EditSaveState.Error("HTTP ${result.code}: ${result.message}")
+                }
             }
         }
     }
@@ -545,5 +631,8 @@ sealed class EditSaveState {
     object Idle : EditSaveState()
     object Loading : EditSaveState()
     object Success : EditSaveState()
+
+    /** Wave 2D-2: queued offline — SyncWorker will send UPDATE_EXPENSE when network returns. */
+    object SavedOffline : EditSaveState()
     data class Error(val message: String) : EditSaveState()
 }

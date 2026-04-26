@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Message
@@ -107,6 +108,7 @@ fun EditExpenseScreen(
 ) {
     val loadState    by viewModel.loadState.collectAsState()
     val saveState    by viewModel.saveState.collectAsState()
+    val isFromCache  by viewModel.isFromCache.collectAsState()
     val description  by viewModel.description.collectAsState()
     val amount       by viewModel.amount.collectAsState()
     val currency     by viewModel.currency.collectAsState()
@@ -138,8 +140,13 @@ fun EditExpenseScreen(
 
     LaunchedEffect(saveState) {
         when (val s = saveState) {
-            is EditSaveState.Success -> { onSuccess(); viewModel.resetSaveState() }
-            is EditSaveState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetSaveState() }
+            is EditSaveState.Success      -> { onSuccess(); viewModel.resetSaveState() }
+            is EditSaveState.SavedOffline -> {
+                snackbarHost.showSnackbar("Changes saved offline. Will sync when online.")
+                onSuccess()
+                viewModel.resetSaveState()
+            }
+            is EditSaveState.Error        -> { snackbarHost.showSnackbar(s.message); viewModel.resetSaveState() }
             else -> Unit
         }
     }
@@ -207,6 +214,33 @@ fun EditExpenseScreen(
                 .imePadding(),
         ) {
 
+            // ── Offline cache banner ───────────────────────────────────────────
+            // Shown when the expense was loaded from local Room cache because the
+            // network was unavailable. Payer and split details are display-only;
+            // saving will preserve the existing allocation on the server.
+            if (isFromCache) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Surface2)
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                ) {
+                    Icon(
+                        imageVector        = Icons.Outlined.WifiOff,
+                        contentDescription = null,
+                        tint               = TextSecondary,
+                        modifier           = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text      = "Offline — payer and split details will be preserved from server",
+                        fontSize  = 12.sp,
+                        color     = TextSecondary,
+                    )
+                }
+            }
+
             // ── Custom top bar: ✕ | Group pill (read-only) | Save ─────────────
             Row(
                 modifier          = Modifier
@@ -265,22 +299,26 @@ fun EditExpenseScreen(
                     Text(
                         text       = editCurrencySymbol(currency),
                         fontSize   = 28.sp,
-                        color      = TextSecondary,
+                        color      = if (isFromCache) TextTertiary else TextSecondary,
                         fontWeight = FontWeight.Light,
-                        modifier   = Modifier.padding(top = 10.dp, end = 4.dp).clickable { onNavigateToCurrency() },
+                        modifier   = Modifier.padding(top = 10.dp, end = 4.dp)
+                            .then(if (!isFromCache) Modifier.clickable { onNavigateToCurrency() } else Modifier),
                     )
                     BasicTextField(
                         value         = amount,
                         onValueChange = { new ->
-                            val regex = Regex("^\\d*(\\.\\d{0,2})?$")
-                            if (new.isEmpty() || regex.matches(new)) viewModel.onAmountChanged(new)
+                            if (!isFromCache) {
+                                val regex = Regex("^\\d*(\\.\\d{0,2})?$")
+                                if (new.isEmpty() || regex.matches(new)) viewModel.onAmountChanged(new)
+                            }
                         },
                         textStyle = TextStyle(
                             fontSize   = 48.sp,
                             fontWeight = FontWeight.Bold,
-                            color      = TextPrimary,
+                            color      = if (isFromCache) TextTertiary else TextPrimary,
                             textAlign  = TextAlign.Center,
                         ),
+                        readOnly        = isFromCache,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                         singleLine = true,
                         modifier   = Modifier.widthIn(min = 60.dp, max = 280.dp),
@@ -351,8 +389,10 @@ fun EditExpenseScreen(
             Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Surface0)
                 .border(0.5.dp, Surface3, RoundedCornerShape(0.dp)))
 
-            // ── Paid by — horizontal chips ────────────────────────────────────
-            if (members.isNotEmpty()) {
+            // ── Paid by + Split — hidden in cache-mode (financials read-only offline) ──
+            // When isFromCache is true, payer and split details are unavailable locally.
+            // The backend will preserve existing allocation when payerData/splitData are null.
+            if (!isFromCache && members.isNotEmpty()) {
                 Text(
                     text          = "PAID BY",
                     fontSize      = 11.sp,

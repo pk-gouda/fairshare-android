@@ -48,9 +48,18 @@ class ExpenseRepositoryImpl @Inject constructor(
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }
 
-    override suspend fun getExpense(expenseId: String): ApiResult<Expense> =
-        safeApiCall { expenseService.getExpense(expenseId) }
-            .mapSuccess { it.toDomain() }
+    override suspend fun getExpense(expenseId: String): ApiResult<Expense> {
+        val result = safeApiCall { expenseService.getExpense(expenseId) }
+        if (result is ApiResult.Success) {
+            // Cache the full response so EditExpenseScreen can load offline.
+            expenseDao.insert(result.data.toEntity())
+            return result.mapSuccess { it.toDomain() }
+        }
+        // Network failed — try the local cache.
+        val cached = expenseDao.getById(expenseId)
+        if (cached != null) return ApiResult.Success(cached.toDomain())
+        return result.mapSuccess { it.toDomain() }
+    }
 
     override suspend fun createExpense(
         groupId: String?,
