@@ -9,5 +9,6 @@ import kotlinx.serialization.Serializable
 enum class SettlementStatus {
     PENDING,
     COMPLETED,
-    CANCELLED
+    CANCELLED,
+    LEGACY_UNALLOCATED
 }

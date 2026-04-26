@@ -613,14 +613,15 @@ class AddExpenseViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = AddExpenseUiState.Loading
+            // Generate once per submit action. Stable across retries of this same
+            // submit — a new UUID is only created when the user taps Submit again
+            // after a failure, which is the correct idempotency boundary.
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
             when (val result = createExpenseUseCase(
                 groupId = groupId,
                 description = description,
                 totalAmount = amount,
                 currency = _currency.value,
-                // ✅ Force UNEQUAL when item assignments are used so the backend
-                // uses the exact per-person amounts from effectiveSplitData instead of
-                // recalculating equal splits from scratch (which ignores splitData values).
                 splitType = if (_itemSplitData.value.isNotEmpty()) SplitType.UNEQUAL else _splitType.value,
                 category = finalCategory,
                 notes = _notes.value.ifBlank { null },
@@ -628,6 +629,7 @@ class AddExpenseViewModel @Inject constructor(
                 payerData = _payerData.value,
                 splitData = effectiveSplitData,
                 receiptId = scannedReceiptId,
+                idempotencyKey   = idempotencyKey,
                 remainderPointer = _pointerAtCreation,
                 itemAssignments  = _itemAssignments.value.ifEmpty { null },
                 repeatInterval   = _repeatInterval.value,
@@ -664,6 +666,7 @@ class AddExpenseViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = AddExpenseUiState.Loading
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
             when (val result = createExpenseUseCase(
                 groupId = groupId,
                 description = "${members.value.find { it.userId == fromId }?.fullName ?: "Someone"} → ${members.value.find { it.userId == toId }?.fullName ?: "Someone"}",
@@ -676,6 +679,7 @@ class AddExpenseViewModel @Inject constructor(
                 payerData = mapOf(fromId to amount),
                 splitData = mapOf(toId to amount),
                 receiptId = null,
+                idempotencyKey = idempotencyKey,
             )) {
                 is ApiResult.Success -> _uiState.value = AddExpenseUiState.Success
                 is ApiResult.NetworkError -> _uiState.value =

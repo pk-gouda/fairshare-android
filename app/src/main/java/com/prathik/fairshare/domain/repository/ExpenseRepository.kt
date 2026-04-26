@@ -42,6 +42,7 @@ interface ExpenseRepository {
         payerData: Map<String, Double>?,
         splitData: Map<String, Double>?,
         receiptId: String?,
+        idempotencyKey: String? = null,
         remainderPointer: Int? = null,
         itemAssignments: Map<String, List<String>>? = null,
         repeatInterval: String? = null,
