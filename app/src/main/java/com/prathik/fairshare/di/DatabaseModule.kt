@@ -9,6 +9,7 @@ import com.prathik.fairshare.data.local.GroupDao
 import com.prathik.fairshare.data.local.FriendDao
 import com.prathik.fairshare.data.local.InvitedFriendDao
 import com.prathik.fairshare.data.local.PendingActionDao
+import com.prathik.fairshare.data.local.PendingOperationDao
 import com.prathik.fairshare.data.local.UserDao
 import dagger.Module
 import dagger.Provides
@@ -46,6 +47,7 @@ object DatabaseModule {
                 FairShareDatabase.MIGRATION_5_6,
                 FairShareDatabase.MIGRATION_6_7,
                 FairShareDatabase.MIGRATION_7_8,
+                FairShareDatabase.MIGRATION_8_9,
             )
             .build()
 
@@ -83,4 +85,9 @@ object DatabaseModule {
     @Singleton
     fun provideFriendDao(database: FairShareDatabase): FriendDao =
         database.friendDao()
+
+    @Provides
+    @Singleton
+    fun providePendingOperationDao(database: FairShareDatabase): PendingOperationDao =
+        database.pendingOperationDao()
 }

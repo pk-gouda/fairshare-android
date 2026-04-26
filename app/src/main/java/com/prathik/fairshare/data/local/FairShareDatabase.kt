@@ -14,6 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 3 → 4: (fallbackToDestructiveMigration — schema changes to groups/balances)
  * 4 → 5: Added lastRemainderIndex column to groups table (GroupEntity)
  * 5 → 6: Added defaultCurrency column to groups table (GroupEntity)
+ * 6 → 7: Added isDeleted/deletedAt to groups cache
+ * 7 → 8: Added friendCode/timezone to users cache
+ * 8 → 9: Added pending_operations table for Wave 2C durable sync queue
  */
 @Database(
     entities = [
@@ -24,8 +27,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PendingActionEntity::class,
         InvitedFriendEntity::class,
         FriendEntity::class,
+        PendingOperationEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -36,6 +40,7 @@ abstract class FairShareDatabase : RoomDatabase() {
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun invitedFriendDao(): InvitedFriendDao
     abstract fun friendDao(): FriendDao
+    abstract fun pendingOperationDao(): PendingOperationDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -49,7 +54,7 @@ abstract class FairShareDatabase : RoomDatabase() {
                         isPlaceholder INTEGER NOT NULL,
                         invitedAt INTEGER NOT NULL DEFAULT 0
                     )
-                """.trimIndent()
+                    """.trimIndent()
                 )
             }
         }
@@ -63,7 +68,8 @@ abstract class FairShareDatabase : RoomDatabase() {
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP TABLE IF EXISTS groups")
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS groups (
                         id TEXT NOT NULL PRIMARY KEY,
                         name TEXT NOT NULL,
@@ -82,9 +88,11 @@ abstract class FairShareDatabase : RoomDatabase() {
                         createdAt TEXT NOT NULL,
                         cachedAt INTEGER NOT NULL DEFAULT 0
                     )
-                """.trimIndent())
+                    """.trimIndent()
+                )
                 db.execSQL("DROP TABLE IF EXISTS balances")
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS balances (
                         id TEXT NOT NULL PRIMARY KEY,
                         userId TEXT NOT NULL,
@@ -97,7 +105,8 @@ abstract class FairShareDatabase : RoomDatabase() {
                         cachedAt INTEGER NOT NULL DEFAULT 0,
                         groupLastActivity TEXT
                     )
-                """.trimIndent())
+                    """.trimIndent()
+                )
             }
         }
 
@@ -126,6 +135,55 @@ abstract class FairShareDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE users ADD COLUMN friendCode TEXT")
                 db.execSQL("ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'")
+            }
+        }
+
+        /** 8 → 9: Add pending_operations table for Wave 2C durable sync queue. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS pending_operations (
+                        operationId          TEXT    NOT NULL PRIMARY KEY,
+                        userId               TEXT    NOT NULL,
+                        operationType        TEXT    NOT NULL,
+                        endpoint             TEXT    NOT NULL,
+                        method               TEXT    NOT NULL,
+                        requestBodyJson      TEXT,
+                        idempotencyKey       TEXT    NOT NULL,
+                        status               TEXT    NOT NULL,
+                        retryCount           INTEGER NOT NULL DEFAULT 0,
+                        createdAt            INTEGER NOT NULL,
+                        updatedAt            INTEGER NOT NULL,
+                        lastAttemptAt        INTEGER,
+                        lastError            TEXT,
+                        dependsOnOperationId TEXT,
+                        localResourceId      TEXT,
+                        serverResourceId     TEXT
+                    )
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_pending_operations_status
+                    ON pending_operations(status)
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_pending_operations_userId
+                    ON pending_operations(userId)
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS index_pending_operations_idempotencyKey
+                    ON pending_operations(idempotencyKey)
+                    """.trimIndent()
+                )
             }
         }
     }
