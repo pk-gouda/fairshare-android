@@ -68,6 +68,7 @@ class PendingOperationRepository @Inject constructor(
         method: String,
         requestBodyJson: String?,
         localResourceId: String? = null,
+        serverResourceId: String? = null,
         dependsOnOperationId: String? = null,
     ): EnqueueResult {
         val operationId    = UUID.randomUUID().toString()
@@ -87,6 +88,7 @@ class PendingOperationRepository @Inject constructor(
             createdAt            = now,
             updatedAt            = now,
             localResourceId      = localResourceId,
+            serverResourceId     = serverResourceId,
             dependsOnOperationId = dependsOnOperationId,
         )
         dao.insertOperation(entity)

@@ -128,6 +128,20 @@ fun ExpenseDetailScreen(
                 viewModel.loadExpense(); viewModel.resetActionState()
             }
 
+            // Wave 2D-3: queued offline — navigate back same as online success.
+            // The list and detail will show the correct state after SyncWorker syncs.
+            is ExpenseActionState.DeletedOffline -> {
+                snackbarHost.showSnackbar("Deleted offline. Will sync when online.")
+                onDeleted()
+                viewModel.resetActionState()
+            }
+
+            is ExpenseActionState.RestoredOffline -> {
+                snackbarHost.showSnackbar("Restored offline. Will sync when online.")
+                onDeleted() // navigate back — stale deleted-looking detail is confusing
+                viewModel.resetActionState()
+            }
+
             is ExpenseActionState.Error -> {
                 snackbarHost.showSnackbar(state.message); viewModel.resetActionState()
             }

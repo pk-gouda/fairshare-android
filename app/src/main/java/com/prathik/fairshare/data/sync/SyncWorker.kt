@@ -120,16 +120,17 @@ class SyncWorker @AssistedInject constructor(
                     endpoint        = endpoint,
                 )
 
-                OperationType.DELETE_EXPENSE,
-                OperationType.RESTORE_EXPENSE -> {
-                    // Online-only until Wave 2D-3. Mark permanent so the queue
-                    // does not loop — user must retry manually.
-                    pendingOperationRepository.markFailed(
-                        operationId,
-                        "Offline retry for $operationType not yet supported. Please try again when online."
-                    )
-                    true
-                }
+                OperationType.DELETE_EXPENSE -> syncDeleteExpense(
+                    operationId    = operationId,
+                    idempotencyKey = idempotencyKey,
+                    endpoint       = endpoint,
+                )
+
+                OperationType.RESTORE_EXPENSE -> syncRestoreExpense(
+                    operationId    = operationId,
+                    idempotencyKey = idempotencyKey,
+                    endpoint       = endpoint,
+                )
 
                 OperationType.CREATE_SETTLEMENT,
                 OperationType.UPDATE_SETTLEMENT,
@@ -346,6 +347,125 @@ class SyncWorker @AssistedInject constructor(
             }
 
             // 5xx and other transient errors — keep retrying.
+            else -> {
+                pendingOperationRepository.markRetryable(operationId, "Server error, will retry")
+                false
+            }
+        }
+    }
+
+    /**
+     * Wave 2D-3: replay a DELETE_EXPENSE pending operation.
+     *
+     * The expenseId is the last path segment of the endpoint: /api/expenses/{expenseId}.
+     * The stable [idempotencyKey] is passed as the Idempotency-Key header so the backend
+     * cannot reverse balances twice even if this runs multiple times.
+     */
+    private suspend fun syncDeleteExpense(
+        operationId   : String,
+        idempotencyKey: String,
+        endpoint      : String,
+    ): Boolean {
+        val expenseId = endpoint.removePrefix("/api/expenses/").trim()
+        if (expenseId.isBlank()) {
+            pendingOperationRepository.markFailed(
+                operationId, "Could not parse expenseId from endpoint: $endpoint"
+            )
+            return true
+        }
+
+        val result = expenseRepository.deleteExpense(expenseId, idempotencyKey)
+
+        return when (result) {
+            is com.prathik.fairshare.domain.model.ApiResult.Success -> {
+                pendingOperationRepository.markSynced(operationId, expenseId)
+                true
+            }
+            is com.prathik.fairshare.domain.model.ApiResult.NetworkError -> {
+                pendingOperationRepository.markRetryable(
+                    operationId, result.exception.message ?: "Network error"
+                )
+                false
+            }
+            // 404 — already deleted. Treat as success so the queue clears.
+            is com.prathik.fairshare.domain.model.ApiResult.NotFound -> {
+                pendingOperationRepository.markSynced(operationId, expenseId)
+                true
+            }
+            is com.prathik.fairshare.domain.model.ApiResult.Forbidden,
+            is com.prathik.fairshare.domain.model.ApiResult.Unauthorized,
+            is com.prathik.fairshare.domain.model.ApiResult.ValidationError,
+            is com.prathik.fairshare.domain.model.ApiResult.Conflict -> {
+                val msg = when (result) {
+                    is com.prathik.fairshare.domain.model.ApiResult.Forbidden -> result.message
+                    is com.prathik.fairshare.domain.model.ApiResult.ValidationError -> result.message
+                    is com.prathik.fairshare.domain.model.ApiResult.Conflict -> result.message
+                    else -> "Unauthorized"
+                }
+                pendingOperationRepository.markFailed(operationId, msg)
+                true
+            }
+            else -> {
+                pendingOperationRepository.markRetryable(operationId, "Server error, will retry")
+                false
+            }
+        }
+    }
+
+    /**
+     * Wave 2D-3: replay a RESTORE_EXPENSE pending operation.
+     *
+     * Endpoint format: /api/expenses/{expenseId}/restore.
+     * Same idempotency guarantee as delete — prevents a double balance re-application.
+     */
+    private suspend fun syncRestoreExpense(
+        operationId   : String,
+        idempotencyKey: String,
+        endpoint      : String,
+    ): Boolean {
+        // Strip prefix and suffix to isolate the expenseId
+        val expenseId = endpoint
+            .removePrefix("/api/expenses/")
+            .removeSuffix("/restore")
+            .trim()
+        if (expenseId.isBlank()) {
+            pendingOperationRepository.markFailed(
+                operationId, "Could not parse expenseId from endpoint: $endpoint"
+            )
+            return true
+        }
+
+        val result = expenseRepository.restoreExpense(expenseId, idempotencyKey)
+
+        return when (result) {
+            is com.prathik.fairshare.domain.model.ApiResult.Success -> {
+                pendingOperationRepository.markSynced(operationId, expenseId)
+                true
+            }
+            is com.prathik.fairshare.domain.model.ApiResult.NetworkError -> {
+                pendingOperationRepository.markRetryable(
+                    operationId, result.exception.message ?: "Network error"
+                )
+                false
+            }
+            is com.prathik.fairshare.domain.model.ApiResult.NotFound -> {
+                // Expense doesn't exist — restore is meaningless. Mark permanent.
+                pendingOperationRepository.markFailed(operationId, "Expense no longer exists")
+                true
+            }
+            is com.prathik.fairshare.domain.model.ApiResult.Forbidden,
+            is com.prathik.fairshare.domain.model.ApiResult.Unauthorized,
+            is com.prathik.fairshare.domain.model.ApiResult.ValidationError,
+            is com.prathik.fairshare.domain.model.ApiResult.Conflict -> {
+                val msg = when (result) {
+                    is com.prathik.fairshare.domain.model.ApiResult.Forbidden -> result.message
+                    is com.prathik.fairshare.domain.model.ApiResult.ValidationError -> result.message
+                    is com.prathik.fairshare.domain.model.ApiResult.Conflict -> result.message
+                    else -> "Unauthorized"
+                }
+                pendingOperationRepository.markFailed(operationId, msg)
+                true
+            }
             else -> {
                 pendingOperationRepository.markRetryable(operationId, "Server error, will retry")
                 false
