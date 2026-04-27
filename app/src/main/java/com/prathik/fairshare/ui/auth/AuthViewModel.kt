@@ -1,6 +1,8 @@
 package com.prathik.fairshare.ui.auth
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.prathik.fairshare.data.sync.CacheWarmupWorker
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.usecase.auth.ForgotPasswordUseCase
@@ -28,6 +30,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AuthViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext
+    private val appContext           : Context,
     private val loginUseCase         : LoginUseCase,
     private val registerUseCase      : RegisterUseCase,
     private val logoutUseCase        : LogoutUseCase,
@@ -108,6 +112,8 @@ class AuthViewModel @Inject constructor(
             _uiState.value = AuthUiState.Loading
             when (val result = loginUseCase(_email.value, _password.value)) {
                 is ApiResult.Success -> {
+                    // Trigger immediate warmup so offline data is ready after login.
+                    CacheWarmupWorker.triggerNow(appContext)
                     _uiState.value = AuthUiState.LoginSuccess(result.data)
                 }
 

@@ -127,7 +127,7 @@ class ExpenseDetailViewModel @Inject constructor(
                     // NetworkError — reaching here means the expense is not cached at all.
                     if (!hasLoadedOnce) _expenseState.value =
                         ExpenseDetailUiState.Error(
-                            "This expense is not available offline yet. Open it online once to make it available offline.",
+                            "Expense details aren't saved on this device yet. Reconnect to view this expense.",
                             isNetwork = false,   // don't show generic retry — it won't help offline
                         )
                 }
