@@ -18,6 +18,7 @@ import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import com.prathik.fairshare.data.sync.PendingOperationRepository
+import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,8 +36,9 @@ class GroupDetailViewModel @Inject constructor(
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
     private val groupRepository: GroupRepository,
     private val settlementRepository: SettlementRepository,
-    private val pendingOperationRepository: PendingOperationRepository,
-    private val expenseRepository: ExpenseRepository,
+    private val pendingOperationRepository : PendingOperationRepository,
+    private val expenseRepository           : ExpenseRepository,
+    private val balanceRepository           : BalanceRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -255,7 +257,11 @@ class GroupDetailViewModel @Inject constructor(
         viewModelScope.launch {
             pendingOperationRepository.observeActivePendingExpenseOps()
                 .collect { ops ->
-                    val confirmedBalance = _yourBalance.value
+                    // Use cached Room balance as base — never _yourBalance.value which starts
+                    // at 0.0 and only loads after a network call. This ensures offline reopen
+                    // shows the correct base (e.g. $88.08) not 0 when computing the delta.
+                    val confirmedBalance = balanceRepository.getCachedGroupBalance(groupId)
+                        ?: _yourBalance.value   // fall back to in-memory if Room also empty
 
                     // Filter to ops whose cached expense belongs to THIS group.
                     val relevantOps = ops.filter { op ->

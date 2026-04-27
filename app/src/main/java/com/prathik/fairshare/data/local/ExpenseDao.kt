@@ -17,6 +17,11 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses WHERE groupId = :groupId AND isDeleted = 0 ORDER BY expenseDate DESC")
     suspend fun getByGroupId(groupId: String): List<ExpenseEntity>
 
+    /** All expenses for a group including soft-deleted rows — used to distinguish
+     * 'empty because all offline-deleted' from 'empty because never cached'. */
+    @Query("SELECT * FROM expenses WHERE groupId = :groupId ORDER BY expenseDate DESC")
+    suspend fun getByGroupIdIncludingDeleted(groupId: String): List<ExpenseEntity>
+
     @Query("SELECT * FROM expenses WHERE id = :expenseId")
     suspend fun getById(expenseId: String): ExpenseEntity?
 

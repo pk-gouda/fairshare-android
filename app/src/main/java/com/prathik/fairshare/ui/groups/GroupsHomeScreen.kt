@@ -104,10 +104,12 @@ fun GroupsHomeScreen(
     onNavigateToAddExpense: () -> Unit,
     viewModel: GroupsViewModel = hiltViewModel(),
 ) {
-    val groupsState     by viewModel.groupsState.collectAsState()
-    val balanceSummary  by viewModel.balanceSummary.collectAsState()
-    val groupBalanceMap by viewModel.groupBalanceMap.collectAsState()
-    val searchQuery     by viewModel.searchQuery.collectAsState()
+    val groupsState              by viewModel.groupsState.collectAsState()
+    val balanceSummary           by viewModel.balanceSummary.collectAsState()
+    val groupBalanceMap          by viewModel.groupBalanceMap.collectAsState()
+    val optimisticGroupBalanceMap by viewModel.optimisticGroupBalanceMap.collectAsState()
+    val groupsWithPendingSync    by viewModel.groupsWithPendingSync.collectAsState()
+    val searchQuery              by viewModel.searchQuery.collectAsState()
     val isLoading = groupsState is GroupsUiState.Loading
 
     var showAddGroupSheet by remember { mutableStateOf(false) }
@@ -309,7 +311,13 @@ fun GroupsHomeScreen(
                         ) {
                             // ── Active groups ─────────────────────────────────
                             items(items = activeGroups, key = { it.id }) { group ->
-                                val entries  = groupBalanceMap[group.id]
+                                // Use optimistic balance when pending ops affect this group;
+                                // fall back to confirmed balance otherwise.
+                                val isPendingGroup = group.id in groupsWithPendingSync
+                                val entries = if (isPendingGroup)
+                                    optimisticGroupBalanceMap[group.id] ?: groupBalanceMap[group.id]
+                                else
+                                    groupBalanceMap[group.id]
                                 val netAmt   = entries?.sumOf { it.first }
                                 val dominant = entries?.maxByOrNull { Math.abs(it.first) }
                                 val fraction: Float = when {
@@ -318,10 +326,11 @@ fun GroupsHomeScreen(
                                     else        -> (-netAmt / totalOwed).toFloat().coerceIn(0f, 1f)
                                 }
                                 GroupCard(
-                                    group    = group,
-                                    entries  = entries,
-                                    fraction = fraction,
-                                    onClick  = { onNavigateToGroup(group.id) },
+                                    group        = group,
+                                    entries      = entries,
+                                    fraction     = fraction,
+                                    isPending    = isPendingGroup,
+                                    onClick      = { onNavigateToGroup(group.id) },
                                 )
                             }
 
@@ -449,10 +458,11 @@ private fun NetBalanceBar(summary: BalanceSummary) {
 
 @Composable
 private fun GroupCard(
-    group    : Group,
-    entries  : List<Pair<Double, String>>?,  // null=no expenses; one entry per currency
-    fraction : Float,     // 0..1 arc fill on the ring
-    onClick  : () -> Unit,
+    group     : Group,
+    entries   : List<Pair<Double, String>>?,  // null=no expenses; one entry per currency
+    fraction  : Float,     // 0..1 arc fill on the ring
+    isPending : Boolean = false,
+    onClick   : () -> Unit,
 ) {
     val positives = entries?.filter { it.first > 0 } ?: emptyList()
     val negatives = entries?.filter { it.first < 0 } ?: emptyList()
@@ -461,6 +471,7 @@ private fun GroupCard(
     val posTotal  = positives.sumOf { it.first }
     val negTotal  = negatives.sumOf { -it.first }
     val isSettled = entries != null && entries.isNotEmpty() && positives.isEmpty() && negatives.isEmpty()
+    // isPending flag is available here for any visual treatment of pending state
     val arcColor  = when {
         isSettled       -> Gold
         isMixed         -> if (negTotal > posTotal) Negative else Green400
@@ -558,6 +569,13 @@ private fun GroupCard(
                             fontWeight = FontWeight.Bold, color = Green400, maxLines = 1,
                         )
                     }
+                }
+                if (isPending) {
+                    Text(
+                        text = "Pending sync",
+                        fontSize = 8.sp,
+                        color = androidx.compose.ui.graphics.Color(0xFF9AA3AF),
+                    )
                 }
             }
         }

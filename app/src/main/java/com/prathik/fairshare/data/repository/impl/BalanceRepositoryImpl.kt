@@ -140,6 +140,12 @@ class BalanceRepositoryImpl @Inject constructor(
     override suspend fun getBalanceSummary(): ApiResult<BalanceSummaryResponse> =
         safeApiCall { balanceService.getBalanceSummary() }
 
+    override suspend fun getCachedGroupBalance(groupId: String): Double? {
+        val userId = tokenStore.getUserId() ?: return null
+        val rows = balanceDao.getGroupBalanceRows(userId, groupId)
+        return if (rows.isEmpty()) null else rows.sumOf { it.amount }
+    }
+
     private fun BalanceEntity.toDomain() = Balance(
         userId            = userId,
         otherUserId       = otherUserId,

@@ -47,9 +47,20 @@ class ExpenseRepositoryImpl @Inject constructor(
             return ApiResult.Success(result.data.map { it.toDomain() })
         }
         // Network failed — fall back to cache so the screen isn't empty
-        val cached = expenseDao.getByGroupId(groupId)
+        val cached = expenseDao.getByGroupId(groupId)   // non-deleted only
         if (cached.isNotEmpty()) {
             return ApiResult.Success(cached.map { it.toDomain() })
+        }
+        // Network failed and visible cache is empty. Check whether ANY expense
+        // (including soft-deleted) exists for this group. If so, the empty list
+        // is valid — all expenses were deleted offline. Do NOT return NetworkError
+        // in that case or GroupDetail will show 'No internet connection'.
+        val anyExpenses = expenseDao.getByGroupIdIncludingDeleted(groupId)
+        if (anyExpenses.isNotEmpty()) {
+            android.util.Log.d("ExpenseCache",
+                "getGroupExpenses offline: ${anyExpenses.size} total rows, "
+                        + "${cached.size} visible — returning empty list (all soft-deleted)")
+            return ApiResult.Success(emptyList())
         }
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }
@@ -262,21 +273,15 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun getDirectExpensesWithFriend(friendId: String): ApiResult<List<Expense>> {
         val result = safeApiCall { expenseService.getDirectExpensesWithFriend(friendId) }
         if (result is ApiResult.Success) {
+            // Cache with otherUserId so Friend Detail can fall back offline.
             val entities = result.data.map { it.toEntity(otherUserId = friendId) }
-            android.util.Log.d("DirectExpenseCache",
-                "Online fetched ${result.data.size} direct expenses for friendId=$friendId")
+            // Delete stale direct-expense rows for this friend, then reinsert fresh.
             expenseDao.deleteByOtherUserIdExcludingPendingCreates(friendId)
             expenseDao.insertAll(entities)
-            android.util.Log.d("DirectExpenseCache",
-                "Cached ${entities.size} direct expenses with otherUserId=$friendId")
             return result.mapSuccess { list -> list.map { it.toDomain() } }
         }
         val cached = expenseDao.getByOtherUserId(friendId)
-        android.util.Log.d("DirectExpenseCache",
-            "Offline fallback for friendId=$friendId: ${cached.size} rows found")
         if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
-        android.util.Log.w("DirectExpenseCache",
-            "No cached direct expenses for friendId=$friendId — cache miss")
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }
 

@@ -51,4 +51,11 @@ interface BalanceRepository {
      * Used by the Groups Home screen balance hero section.
      */
     suspend fun getBalanceSummary(): ApiResult<BalanceSummaryResponse>
+
+    /**
+     * Reads the cached GROUP_BALANCE rows for [groupId] from Room — never hits the network.
+     * Returns the sum of amounts (yourBalance for this group) or null if no cached rows.
+     * Used as a stable base for optimistic balance overlay across screens/ViewModels.
+     */
+    suspend fun getCachedGroupBalance(groupId: String): Double?
 }
