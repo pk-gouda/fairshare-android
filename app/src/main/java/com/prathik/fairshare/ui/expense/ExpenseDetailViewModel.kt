@@ -9,6 +9,7 @@ import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.network.api.ExpenseApiService
 import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.data.local.PendingOperationEntity
+import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.data.sync.OperationType
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.sync.SyncWorker
@@ -46,6 +47,7 @@ class ExpenseDetailViewModel @Inject constructor(
     private val restoreExpenseUseCase : RestoreExpenseUseCase,
     private val expenseApiService    : ExpenseApiService,
     private val tokenStore           : EncryptedTokenStore,
+    private val expenseRepository        : ExpenseRepository,
     private val pendingOperationRepository: PendingOperationRepository,
     @ApplicationContext private val appContext: Context,
     savedStateHandle                 : SavedStateHandle,
@@ -198,6 +200,8 @@ class ExpenseDetailViewModel @Inject constructor(
                     pendingOperationRepository.markRetryable(
                         enqueued.operationId, result.exception.message ?: "Network error"
                     )
+                    // Optimistically hide the expense from the list immediately.
+                    expenseRepository.updateLocalDeletedStatus(expenseId, true)
                     SyncWorker.triggerImmediateSync(appContext)
                     android.util.Log.w("ExpenseDetailVM", "Offline delete queued: ${enqueued.operationId}")
                     _actionState.value = ExpenseActionState.DeletedOffline
@@ -257,6 +261,8 @@ class ExpenseDetailViewModel @Inject constructor(
                     pendingOperationRepository.markRetryable(
                         enqueued.operationId, result.exception.message ?: "Network error"
                     )
+                    // Optimistically show the expense in the list again immediately.
+                    expenseRepository.updateLocalDeletedStatus(expenseId, false)
                     SyncWorker.triggerImmediateSync(appContext)
                     android.util.Log.w("ExpenseDetailVM", "Offline restore queued: ${enqueued.operationId}")
                     _actionState.value = ExpenseActionState.RestoredOffline

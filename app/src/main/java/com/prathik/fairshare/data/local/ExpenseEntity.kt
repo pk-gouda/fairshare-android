@@ -30,5 +30,7 @@ data class ExpenseEntity(
     val yourBalance: Double,
     val createdAt: String,
     val updatedAt: String,
+    /** For direct expenses: the other participant's userId. Null for group expenses. */
+    val otherUserId: String? = null,
     val cachedAt: Long = System.currentTimeMillis(),
 )

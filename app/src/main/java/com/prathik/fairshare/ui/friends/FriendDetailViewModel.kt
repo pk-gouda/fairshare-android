@@ -15,11 +15,14 @@ import com.prathik.fairshare.domain.repository.ImportRepository
 import com.prathik.fairshare.domain.repository.SettlementRepository
 import com.prathik.fairshare.domain.usecase.settlement.GetSettlementHistoryUseCase
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.sync.PendingOperationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -32,7 +35,8 @@ class FriendDetailViewModel @Inject constructor(
     private val getSettlementHistoryUseCase: GetSettlementHistoryUseCase,
     private val settlementRepository: SettlementRepository,
     private val tokenStore: EncryptedTokenStore,
-    private val importRepository: ImportRepository,
+    private val importRepository            : ImportRepository,
+    private val pendingOperationRepository  : PendingOperationRepository,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
@@ -40,6 +44,11 @@ class FriendDetailViewModel @Inject constructor(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    /** Wave 2D-Final: IDs of direct expenses with an active DELETE_EXPENSE pending op. */
+    val pendingDeleteExpenseIds: StateFlow<Set<String>> =
+        pendingOperationRepository.observePendingDeleteResourceIds()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     private val _friend = MutableStateFlow<Friend?>(null)
     val friend: StateFlow<Friend?> = _friend.asStateFlow()

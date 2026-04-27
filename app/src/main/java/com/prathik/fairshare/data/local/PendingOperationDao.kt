@@ -156,4 +156,17 @@ interface PendingOperationDao {
           AND localResourceId IS NOT NULL
     """)
     fun observeActiveResourceIds(): Flow<List<String>>
+
+    /**
+     * Resource IDs of expenses with an active DELETE_EXPENSE operation.
+     * GroupDetailViewModel uses this to immediately hide deleted expenses from
+     * the list without waiting for SyncWorker to confirm with the backend.
+     */
+    @Query("""
+        SELECT DISTINCT localResourceId FROM pending_operations
+        WHERE operationType = 'DELETE_EXPENSE'
+          AND status IN ('PENDING', 'SYNCING', 'FAILED_RETRYABLE')
+          AND localResourceId IS NOT NULL
+    """)
+    fun observePendingDeleteResourceIds(): Flow<List<String>>
 }

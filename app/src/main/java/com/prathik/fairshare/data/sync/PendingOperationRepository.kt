@@ -139,6 +139,13 @@ class PendingOperationRepository @Inject constructor(
         dao.observeActiveResourceIds().map { it.toSet() }
 
     /**
+     * IDs of expenses with an active DELETE_EXPENSE pending operation.
+     * Used to immediately hide them in group/friend expense lists.
+     */
+    fun observePendingDeleteResourceIds(): Flow<Set<String>> =
+        dao.observePendingDeleteResourceIds().map { it.toSet() }
+
+    /**
      * Reset a FAILED_RETRYABLE or FAILED_PERMANENT operation back to PENDING
      * so SyncWorker will attempt it again.
      *

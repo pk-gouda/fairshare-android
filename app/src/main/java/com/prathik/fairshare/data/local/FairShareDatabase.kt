@@ -32,9 +32,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         InvitedFriendEntity::class,
         FriendEntity::class,
         GroupMemberEntity::class,
+        NotificationEntity::class,
         PendingOperationEntity::class,
     ],
-    version = 11,
+    version = 13,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -46,6 +47,7 @@ abstract class FairShareDatabase : RoomDatabase() {
     abstract fun invitedFriendDao(): InvitedFriendDao
     abstract fun friendDao(): FriendDao
     abstract fun groupMemberDao(): GroupMemberDao
+    abstract fun notificationDao(): NotificationDao
     abstract fun expensePayerDao(): ExpensePayerDao
     abstract fun expenseSplitDao(): ExpenseSplitDao
     abstract fun pendingOperationDao(): PendingOperationDao
@@ -238,6 +240,39 @@ abstract class FairShareDatabase : RoomDatabase() {
             }
         }
 
+
+
+        /** 12 → 13: Add notifications table for offline Activity restore access. */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id             TEXT    NOT NULL PRIMARY KEY,
+                        title          TEXT    NOT NULL,
+                        message        TEXT    NOT NULL,
+                        type           TEXT    NOT NULL,
+                        referenceId    TEXT,
+                        referenceType  TEXT,
+                        isRead         INTEGER NOT NULL,
+                        createdAt      TEXT    NOT NULL,
+                        groupId        TEXT,
+                        groupName      TEXT,
+                        isGroupDeleted INTEGER NOT NULL,
+                        isUserMember   INTEGER NOT NULL,
+                        cachedAt       INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /** 11 → 12: Add otherUserId to expenses for direct friend expense cache (Wave 2D-Final). */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE expenses ADD COLUMN otherUserId TEXT")
+            }
+        }
 
         /** 10 → 11: Add group_members table for offline member caching. */
         val MIGRATION_10_11 = object : Migration(10, 11) {

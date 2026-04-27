@@ -16,6 +16,7 @@ import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.Receipt
 import com.prathik.fairshare.domain.model.SplitType
+import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.usecase.expense.CreateExpenseUseCase
 import com.prathik.fairshare.domain.usecase.friend.GetFriendsUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
@@ -36,6 +37,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AddExpenseViewModel @Inject constructor(
     private val createExpenseUseCase: CreateExpenseUseCase,
+    private val expenseRepository: ExpenseRepository,
     private val getGroupsUseCase: GetGroupsUseCase,
     private val getGroupUseCase: GetGroupUseCase,
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
@@ -601,12 +603,18 @@ class AddExpenseViewModel @Inject constructor(
             // Wave 2D-1: enqueue BEFORE network call.
             // The stable idempotencyKey from the queue row is used for the backend request
             // so the backend can deduplicate on any retry.
+            // Pre-generate a stable local ID for this expense. It becomes:
+            //   - the placeholder ExpenseEntity.id in Room (shown in list immediately)
+            //   - the localResourceId in the pending op (drives the pending dot)
+            val localExpenseId = java.util.UUID.randomUUID().toString()
+
             val enqueued = pendingOperationRepository.enqueue(
-                userId          = userId,
-                operationType   = OperationType.CREATE_EXPENSE,
-                endpoint        = "/api/expenses",
-                method          = "POST",
-                requestBodyJson = json.encodeToString(request),
+                userId           = userId,
+                operationType    = OperationType.CREATE_EXPENSE,
+                endpoint         = "/api/expenses",
+                method           = "POST",
+                requestBodyJson  = json.encodeToString(request),
+                localResourceId  = localExpenseId,
             )
 
             when (val result = createExpenseUseCase(
@@ -636,13 +644,29 @@ class AddExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.NetworkError -> {
-                    // Wave 2D-3: keep the pending operation for SyncWorker to retry later.
                     pendingOperationRepository.markRetryable(
                         operationId = enqueued.operationId,
                         error       = result.exception.message ?: "Network error",
                     )
-                    // Schedule an immediate sync attempt — WorkManager will hold it until
-                    // network is available, then send with the same idempotencyKey.
+                    // Insert a local placeholder so the expense appears in the list
+                    // immediately with the pending-sync dot. Deleted by SyncWorker on success.
+                    val yourPaid  = _payerData.value[userId] ?: 0.0
+                    val yourShare = effectiveSplitData?.get(userId) ?: 0.0
+                    expenseRepository.insertLocalPendingExpense(
+                        localId     = localExpenseId,
+                        groupId     = groupId,
+                        description = description,
+                        totalAmount = amount,
+                        currency    = _currency.value,
+                        splitType   = effectiveSplitType,
+                        category    = finalCategory,
+                        addedById   = userId,
+                        addedByName = tokenStore.getFullName() ?: "You",
+                        expenseDate = _expenseDate.value,
+                        yourPaid    = yourPaid,
+                        yourShare   = yourShare,
+                        otherUserId = preselectedFriendId,
+                    )
                     SyncWorker.triggerImmediateSync(appContext)
                     _uiState.value = AddExpenseUiState.SavedOffline
                 }
@@ -725,12 +749,18 @@ class AddExpenseViewModel @Inject constructor(
                 splitData   = mapOf(toId to amount),
             )
 
+            // Pre-generate a stable local ID for this expense. It becomes:
+            //   - the placeholder ExpenseEntity.id in Room (shown in list immediately)
+            //   - the localResourceId in the pending op (drives the pending dot)
+            val localExpenseId = java.util.UUID.randomUUID().toString()
+
             val enqueued = pendingOperationRepository.enqueue(
-                userId          = userId,
-                operationType   = OperationType.CREATE_EXPENSE,
-                endpoint        = "/api/expenses",
-                method          = "POST",
-                requestBodyJson = json.encodeToString(request),
+                userId           = userId,
+                operationType    = OperationType.CREATE_EXPENSE,
+                endpoint         = "/api/expenses",
+                method           = "POST",
+                requestBodyJson  = json.encodeToString(request),
+                localResourceId  = localExpenseId,
             )
 
             when (val result = createExpenseUseCase(
@@ -755,6 +785,25 @@ class AddExpenseViewModel @Inject constructor(
                 is ApiResult.NetworkError -> {
                     pendingOperationRepository.markRetryable(
                         enqueued.operationId, result.exception.message ?: "Network error"
+                    )
+                    // Insert placeholder so the transfer appears in list immediately,
+                    // consistent with normal offline expense create behavior.
+                    val yourPaid  = if (fromId == userId) amount else 0.0
+                    val yourShare = if (toId  == userId) amount else 0.0
+                    expenseRepository.insertLocalPendingExpense(
+                        localId     = localExpenseId,
+                        groupId     = groupId,
+                        description = transferDescription,
+                        totalAmount = amount,
+                        currency    = _currency.value,
+                        splitType   = com.prathik.fairshare.domain.model.SplitType.UNEQUAL,
+                        category    = com.prathik.fairshare.domain.model.ExpenseCategory.GENERAL,
+                        addedById   = userId,
+                        addedByName = tokenStore.getFullName() ?: "You",
+                        expenseDate = _expenseDate.value,
+                        yourPaid    = yourPaid,
+                        yourShare   = yourShare,
+                        otherUserId = preselectedFriendId,
                     )
                     SyncWorker.triggerImmediateSync(appContext)
                     _uiState.value = AddExpenseUiState.SavedOffline

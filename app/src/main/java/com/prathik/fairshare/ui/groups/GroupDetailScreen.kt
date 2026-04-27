@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -191,12 +192,14 @@ fun GroupDetailScreen(
 ) {
     val groupState           by viewModel.groupState.collectAsState()
     val expensesState        by viewModel.expensesState.collectAsState()
-    val pendingExpenseIds    by viewModel.pendingExpenseIds.collectAsState()
     val settlements          by viewModel.settlements.collectAsState()
     val balances             by viewModel.balances.collectAsState()
     val yourBalance          by viewModel.yourBalance.collectAsState()
     val settlementActionState by viewModel.settlementActionState.collectAsState()
     val members              by viewModel.members.collectAsState()
+    val pendingExpenseIds      by viewModel.pendingExpenseIds.collectAsState()
+    val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
+    val balancesLoadFailed      by viewModel.balancesLoadFailed.collectAsState()
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -290,7 +293,7 @@ fun GroupDetailScreen(
                             expensesState is ExpensesUiState.Loading -> GroupUiState.NEW_GROUP // neutral while loading
                             group.memberCount <= 1                   -> GroupUiState.SOLO
                             !hasActivity                             -> GroupUiState.NEW_GROUP
-                            yourBalance == 0.0                       -> GroupUiState.ALL_SETTLED
+                            yourBalance == 0.0 && !balancesLoadFailed -> GroupUiState.ALL_SETTLED
                             else                                     -> GroupUiState.ACTIVE_DEBT
                         }
 
@@ -425,13 +428,17 @@ fun GroupDetailScreen(
                                                     val isFirstOfDay = item == dayItems.first()
 
                                                     when (item) {
-                                                        is TimelineItem.ExpenseItem ->
-                                                            ExpenseRow(
-                                                                expense      = item.expense,
-                                                                showDateRail = isFirstOfDay,
-                                                                isPending    = item.expense.id in pendingExpenseIds,
-                                                                onClick      = { onNavigateToExpense(item.expense.id) },
-                                                            )
+                                                        is TimelineItem.ExpenseItem -> {
+                                                            // Hide immediately when offline delete is queued
+                                                            if (item.expense.id !in pendingDeleteExpenseIds) {
+                                                                ExpenseRow(
+                                                                    expense      = item.expense,
+                                                                    showDateRail = isFirstOfDay,
+                                                                    isPending    = item.expense.id in pendingExpenseIds,
+                                                                    onClick      = { onNavigateToExpense(item.expense.id) },
+                                                                )
+                                                            }
+                                                        }
                                                         is TimelineItem.SettlementItem ->
                                                             if (item.settlement.isFullSettle) {
                                                                 GroupFullySettledRow(
@@ -551,6 +558,27 @@ fun GroupDetailScreen(
                 Text("Settle up", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
                     modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md))
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                if (balancesLoadFailed && balances.isEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Outlined.WifiOff,
+                            contentDescription = null,
+                            tint = Color(0xFF9AA3AF),
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text = "Balances unavailable offline. Reconnect to refresh.",
+                            fontSize = 12.sp,
+                            color = Color(0xFF9AA3AF),
+                        )
+                    }
+                }
                 balances.filter { it.amount != 0.0 }.forEach { balance ->
                     val isOwed = balance.amount > 0
                     Row(

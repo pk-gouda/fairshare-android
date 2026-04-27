@@ -102,4 +102,49 @@ interface ExpenseRepository {
      * Fetches all direct (non-group) expenses shared between current user and a friend.
      */
     suspend fun getDirectExpensesWithFriend(friendId: String): ApiResult<List<Expense>>
+
+    // ── Local cache helpers for offline optimistic UI (Wave 2D-Final) ─────────
+
+    /**
+     * Insert a placeholder expense row into Room immediately after an offline
+     * create is queued. The [localId] matches [PendingOperationEntity.localResourceId]
+     * so the pending-dot indicator in expense lists lights up automatically.
+     * The row is deleted when SyncWorker confirms the create with the backend.
+     */
+    suspend fun insertLocalPendingExpense(
+        localId     : String,
+        groupId     : String?,
+        description : String,
+        totalAmount : Double,
+        currency    : String,
+        splitType   : com.prathik.fairshare.domain.model.SplitType,
+        category    : com.prathik.fairshare.domain.model.ExpenseCategory?,
+        addedById   : String,
+        addedByName : String,
+        expenseDate : String,
+        yourPaid    : Double,
+        yourShare   : Double,
+        otherUserId : String? = null,
+    )
+
+    /**
+     * Delete a locally-inserted placeholder expense by its [localId].
+     * Called from SyncWorker after the backend confirms the CREATE_EXPENSE.
+     */
+    suspend fun deleteLocalExpense(localId: String)
+
+    /**
+     * Copy the [otherUserId] from the local placeholder ([fromId]) to the
+     * server-confirmed expense ([toId]). Called by SyncWorker after a
+     * CREATE_EXPENSE sync so direct friend expenses remain visible in
+     * Friend Detail even before the next online refresh.
+     */
+    suspend fun propagateOtherUserId(fromId: String, toId: String)
+
+    /**
+     * Update the [isDeleted] flag on a cached expense immediately when an
+     * offline delete or restore is queued. Gives instant list-level feedback
+     * without waiting for SyncWorker to reach the backend.
+     */
+    suspend fun updateLocalDeletedStatus(expenseId: String, isDeleted: Boolean)
 }

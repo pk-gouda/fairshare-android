@@ -57,6 +57,15 @@ class GroupDetailViewModel @Inject constructor(
     private val _balances = MutableStateFlow<List<Balance>>(emptyList())
     val balances: StateFlow<List<Balance>> = _balances.asStateFlow()
 
+    /** True when balances failed to load (network error). Never treat empty as 'all settled'. */
+    private val _balancesLoadFailed = MutableStateFlow(false)
+    val balancesLoadFailed: StateFlow<Boolean> = _balancesLoadFailed.asStateFlow()
+
+    /** Wave 2D-Final: IDs of expenses with an active DELETE_EXPENSE pending op. */
+    val pendingDeleteExpenseIds: StateFlow<Set<String>> =
+        pendingOperationRepository.observePendingDeleteResourceIds()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     private val _yourBalance = MutableStateFlow(0.0)
     val yourBalance: StateFlow<Double> = _yourBalance.asStateFlow()
 
@@ -115,10 +124,11 @@ class GroupDetailViewModel @Inject constructor(
 
             when (val result = balancesDeferred.await()) {
                 is ApiResult.Success -> {
+                    _balancesLoadFailed.value = false
                     _balances.value = result.data
                     _yourBalance.value = result.data.sumOf { it.amount }
                 }
-                else -> Unit
+                else -> _balancesLoadFailed.value = true
             }
 
             when (val result = membersDeferred.await()) {
@@ -153,10 +163,11 @@ class GroupDetailViewModel @Inject constructor(
             }
             when (val result = balancesDeferred.await()) {
                 is ApiResult.Success -> {
+                    _balancesLoadFailed.value = false
                     _balances.value = result.data
                     _yourBalance.value = result.data.sumOf { it.amount }
                 }
-                else -> Unit
+                else -> _balancesLoadFailed.value = true
             }
         }
     }

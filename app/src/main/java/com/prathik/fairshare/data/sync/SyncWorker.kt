@@ -67,6 +67,7 @@ class SyncWorker @AssistedInject constructor(
                 idempotencyKey   = operation.idempotencyKey,
                 requestBodyJson  = operation.requestBodyJson,
                 endpoint         = operation.endpoint,
+                localResourceId  = operation.localResourceId,
             )
             if (!succeeded) anyRetryableFailure = true
         }
@@ -92,6 +93,7 @@ class SyncWorker @AssistedInject constructor(
         idempotencyKey : String,
         requestBodyJson: String?,
         endpoint       : String,
+        localResourceId: String? = null,
     ): Boolean {
         pendingOperationRepository.markSyncing(operationId)
         pendingOperationRepository.incrementRetry(operationId)
@@ -108,9 +110,10 @@ class SyncWorker @AssistedInject constructor(
 
             when (type) {
                 OperationType.CREATE_EXPENSE -> syncCreateExpense(
-                    operationId    = operationId,
-                    idempotencyKey = idempotencyKey,
+                    operationId     = operationId,
+                    idempotencyKey  = idempotencyKey,
                     requestBodyJson = requestBodyJson,
+                    localResourceId = localResourceId,
                 )
 
                 OperationType.UPDATE_EXPENSE -> syncUpdateExpense(
@@ -168,6 +171,7 @@ class SyncWorker @AssistedInject constructor(
         operationId    : String,
         idempotencyKey : String,
         requestBodyJson: String?,
+        localResourceId: String? = null,
     ): Boolean {
         if (requestBodyJson == null) {
             pendingOperationRepository.markFailed(
@@ -206,6 +210,13 @@ class SyncWorker @AssistedInject constructor(
         return when (result) {
             is com.prathik.fairshare.domain.model.ApiResult.Success -> {
                 pendingOperationRepository.markSynced(operationId, result.data.id)
+                // Copy otherUserId from the placeholder to the server expense BEFORE
+                // removing the placeholder. This keeps direct friend expenses visible
+                // in Friend Detail offline without waiting for the next network refresh.
+                localResourceId?.let {
+                    expenseRepository.propagateOtherUserId(fromId = it, toId = result.data.id)
+                }
+                localResourceId?.let { expenseRepository.deleteLocalExpense(it) }
                 true
             }
 

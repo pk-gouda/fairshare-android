@@ -149,7 +149,8 @@ fun FriendDetailScreen(
     onNavigateToRealFriend: (String) -> Unit = {},
     viewModel             : FriendDetailViewModel = hiltViewModel(),
 ) {
-    val isLoading     by viewModel.isLoading.collectAsState()
+    val isLoading              by viewModel.isLoading.collectAsState()
+    val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
     val friend        by viewModel.friend.collectAsState()
     val netBalance    by viewModel.netBalance.collectAsState()
     val currency      by viewModel.currency.collectAsState()
@@ -716,12 +717,16 @@ fun FriendDetailScreen(
                                                             showDateRail = showDateRail,
                                                             onClick      = { gId -> if (gId != null) onNavigateToGroup(gId) },
                                                         )
-                                                    is FriendTimelineItem.DirectExpenseItem ->
-                                                        FriendExpenseRow(
-                                                            expense      = item.expense,
-                                                            showDateRail = showDateRail,
-                                                            onClick      = { onNavigateToExpense(item.expense.id) },
-                                                        )
+                                                    is FriendTimelineItem.DirectExpenseItem -> {
+                                                        // Hide immediately when offline delete is queued
+                                                        if (item.expense.id !in pendingDeleteExpenseIds) {
+                                                            FriendExpenseRow(
+                                                                expense      = item.expense,
+                                                                showDateRail = showDateRail,
+                                                                onClick      = { onNavigateToExpense(item.expense.id) },
+                                                            )
+                                                        }
+                                                    }
                                                     is FriendTimelineItem.SettlementItem ->
                                                         FriendSettlementRow(
                                                             settlement   = item.settlement,

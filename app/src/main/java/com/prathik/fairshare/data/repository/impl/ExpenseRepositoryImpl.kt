@@ -42,7 +42,7 @@ class ExpenseRepositoryImpl @Inject constructor(
         val result = safeApiCall { expenseService.getGroupExpenses(groupId) }
         if (result is ApiResult.Success) {
             val entities = result.data.map { it.toEntity() }
-            expenseDao.deleteByGroupId(groupId)
+            expenseDao.deleteByGroupIdExcludingPendingCreates(groupId)
             expenseDao.insertAll(entities)
             return ApiResult.Success(result.data.map { it.toDomain() })
         }
@@ -103,8 +103,8 @@ class ExpenseRepositoryImpl @Inject constructor(
         remainderPointer: Int?,
         itemAssignments: Map<String, List<String>>?,
         repeatInterval: String?,
-    ): ApiResult<Expense> =
-        safeApiCall {
+    ): ApiResult<Expense> {
+        val result = safeApiCall {
             expenseService.createExpense(
                 CreateExpenseRequest(
                     groupId     = groupId,
@@ -124,7 +124,15 @@ class ExpenseRepositoryImpl @Inject constructor(
                     repeatInterval   = repeatInterval,
                 )
             )
-        }.mapSuccess { it.toDomain() }
+        }
+        // Cache the server-confirmed expense immediately so the real row exists in
+        // Room before SyncWorker deletes the local placeholder. Without this the
+        // list would briefly be empty between placeholder removal and next refresh.
+        if (result is ApiResult.Success) {
+            expenseDao.insert(result.data.toEntity())
+        }
+        return result.mapSuccess { it.toDomain() }
+    }
 
     override suspend fun updateExpense(
         expenseId: String,
@@ -201,33 +209,46 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun stopRecurring(expenseId: String): ApiResult<Unit> =
         safeApiCall { expenseService.stopRecurring(expenseId) }.mapSuccess { }
 
-    override suspend fun getDirectExpensesWithFriend(friendId: String): ApiResult<List<Expense>> =
-        safeApiCall { expenseService.getDirectExpensesWithFriend(friendId) }
-            .mapSuccess { list -> list.map { it.toDomain() } }
+    override suspend fun getDirectExpensesWithFriend(friendId: String): ApiResult<List<Expense>> {
+        val result = safeApiCall { expenseService.getDirectExpensesWithFriend(friendId) }
+        if (result is ApiResult.Success) {
+            // Cache with otherUserId so Friend Detail can fall back offline.
+            val entities = result.data.map { it.toEntity(otherUserId = friendId) }
+            // Delete stale direct-expense rows for this friend, then reinsert fresh.
+            expenseDao.deleteByOtherUserIdExcludingPendingCreates(friendId)
+            expenseDao.insertAll(entities)
+            return result.mapSuccess { list -> list.map { it.toDomain() } }
+        }
+        val cached = expenseDao.getByOtherUserId(friendId)
+        if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
+        return result.mapSuccess { list -> list.map { it.toDomain() } }
+    }
 
-    private fun com.prathik.fairshare.data.model.response.ExpenseResponse.toEntity() =
-        ExpenseEntity(
-            id           = id,
-            description  = description,
-            totalAmount  = totalAmount,
-            currency     = currency,
-            groupId      = groupId,
-            groupName    = groupName,
-            addedById    = addedById,
-            addedByName  = addedByName,
-            splitType    = splitType,
-            category     = category,
-            notes        = notes,
-            expenseDate  = expenseDate,
-            isDeleted    = isDeleted,
-            commentCount = commentCount,
-            itemCount    = itemCount,
-            yourPaid     = yourPaid,
-            yourShare    = yourShare,
-            yourBalance  = yourBalance,
-            createdAt    = createdAt,
-            updatedAt    = updatedAt,
-        )
+    private fun com.prathik.fairshare.data.model.response.ExpenseResponse.toEntity(
+        otherUserId: String? = null,
+    ) = ExpenseEntity(
+        id           = id,
+        description  = description,
+        totalAmount  = totalAmount,
+        currency     = currency,
+        groupId      = groupId,
+        groupName    = groupName,
+        addedById    = addedById,
+        addedByName  = addedByName,
+        splitType    = splitType,
+        category     = category,
+        notes        = notes,
+        expenseDate  = expenseDate,
+        isDeleted    = isDeleted,
+        commentCount = commentCount,
+        itemCount    = itemCount,
+        yourPaid     = yourPaid,
+        yourShare    = yourShare,
+        yourBalance  = yourBalance,
+        createdAt    = createdAt,
+        updatedAt    = updatedAt,
+        otherUserId  = otherUserId,
+    )
 
     /**
      * Basic cache mapping — payers and splits are empty.
@@ -323,6 +344,65 @@ class ExpenseRepositoryImpl @Inject constructor(
         createdAt    = createdAt,
         updatedAt    = updatedAt,
     )
+
+    // ── Local cache operations for offline optimistic UI (Wave 2D-Final) ───────
+
+    override suspend fun insertLocalPendingExpense(
+        localId     : String,
+        groupId     : String?,
+        description : String,
+        totalAmount : Double,
+        currency    : String,
+        splitType   : com.prathik.fairshare.domain.model.SplitType,
+        category    : com.prathik.fairshare.domain.model.ExpenseCategory?,
+        addedById   : String,
+        addedByName : String,
+        expenseDate : String,
+        yourPaid    : Double,
+        yourShare   : Double,
+        otherUserId : String?,
+    ) {
+        val now = java.time.LocalDateTime.now().toString()
+        expenseDao.insert(
+            ExpenseEntity(
+                id           = localId,
+                description  = description,
+                totalAmount  = totalAmount,
+                currency     = currency,
+                groupId      = groupId,
+                groupName    = null,
+                addedById    = addedById,
+                addedByName  = addedByName,
+                splitType    = splitType.name,
+                category     = category?.name,
+                notes        = null,
+                expenseDate  = expenseDate,
+                isDeleted    = false,
+                commentCount = 0,
+                itemCount    = 0,
+                yourPaid     = yourPaid,
+                yourShare    = yourShare,
+                yourBalance  = yourPaid - yourShare,
+                createdAt    = now,
+                updatedAt    = now,
+                otherUserId  = otherUserId,
+            )
+        )
+    }
+
+    override suspend fun deleteLocalExpense(localId: String) {
+        expenseDao.deleteById(localId)
+    }
+
+    override suspend fun propagateOtherUserId(fromId: String, toId: String) {
+        val placeholder = expenseDao.getById(fromId)
+        val otherUserId = placeholder?.otherUserId ?: return
+        expenseDao.updateOtherUserId(toId, otherUserId)
+    }
+
+    override suspend fun updateLocalDeletedStatus(expenseId: String, isDeleted: Boolean) {
+        expenseDao.updateLocalDeletedStatus(expenseId, isDeleted)
+    }
 
     // ── Payer / split entity helpers ──────────────────────────────────────────
 
