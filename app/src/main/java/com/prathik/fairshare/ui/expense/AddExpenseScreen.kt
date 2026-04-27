@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.Repeat
@@ -122,7 +123,8 @@ fun AddExpenseScreen(
     val repeatInterval    by viewModel.repeatInterval.collectAsState()
     val expenseDate       by viewModel.expenseDate.collectAsState()
     val groups            by viewModel.groups.collectAsState()
-    val members           by viewModel.members.collectAsState()
+    val members                    by viewModel.members.collectAsState()
+    val membersOfflineUnavailable  by viewModel.membersOfflineUnavailable.collectAsState()
     val payerData         by viewModel.payerData.collectAsState()
     val splitData         by viewModel.splitData.collectAsState()
     val equalExcluded     by viewModel.equalExcluded.collectAsState()
@@ -328,11 +330,12 @@ fun AddExpenseScreen(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier
                         .clip(RoundedCornerShape(Radius.lg))
-                        .background(Green400)
-                        .clickable { viewModel.submit() }
+                        .background(if (membersOfflineUnavailable) Surface3 else Green400)
+                        .then(if (!membersOfflineUnavailable) Modifier.clickable { viewModel.submit() } else Modifier)
                         .padding(horizontal = Spacing.md, vertical = 8.dp),
                 ) {
-                    Text("Save", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Surface0)
+                    Text("Save", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        color = if (membersOfflineUnavailable) TextTertiary else Surface0)
                 }
             }
 
@@ -508,7 +511,29 @@ fun AddExpenseScreen(
 
             // ── Paid by — dropdown row (default: current user) ─────────────────
             // Tapping always opens the PayerBottomSheet which handles single + multiple.
-            if (members.isNotEmpty()) {
+            // Always shown — members come from cache when offline; if cache is empty,
+            // membersOfflineUnavailable is true and Save is disabled with a message.
+            if (membersOfflineUnavailable) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.WifiOff,
+                        contentDescription = null,
+                        tint = TextSecondary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = "Open this group online once to enable offline expense creation.",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                    )
+                }
+            } else if (members.isNotEmpty()) {
                 Text(
                     text          = "PAID BY",
                     fontSize      = 11.sp,

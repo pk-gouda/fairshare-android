@@ -165,6 +165,14 @@ class AddExpenseViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<AddExpenseUiState>(AddExpenseUiState.Idle)
     val uiState: StateFlow<AddExpenseUiState> = _uiState.asStateFlow()
 
+    /**
+     * True when a group is selected but its members could not be loaded because
+     * the device is offline and the cache is empty (group was never opened online).
+     * The screen uses this to show a contextual message and disable Save.
+     */
+    private val _membersOfflineUnavailable = MutableStateFlow(false)
+    val membersOfflineUnavailable: StateFlow<Boolean> = _membersOfflineUnavailable.asStateFlow()
+
     private val _preselectedFriend = MutableStateFlow<Friend?>(null)
     val preselectedFriend: StateFlow<Friend?> = _preselectedFriend.asStateFlow()
 
@@ -385,18 +393,35 @@ class AddExpenseViewModel @Inject constructor(
 
     private fun loadMembers(groupId: String) {
         viewModelScope.launch {
+            // Clear stale state from any previously selected group immediately so
+            // the screen never shows members or allows Save for the wrong group.
+            _members.value                   = emptyList()
+            _membersOfflineUnavailable.value = false
+            _payerData.value                 = emptyMap()
+            _splitData.value                 = emptyMap()
+            _equalExcluded.value             = emptySet()
+
             when (val result = getGroupMembersUseCase(groupId)) {
                 is ApiResult.Success -> {
-                    _members.value = result.data
-                    val total = _amount.value.toDoubleOrNull() ?: 0.0
-                    val currentUserMember = result.data.find { it.userId == currentUserId }
-                    if (currentUserMember != null && _payerData.value.isEmpty()) {
-                        _payerData.value = mapOf(currentUserMember.userId to total)
+                    _members.value                   = result.data
+                    // Mark unavailable if the repository returned success but with an
+                    // empty list (shouldn't happen in practice, but safe to handle).
+                    _membersOfflineUnavailable.value = result.data.isEmpty()
+                    if (result.data.isNotEmpty()) {
+                        val total = _amount.value.toDoubleOrNull() ?: 0.0
+                        val currentUserMember = result.data.find { it.userId == currentUserId }
+                        if (currentUserMember != null) {
+                            _payerData.value = mapOf(currentUserMember.userId to total)
+                        }
+                        recalculateSplits()
                     }
-                    recalculateSplits()
                 }
 
-                else -> Unit
+                else -> {
+                    // Network failed and Room cache was empty (GroupRepositoryImpl
+                    // returns Success with cached rows when they exist).
+                    _membersOfflineUnavailable.value = true
+                }
             }
         }
     }
