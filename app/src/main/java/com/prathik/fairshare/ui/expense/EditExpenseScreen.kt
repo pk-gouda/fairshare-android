@@ -141,11 +141,7 @@ fun EditExpenseScreen(
     LaunchedEffect(saveState) {
         when (val s = saveState) {
             is EditSaveState.Success      -> { onSuccess(); viewModel.resetSaveState() }
-            is EditSaveState.SavedOffline -> {
-                snackbarHost.showSnackbar("Changes saved offline. Will sync when online.")
-                onSuccess()
-                viewModel.resetSaveState()
-            }
+            is EditSaveState.SavedOffline -> { onSuccess(); viewModel.resetSaveState() }
             is EditSaveState.Error        -> { snackbarHost.showSnackbar(s.message); viewModel.resetSaveState() }
             else -> Unit
         }

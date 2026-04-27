@@ -23,6 +23,7 @@ import com.prathik.fairshare.data.sync.SyncStatus
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Schedule
@@ -107,7 +108,8 @@ fun ExpenseDetailScreen(
 ) {
     val expenseState  by viewModel.expenseState.collectAsState()
     val actionState   by viewModel.actionState.collectAsState()
-    val pendingOp     by viewModel.pendingOp.collectAsState()
+    val pendingOp            by viewModel.pendingOp.collectAsState()
+    val isLocalPendingCreate  by viewModel.isLocalPendingCreate.collectAsState()
     val items            by viewModel.items.collectAsState()
     val itemsLoading     by viewModel.itemsLoading.collectAsState()
     val changeLog        by viewModel.changeLog.collectAsState()
@@ -137,17 +139,9 @@ fun ExpenseDetailScreen(
 
             // Wave 2D-3: queued offline — navigate back same as online success.
             // The list and detail will show the correct state after SyncWorker syncs.
-            is ExpenseActionState.DeletedOffline -> {
-                snackbarHost.showSnackbar("Deleted offline. Will sync when online.")
-                onDeleted()
-                viewModel.resetActionState()
-            }
+            is ExpenseActionState.DeletedOffline -> { onDeleted(); viewModel.resetActionState() }
 
-            is ExpenseActionState.RestoredOffline -> {
-                snackbarHost.showSnackbar("Restored offline. Will sync when online.")
-                onDeleted() // navigate back — stale deleted-looking detail is confusing
-                viewModel.resetActionState()
-            }
+            is ExpenseActionState.RestoredOffline -> { onDeleted(); viewModel.resetActionState() }
 
             is ExpenseActionState.Error -> {
                 snackbarHost.showSnackbar(state.message); viewModel.resetActionState()
@@ -177,8 +171,11 @@ fun ExpenseDetailScreen(
                         // canEdit is false when loaded from cache (ExpenseEntity doesn't store it).
                         // Fall back to addedById so actions remain reachable offline.
                         // The backend will 403 if the user genuinely lacks permission.
+                        // Local-only placeholders must not trigger backend calls with
+                        // a placeholder UUID — disable all write actions until synced.
                         val canModifyExpense =
-                            expense.canEdit || expense.addedById == viewModel.currentUserId
+                            !isLocalPendingCreate &&
+                                    (expense.canEdit || expense.addedById == viewModel.currentUserId)
 
                         if (expense.isDeleted && canModifyExpense) {
                             // Deleted expense — show Restore only if author/permitted
@@ -219,16 +216,17 @@ fun ExpenseDetailScreen(
                     onRetry = { viewModel.loadExpense() })
 
                 is ExpenseDetailUiState.Success -> ExpenseDetailContent(
-                    expense = state.expense,
-                    currentUserId = viewModel.currentUserId,
-                    items = items,
-                    onSettle = { onNavigateToSettle(it) },
-                    isDeleting = actionState is ExpenseActionState.Loading,
-                    changeLog = changeLog,
-                    changeLogLoading = changeLogLoading,
-                    onRestore = { viewModel.restoreExpense() },
-                    pendingOp = pendingOp,
-                    onRetryPendingOp = { opId -> viewModel.retryPendingOp(opId) },
+                    expense              = state.expense,
+                    currentUserId        = viewModel.currentUserId,
+                    items                = items,
+                    onSettle             = { onNavigateToSettle(it) },
+                    isDeleting           = actionState is ExpenseActionState.Loading,
+                    changeLog            = changeLog,
+                    changeLogLoading     = changeLogLoading,
+                    onRestore            = { viewModel.restoreExpense() },
+                    pendingOp            = pendingOp,
+                    onRetryPendingOp     = { opId -> viewModel.retryPendingOp(opId) },
+                    isLocalPendingCreate = isLocalPendingCreate,
                 )
             }
         }
@@ -271,6 +269,7 @@ private fun ExpenseDetailContent(
     onRestore             : () -> Unit = {},
     pendingOp             : com.prathik.fairshare.data.local.PendingOperationEntity? = null,
     onRetryPendingOp      : (String) -> Unit = {},
+    isLocalPendingCreate  : Boolean = false,
 ) {
     var showItemBreakdown by remember { mutableStateOf(false) }
     Column(
@@ -284,6 +283,29 @@ private fun ExpenseDetailContent(
                 pendingOp    = pendingOp,
                 onRetry      = { onRetryPendingOp(pendingOp.operationId) },
             )
+        }
+        // ── Local-only placeholder notice ─────────────────────────────────────
+        if (isLocalPendingCreate) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(androidx.compose.ui.graphics.Color(0xFF151A21))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector        = Icons.Outlined.Schedule,
+                    contentDescription = null,
+                    tint               = androidx.compose.ui.graphics.Color(0xFF9AA3AF),
+                    modifier           = Modifier.size(14.dp),
+                )
+                Text(
+                    text     = "This expense is saved on this device and will sync when you're online. Edit and delete are disabled until sync completes.",
+                    fontSize = 12.sp,
+                    color    = androidx.compose.ui.graphics.Color(0xFF9AA3AF),
+                )
+            }
         }
         // ── Amount hero ───────────────────────────────────────────────────────
         Column(
@@ -477,130 +499,156 @@ private fun ExpenseDetailContent(
         )
         Spacer(modifier = Modifier.height(Spacing.sm))
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Spacing.lg)
-                .clip(RoundedCornerShape(Radius.xl))
-                .background(Surface2),
-        ) {
-            expense.payers.forEachIndexed { index, payer ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    val name = if (payer.userId == currentUserId) "You" else payer.fullName
-                    Text(
-                        text = name,
-                        fontSize = 15.sp,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = MoneyUtils.format(payer.amountPaid, expense.currency),
-                        fontSize = 15.sp,
-                        color = Green400,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                if (index < expense.payers.lastIndex) {
-                    HorizontalDivider(
-                        color = Surface4, thickness = 0.5.dp,
-                        modifier = Modifier.padding(horizontal = Spacing.lg)
-                    )
-                }
+        // When the expense is loaded from the lightweight Room cache (no payer/split
+        // rows cached yet), show a clear message instead of empty sections.
+        if (expense.payers.isEmpty() && expense.splits.isEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.WifiOff,
+                    contentDescription = null,
+                    tint = TextSecondary,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = "Split details unavailable offline. Open this expense online once to cache them.",
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                )
             }
-        }
+        } else {
 
-        // ── Split breakdown ───────────────────────────────────────────────────
-        Spacer(modifier = Modifier.height(Spacing.lg))
-        FsSectionLabel(
-            text = "Split breakdown",
-            modifier = Modifier.padding(horizontal = Spacing.lg),
-        )
-        Spacer(modifier = Modifier.height(Spacing.sm))
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Spacing.lg)
-                .clip(RoundedCornerShape(Radius.xl))
-                .background(Surface2),
-        ) {
-            expense.splits.forEachIndexed { index, split ->
-                val name = if (split.userId == currentUserId) "You" else split.fullName
-                val rowColor = when {
-                    split.isSettled -> TextSecondary
-                    split.userId == currentUserId && expense.yourBalance < 0 -> Negative
-                    else -> TextPrimary
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .clip(RoundedCornerShape(Radius.xl))
+                    .background(Surface2),
+            ) {
+                expense.payers.forEachIndexed { index, payer ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        val name = if (payer.userId == currentUserId) "You" else payer.fullName
                         Text(
                             text = name,
                             fontSize = 15.sp,
-                            color = rowColor,
+                            color = TextPrimary,
                             fontWeight = FontWeight.Medium
                         )
-                        if (split.isSettled) {
-                            Spacer(modifier = Modifier.width(Spacing.sm))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(Radius.xs))
-                                    .background(Green400.copy(alpha = 0.12f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                            ) {
+                        Text(
+                            text = MoneyUtils.format(payer.amountPaid, expense.currency),
+                            fontSize = 15.sp,
+                            color = Green400,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    if (index < expense.payers.lastIndex) {
+                        HorizontalDivider(
+                            color = Surface4, thickness = 0.5.dp,
+                            modifier = Modifier.padding(horizontal = Spacing.lg)
+                        )
+                    }
+                }
+            }
+
+            // ── Split breakdown ───────────────────────────────────────────────────
+            Spacer(modifier = Modifier.height(Spacing.lg))
+            FsSectionLabel(
+                text = "Split breakdown",
+                modifier = Modifier.padding(horizontal = Spacing.lg),
+            )
+            Spacer(modifier = Modifier.height(Spacing.sm))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .clip(RoundedCornerShape(Radius.xl))
+                    .background(Surface2),
+            ) {
+                expense.splits.forEachIndexed { index, split ->
+                    val name = if (split.userId == currentUserId) "You" else split.fullName
+                    val rowColor = when {
+                        split.isSettled -> TextSecondary
+                        split.userId == currentUserId && expense.yourBalance < 0 -> Negative
+                        else -> TextPrimary
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = name,
+                                fontSize = 15.sp,
+                                color = rowColor,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (split.isSettled) {
+                                Spacer(modifier = Modifier.width(Spacing.sm))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(Radius.xs))
+                                        .background(Green400.copy(alpha = 0.12f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                ) {
+                                    Text(
+                                        "settled",
+                                        fontSize = 10.sp,
+                                        color = Green400,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                        // Show amount + percentage/shares if applicable
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = MoneyUtils.format(split.amountOwed, expense.currency),
+                                fontSize = 15.sp,
+                                color = if (split.isSettled) TextSecondary else rowColor,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            if (expense.splitType == SplitType.PERCENTAGE && split.percentage != null) {
                                 Text(
-                                    "settled",
-                                    fontSize = 10.sp,
-                                    color = Green400,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "${split.percentage.toInt()}%",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
+                                )
+                            }
+                            if (expense.splitType == SplitType.SHARES && split.shares != null) {
+                                Text(
+                                    text = "${split.shares} shares",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
                                 )
                             }
                         }
                     }
-                    // Show amount + percentage/shares if applicable
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = MoneyUtils.format(split.amountOwed, expense.currency),
-                            fontSize = 15.sp,
-                            color = if (split.isSettled) TextSecondary else rowColor,
-                            fontWeight = FontWeight.SemiBold,
+                    if (index < expense.splits.lastIndex) {
+                        HorizontalDivider(
+                            color = Surface4, thickness = 0.5.dp,
+                            modifier = Modifier.padding(horizontal = Spacing.lg)
                         )
-                        if (expense.splitType == SplitType.PERCENTAGE && split.percentage != null) {
-                            Text(
-                                text = "${split.percentage.toInt()}%",
-                                fontSize = 11.sp,
-                                color = TextSecondary,
-                            )
-                        }
-                        if (expense.splitType == SplitType.SHARES && split.shares != null) {
-                            Text(
-                                text = "${split.shares} shares",
-                                fontSize = 11.sp,
-                                color = TextSecondary,
-                            )
-                        }
                     }
                 }
-                if (index < expense.splits.lastIndex) {
-                    HorizontalDivider(
-                        color = Surface4, thickness = 0.5.dp,
-                        modifier = Modifier.padding(horizontal = Spacing.lg)
-                    )
-                }
             }
-        }
 
+
+        } // end else (payers/splits available)
 
         // ── Item breakdown (expandable) ───────────────────────────────────────
         if (items.isNotEmpty()) {

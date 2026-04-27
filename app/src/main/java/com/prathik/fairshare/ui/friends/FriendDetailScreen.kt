@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Search
@@ -151,6 +152,7 @@ fun FriendDetailScreen(
 ) {
     val isLoading              by viewModel.isLoading.collectAsState()
     val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
+    val balancesLoadFailed      by viewModel.balancesLoadFailed.collectAsState()
     val friend        by viewModel.friend.collectAsState()
     val netBalance    by viewModel.netBalance.collectAsState()
     val currency      by viewModel.currency.collectAsState()
@@ -313,7 +315,7 @@ fun FriendDetailScreen(
     val ubPositives = userBalances.filter { it.amount > 0 }.sumOf { it.amount }
     val ubNegatives = userBalances.filter { it.amount < 0 }.sumOf { -it.amount }
     val friendState: FriendUiState = when {
-        ubPositives == 0.0 && ubNegatives == 0.0 && hasAnyActivity -> FriendUiState.SETTLED_WITH_HISTORY
+        ubPositives == 0.0 && ubNegatives == 0.0 && hasAnyActivity && !balancesLoadFailed -> FriendUiState.SETTLED_WITH_HISTORY
         ubPositives == 0.0 && ubNegatives == 0.0 -> FriendUiState.BRAND_NEW
         ubNegatives > ubPositives -> FriendUiState.YOU_OWE_THEM   // dominant = you owe
         else -> FriendUiState.THEY_OWE_YOU                         // dominant = owed to you (or equal)
@@ -595,12 +597,13 @@ fun FriendDetailScreen(
                         // ── Sticky balance bar ────────────────────────────────
                         stickyHeader {
                             FriendStickyBalanceBar(
-                                netBalance  = netBalance,
-                                currency    = currency,
-                                userBalances = userBalances,
-                                friendName   = friendName,
-                                groupCount  = groupCount,
-                                friendState = friendState,
+                                netBalance         = netBalance,
+                                currency           = currency,
+                                userBalances       = userBalances,
+                                friendName         = friendName,
+                                groupCount         = groupCount,
+                                friendState        = friendState,
+                                balancesLoadFailed = balancesLoadFailed,
                             )
                         }
 
@@ -1178,12 +1181,13 @@ private fun FriendCoverHeader(
 
 @Composable
 private fun FriendStickyBalanceBar(
-    netBalance   : Double,
-    currency     : String,
-    userBalances : List<com.prathik.fairshare.domain.model.Balance> = emptyList(),
-    groupCount   : Int,
-    friendState  : FriendUiState,
-    friendName   : String = "",
+    netBalance          : Double,
+    currency            : String,
+    userBalances        : List<com.prathik.fairshare.domain.model.Balance> = emptyList(),
+    groupCount          : Int,
+    friendState         : FriendUiState,
+    friendName          : String = "",
+    balancesLoadFailed  : Boolean = false,
 ) {
     val isCentered = friendState == FriendUiState.BRAND_NEW || friendState == FriendUiState.SETTLED_WITH_HISTORY
 
@@ -1197,8 +1201,18 @@ private fun FriendStickyBalanceBar(
     ) {
         when (friendState) {
             FriendUiState.BRAND_NEW -> {
-                Text("No expenses yet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF9AA3AF))
+                if (balancesLoadFailed) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Outlined.WifiOff, null,
+                            tint = Color(0xFF9AA3AF), modifier = Modifier.size(14.dp))
+                        Text("Balances unavailable offline.",
+                            fontSize = 12.sp, color = Color(0xFF9AA3AF))
+                    }
+                } else {
+                    Text("No expenses yet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF9AA3AF))
+                }
             }
             FriendUiState.SETTLED_WITH_HISTORY -> {
                 Text("All settled 🎉", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,

@@ -182,11 +182,7 @@ fun AddExpenseScreen(
     LaunchedEffect(uiState) {
         when (val s = uiState) {
             is AddExpenseUiState.Success      -> { onSuccess(); viewModel.resetUiState() }
-            is AddExpenseUiState.SavedOffline -> {
-                snackbarHost.showSnackbar("Saved offline. Will sync when online.")
-                onSuccess()
-                viewModel.resetUiState()
-            }
+            is AddExpenseUiState.SavedOffline -> { onSuccess(); viewModel.resetUiState() }
             is AddExpenseUiState.Error        -> { snackbarHost.showSnackbar(s.message); viewModel.resetUiState() }
             else                              -> Unit
         }

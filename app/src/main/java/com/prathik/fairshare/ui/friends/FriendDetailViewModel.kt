@@ -62,6 +62,11 @@ class FriendDetailViewModel @Inject constructor(
     private val _netBalance = MutableStateFlow(0.0)
     val netBalance: StateFlow<Double> = _netBalance.asStateFlow()
 
+    /** True when balance network call failed — never treat empty balances as "settled". */
+    private val _balancesLoadFailed = MutableStateFlow(false)
+    val balancesLoadFailed: StateFlow<Boolean> = _balancesLoadFailed.asStateFlow()
+
+
     private val _currency = MutableStateFlow("USD")
     val currency: StateFlow<String> = _currency.asStateFlow()
 
@@ -130,12 +135,12 @@ class FriendDetailViewModel @Inject constructor(
             // value can be stale until the background refresh completes.
             when (val result = balancesDeferred.await()) {
                 is ApiResult.Success -> {
-                    _userBalances.value = result.data
+                    _balancesLoadFailed.value = false
                     _userBalances.value = result.data
                     _netBalance.value = result.data.sumOf { it.amount }
                     _currency.value   = result.data.firstOrNull()?.currency ?: "USD"
                 }
-                else -> Unit
+                else -> _balancesLoadFailed.value = true
             }
 
             // Per-group breakdown — shown in the balance card
@@ -171,11 +176,12 @@ class FriendDetailViewModel @Inject constructor(
             // Refresh net balance — always fresh from network (no cache)
             when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
                 is ApiResult.Success -> {
+                    _balancesLoadFailed.value = false
                     _userBalances.value = result.data
                     _netBalance.value = result.data.sumOf { it.amount }
                     _currency.value   = result.data.firstOrNull()?.currency ?: "USD"
                 }
-                else -> Unit
+                else -> _balancesLoadFailed.value = true
             }
 
             // Refresh per-group breakdown

@@ -175,10 +175,12 @@ class ExpenseRepositoryImpl @Inject constructor(
         val result = safeApiCall { expenseService.deleteExpense(expenseId, idempotencyKey) }
         return when (result) {
             is ApiResult.Success -> {
-                // Clean up all cached rows for this expense to avoid orphaned data.
-                expensePayerDao.deleteByExpenseId(expenseId)
-                expenseSplitDao.deleteByExpenseId(expenseId)
-                expenseDao.deleteById(expenseId)
+                // Backend delete is a soft-delete. Mirror that locally: mark isDeleted = true
+                // instead of removing the row. This keeps the cached expense accessible so
+                // the Activity restore path (notification → ExpenseDetail offline → Restore)
+                // works after going offline. Group/friend lists already filter isDeleted = 0.
+                // Payer/split rows are preserved so the split breakdown stays available offline.
+                expenseDao.updateLocalDeletedStatus(expenseId, true)
                 ApiResult.Success(Unit)
             }
             is ApiResult.NetworkError    -> result
@@ -191,8 +193,14 @@ class ExpenseRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun restoreExpense(expenseId: String, idempotencyKey: String?): ApiResult<Expense> =
-        safeApiCall { expenseService.restoreExpense(expenseId, idempotencyKey) }.mapSuccess { it.toDomain() }
+    override suspend fun restoreExpense(expenseId: String, idempotencyKey: String?): ApiResult<Expense> {
+        val result = safeApiCall { expenseService.restoreExpense(expenseId, idempotencyKey) }
+        if (result is ApiResult.Success) {
+            // Mark locally undeleted and update cached entity with server-confirmed state.
+            expenseDao.insert(result.data.toEntity())
+        }
+        return result.mapSuccess { it.toDomain() }
+    }
 
     override suspend fun searchExpenses(query: String): ApiResult<List<Expense>> =
         safeApiCall { expenseService.searchExpenses(query) }

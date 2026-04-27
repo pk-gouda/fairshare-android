@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -84,6 +85,17 @@ class ExpenseDetailViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
+     * True when this expense is a local-only placeholder that hasn't synced yet
+     * (its ID is the localResourceId of an active CREATE_EXPENSE pending op).
+     * Edit/Delete/Restore are disabled while true — the placeholder UUID must
+     * never be sent to the backend as a real expense ID.
+     */
+    val isLocalPendingCreate: StateFlow<Boolean> =
+        pendingOperationRepository.observeForExpense(expenseId)
+            .map { op -> op?.operationType == "CREATE_EXPENSE" }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
      * Wave 2D-4: manual retry.
      * Resets the operation to PENDING (reusing the original idempotencyKey)
      * and triggers an immediate SyncWorker pass.
@@ -111,8 +123,13 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
                 is ApiResult.NotFound -> _expenseState.value = ExpenseDetailUiState.Deleted
                 is ApiResult.NetworkError -> {
+                    // getExpenseUseCase already attempts a Room fallback before returning
+                    // NetworkError — reaching here means the expense is not cached at all.
                     if (!hasLoadedOnce) _expenseState.value =
-                        ExpenseDetailUiState.Error("No internet connection.", true)
+                        ExpenseDetailUiState.Error(
+                            "This expense is not available offline yet. Open it online once to make it available offline.",
+                            isNetwork = false,   // don't show generic retry — it won't help offline
+                        )
                 }
                 else -> {
                     if (!hasLoadedOnce) _expenseState.value =
