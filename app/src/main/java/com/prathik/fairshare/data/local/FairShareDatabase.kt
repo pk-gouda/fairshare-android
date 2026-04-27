@@ -18,6 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 7 → 8: Added friendCode/timezone to users cache
  * 8 → 9: Added pending_operations table for Wave 2C durable sync queue
  * 9 → 10: Added expense_payers and expense_splits tables for Wave 2D-2B full offline edit
+ * 10 → 11: Added group_members table for offline member caching (Wave 2D-4A)
  */
 @Database(
     entities = [
@@ -30,9 +31,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PendingActionEntity::class,
         InvitedFriendEntity::class,
         FriendEntity::class,
+        GroupMemberEntity::class,
         PendingOperationEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -43,6 +45,7 @@ abstract class FairShareDatabase : RoomDatabase() {
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun invitedFriendDao(): InvitedFriendDao
     abstract fun friendDao(): FriendDao
+    abstract fun groupMemberDao(): GroupMemberDao
     abstract fun expensePayerDao(): ExpensePayerDao
     abstract fun expenseSplitDao(): ExpenseSplitDao
     abstract fun pendingOperationDao(): PendingOperationDao
@@ -230,6 +233,32 @@ abstract class FairShareDatabase : RoomDatabase() {
                     """
                     CREATE INDEX IF NOT EXISTS index_expense_splits_expenseId
                     ON expense_splits(expenseId)
+                    """.trimIndent()
+                )
+            }
+        }
+
+
+        /** 10 → 11: Add group_members table for offline member caching. */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS group_members (
+                        id               TEXT NOT NULL PRIMARY KEY,
+                        groupId          TEXT NOT NULL,
+                        userId           TEXT NOT NULL,
+                        fullName         TEXT NOT NULL,
+                        email            TEXT NOT NULL,
+                        profilePictureUrl TEXT,
+                        joinedAt         TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_group_members_groupId
+                    ON group_members(groupId)
                     """.trimIndent()
                 )
             }

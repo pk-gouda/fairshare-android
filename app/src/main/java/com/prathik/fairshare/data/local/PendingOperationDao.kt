@@ -128,4 +128,32 @@ interface PendingOperationDao {
           AND updatedAt < :cutoffMillis
     """)
     suspend fun cleanupCompleted(cutoffMillis: Long)
+
+    /**
+     * Live-watches the latest non-terminal pending operation for a given resource
+     * (expense), matched on [localResourceId] or [serverResourceId].
+     *
+     * Returns null when no active operation exists (already SYNCED or CANCELLED).
+     * Drives the sync-status banner in ExpenseDetailScreen.
+     */
+    @Query("""
+        SELECT * FROM pending_operations
+        WHERE (localResourceId = :resourceId OR serverResourceId = :resourceId)
+          AND status NOT IN ('SYNCED', 'CANCELLED')
+        ORDER BY createdAt DESC
+        LIMIT 1
+    """)
+    fun observeForResource(resourceId: String): Flow<PendingOperationEntity?>
+
+    /**
+     * Live set of resource IDs (expense IDs) that have at least one active
+     * pending operation. Used by GroupDetailScreen to show a sync dot on
+     * affected expense rows without needing one query per row.
+     */
+    @Query("""
+        SELECT DISTINCT localResourceId FROM pending_operations
+        WHERE status IN ('PENDING', 'SYNCING', 'FAILED_RETRYABLE', 'FAILED_PERMANENT')
+          AND localResourceId IS NOT NULL
+    """)
+    fun observeActiveResourceIds(): Flow<List<String>>
 }

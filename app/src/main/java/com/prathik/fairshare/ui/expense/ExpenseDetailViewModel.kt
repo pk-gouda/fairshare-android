@@ -8,6 +8,7 @@ import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.network.api.ExpenseApiService
 import com.prathik.fairshare.data.network.safeApiCall
+import com.prathik.fairshare.data.local.PendingOperationEntity
 import com.prathik.fairshare.data.sync.OperationType
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.sync.SyncWorker
@@ -21,8 +22,10 @@ import com.prathik.fairshare.domain.usecase.expense.RestoreExpenseUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -68,6 +71,27 @@ class ExpenseDetailViewModel @Inject constructor(
 
     private val _changeLogLoading = MutableStateFlow(false)
     val changeLogLoading: StateFlow<Boolean> = _changeLogLoading.asStateFlow()
+
+    /**
+     * Wave 2D-4: live pending operation for this expense.
+     * Null when no active (non-SYNCED/CANCELLED) operation exists.
+     * Drives the sync-status banner in ExpenseDetailScreen.
+     */
+    val pendingOp: StateFlow<PendingOperationEntity?> =
+        pendingOperationRepository.observeForExpense(expenseId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Wave 2D-4: manual retry.
+     * Resets the operation to PENDING (reusing the original idempotencyKey)
+     * and triggers an immediate SyncWorker pass.
+     */
+    fun retryPendingOp(operationId: String) {
+        viewModelScope.launch {
+            pendingOperationRepository.resetForRetry(operationId)
+            SyncWorker.triggerImmediateSync(appContext)
+        }
+    }
 
     init { loadExpense() }
 

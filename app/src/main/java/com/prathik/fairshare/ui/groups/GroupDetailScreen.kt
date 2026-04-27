@@ -191,6 +191,7 @@ fun GroupDetailScreen(
 ) {
     val groupState           by viewModel.groupState.collectAsState()
     val expensesState        by viewModel.expensesState.collectAsState()
+    val pendingExpenseIds    by viewModel.pendingExpenseIds.collectAsState()
     val settlements          by viewModel.settlements.collectAsState()
     val balances             by viewModel.balances.collectAsState()
     val yourBalance          by viewModel.yourBalance.collectAsState()
@@ -428,6 +429,7 @@ fun GroupDetailScreen(
                                                             ExpenseRow(
                                                                 expense      = item.expense,
                                                                 showDateRail = isFirstOfDay,
+                                                                isPending    = item.expense.id in pendingExpenseIds,
                                                                 onClick      = { onNavigateToExpense(item.expense.id) },
                                                             )
                                                         is TimelineItem.SettlementItem ->
@@ -1038,6 +1040,7 @@ private fun ActionBar(
 private fun ExpenseRow(
     expense     : Expense,
     showDateRail: Boolean,
+    isPending   : Boolean = false,
     onClick     : () -> Unit,
 ) {
     val youLent = expense.yourBalance > 0
@@ -1121,6 +1124,16 @@ private fun ExpenseRow(
                     fontSize = 12.sp,
                     color    = Color(0xFF9AA3AF),
                 )
+            }
+
+            // Sync-pending dot (Wave 2D-4)
+            if (isPending) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(Color(0xFFFFA726), androidx.compose.foundation.shape.CircleShape)
+                )
+                Spacer(Modifier.width(6.dp))
             }
 
             // Balance

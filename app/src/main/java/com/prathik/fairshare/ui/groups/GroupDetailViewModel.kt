@@ -17,9 +17,12 @@ import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
+import com.prathik.fairshare.data.sync.PendingOperationRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -30,14 +33,20 @@ class GroupDetailViewModel @Inject constructor(
     private val getGroupBalancesUseCase : GetGroupBalancesUseCase,
     private val getGroupMembersUseCase  : GetGroupMembersUseCase,
     private val groupRepository         : GroupRepository,
-    private val settlementRepository    : SettlementRepository,
-    savedStateHandle                    : SavedStateHandle,
+    private val settlementRepository       : SettlementRepository,
+    private val pendingOperationRepository : PendingOperationRepository,
+    savedStateHandle                       : SavedStateHandle,
 ) : ViewModel() {
 
     val groupId: String = checkNotNull(savedStateHandle["groupId"])
 
     private val _groupState = MutableStateFlow<GroupDetailUiState>(GroupDetailUiState.Loading)
     val groupState: StateFlow<GroupDetailUiState> = _groupState.asStateFlow()
+
+    /** Wave 2D-4: IDs of expenses with an active pending operation. */
+    val pendingExpenseIds: StateFlow<Set<String>> =
+        pendingOperationRepository.observeActivePendingResourceIds()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     private val _expensesState = MutableStateFlow<ExpensesUiState>(ExpensesUiState.Loading)
     val expensesState: StateFlow<ExpensesUiState> = _expensesState.asStateFlow()

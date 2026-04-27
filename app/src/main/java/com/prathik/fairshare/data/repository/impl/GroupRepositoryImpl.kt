@@ -1,6 +1,8 @@
 package com.prathik.fairshare.data.repository.impl
 
 import com.prathik.fairshare.data.local.GroupDao
+import com.prathik.fairshare.data.local.GroupMemberDao
+import com.prathik.fairshare.data.local.GroupMemberEntity
 import com.prathik.fairshare.data.local.GroupEntity
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.AddMemberRequest
@@ -26,8 +28,9 @@ import com.prathik.fairshare.domain.model.GroupType
 
 @Singleton
 class GroupRepositoryImpl @Inject constructor(
-    private val groupService: GroupApiService,
-    private val groupDao: GroupDao,
+    private val groupService   : GroupApiService,
+    private val groupDao       : GroupDao,
+    private val groupMemberDao : GroupMemberDao,
 ) : GroupRepository {
 
     override suspend fun getMyGroups(): ApiResult<List<Group>> {
@@ -130,9 +133,18 @@ class GroupRepositoryImpl @Inject constructor(
     override suspend fun removeMember(groupId: String, memberId: String): ApiResult<Unit> =
         safeApiCall { groupService.removeMember(groupId, memberId) }.mapSuccess { }
 
-    override suspend fun getMembers(groupId: String): ApiResult<List<GroupMember>> =
-        safeApiCall { groupService.getMembers(groupId) }
-            .mapSuccess { list -> list.map { it.toDomain() } }
+    override suspend fun getMembers(groupId: String): ApiResult<List<GroupMember>> {
+        val result = safeApiCall { groupService.getMembers(groupId) }
+        if (result is ApiResult.Success) {
+            // Cache so AddExpenseScreen can show Paid By / Split sections offline.
+            groupMemberDao.deleteByGroupId(groupId)
+            groupMemberDao.insertAll(result.data.map { it.toMemberEntity(groupId) })
+            return result.mapSuccess { list -> list.map { it.toDomain() } }
+        }
+        val cached = groupMemberDao.getByGroupId(groupId)
+        if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
+        return result.mapSuccess { list -> list.map { it.toDomain() } }
+    }
 
     override suspend fun archiveGroup(groupId: String): ApiResult<Unit> =
         safeApiCall { groupService.archiveGroup(groupId) }.mapSuccess { }
@@ -228,5 +240,29 @@ class GroupRepositoryImpl @Inject constructor(
         defaultCurrency    = defaultCurrency,
         isDeleted          = isDeleted,
         deletedAt          = deletedAt,
+    )
+
+
+    // ── GroupMember cache helpers ─────────────────────────────────────────────
+
+    private fun com.prathik.fairshare.data.model.response.GroupMemberResponse.toMemberEntity(
+        groupId: String,
+    ) = GroupMemberEntity(
+        id               = id,
+        groupId          = groupId,
+        userId           = userId,
+        fullName         = fullName,
+        email            = email,
+        profilePictureUrl = profilePictureUrl,
+        joinedAt         = joinedAt,
+    )
+
+    private fun GroupMemberEntity.toDomain() = GroupMember(
+        id                = id,
+        userId            = userId,
+        fullName          = fullName,
+        email             = email,
+        profilePictureUrl = profilePictureUrl,
+        joinedAt          = joinedAt,
     )
 }

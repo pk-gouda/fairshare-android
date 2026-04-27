@@ -3,6 +3,7 @@ package com.prathik.fairshare.data.sync
 import com.prathik.fairshare.data.local.PendingOperationDao
 import com.prathik.fairshare.data.local.PendingOperationEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -118,6 +119,34 @@ class PendingOperationRepository @Inject constructor(
     /** Record a retry attempt (increments counter, updates lastAttemptAt). */
     suspend fun incrementRetry(operationId: String) =
         dao.incrementRetry(operationId)
+
+    // ── Pending-op visibility (Wave 2D-4) ────────────────────────────────────
+
+    /**
+     * Live-watches the active pending operation for a specific expense.
+     * Null when the expense has no pending or failed operation (already SYNCED/CANCELLED).
+     * Consumed by ExpenseDetailViewModel to drive the sync-status banner.
+     */
+    fun observeForExpense(expenseId: String): Flow<PendingOperationEntity?> =
+        dao.observeForResource(expenseId)
+
+    /**
+     * Live set of expense IDs that have at least one active pending operation.
+     * Consumed by GroupDetailViewModel so the expense list can show a sync dot
+     * on affected rows without one query per row.
+     */
+    fun observeActivePendingResourceIds(): Flow<Set<String>> =
+        dao.observeActiveResourceIds().map { it.toSet() }
+
+    /**
+     * Reset a FAILED_RETRYABLE or FAILED_PERMANENT operation back to PENDING
+     * so SyncWorker will attempt it again.
+     *
+     * The [operationId] and its stored [PendingOperationEntity.idempotencyKey]
+     * are UNCHANGED — retries always reuse the original key.
+     */
+    suspend fun resetForRetry(operationId: String) =
+        dao.markStatus(operationId, SyncStatus.PENDING.name, lastError = null)
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
 

@@ -18,8 +18,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
+import com.prathik.fairshare.data.local.PendingOperationEntity
+import com.prathik.fairshare.data.sync.SyncStatus
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Group
@@ -101,6 +107,7 @@ fun ExpenseDetailScreen(
 ) {
     val expenseState  by viewModel.expenseState.collectAsState()
     val actionState   by viewModel.actionState.collectAsState()
+    val pendingOp     by viewModel.pendingOp.collectAsState()
     val items            by viewModel.items.collectAsState()
     val itemsLoading     by viewModel.itemsLoading.collectAsState()
     val changeLog        by viewModel.changeLog.collectAsState()
@@ -167,13 +174,19 @@ fun ExpenseDetailScreen(
                 actions = {
                     val expense = (expenseState as? ExpenseDetailUiState.Success)?.expense
                     if (expense != null) {
-                        if (expense.isDeleted) {
-                            // Deleted expense — show Restore only
+                        // canEdit is false when loaded from cache (ExpenseEntity doesn't store it).
+                        // Fall back to addedById so actions remain reachable offline.
+                        // The backend will 403 if the user genuinely lacks permission.
+                        val canModifyExpense =
+                            expense.canEdit || expense.addedById == viewModel.currentUserId
+
+                        if (expense.isDeleted && canModifyExpense) {
+                            // Deleted expense — show Restore only if author/permitted
                             FsTextButton(
                                 text = "Restore",
                                 onClick = { viewModel.restoreExpense() },
                             )
-                        } else if (expense.canEdit) {
+                        } else if (!expense.isDeleted && canModifyExpense) {
                             // Active expense — show Edit + Delete
                             FsIconButton(
                                 icon = Icons.Filled.Edit,
@@ -214,6 +227,8 @@ fun ExpenseDetailScreen(
                     changeLog = changeLog,
                     changeLogLoading = changeLogLoading,
                     onRestore = { viewModel.restoreExpense() },
+                    pendingOp = pendingOp,
+                    onRetryPendingOp = { opId -> viewModel.retryPendingOp(opId) },
                 )
             }
         }
@@ -254,6 +269,8 @@ private fun ExpenseDetailContent(
     changeLog             : List<ExpenseChangeLog>,
     changeLogLoading      : Boolean,
     onRestore             : () -> Unit = {},
+    pendingOp             : com.prathik.fairshare.data.local.PendingOperationEntity? = null,
+    onRetryPendingOp      : (String) -> Unit = {},
 ) {
     var showItemBreakdown by remember { mutableStateOf(false) }
     Column(
@@ -261,6 +278,13 @@ private fun ExpenseDetailContent(
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
+        // ── Sync status banner (Wave 2D-4) ────────────────────────────────────
+        if (pendingOp != null) {
+            SyncStatusBanner(
+                pendingOp    = pendingOp,
+                onRetry      = { onRetryPendingOp(pendingOp.operationId) },
+            )
+        }
         // ── Amount hero ───────────────────────────────────────────────────────
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -836,4 +860,92 @@ private fun categoryEmoji(category: String?): String = when (category) {
     "CLOTHING" -> "👕"
     "PARKING" -> "🅿️"
     else -> "💰"
+}
+
+// ── Sync Status Banner ────────────────────────────────────────────────────────
+
+/**
+ * Wave 2D-4: shows the pending sync state for an expense at the top of the
+ * detail content area. Styled to be informative but not alarming.
+ */
+@Composable
+private fun SyncStatusBanner(
+    pendingOp: PendingOperationEntity,
+    onRetry  : () -> Unit,
+) {
+    val status = try { SyncStatus.valueOf(pendingOp.status) } catch (e: Exception) { return }
+
+    val (icon, tint, label, showRetry) = when (status) {
+        SyncStatus.PENDING -> Quadruple(
+            Icons.Outlined.Schedule,
+            androidx.compose.ui.graphics.Color(0xFF9AA3AF),
+            "Queued for sync…",
+            false,
+        )
+        SyncStatus.SYNCING -> Quadruple(
+            Icons.Outlined.CloudSync,
+            androidx.compose.ui.graphics.Color(0xFF64B5F6),
+            "Syncing…",
+            false,
+        )
+        SyncStatus.FAILED_RETRYABLE -> Quadruple(
+            Icons.Outlined.CloudOff,
+            androidx.compose.ui.graphics.Color(0xFFFFA726),
+            "Will retry when online",
+            true,
+        )
+        SyncStatus.FAILED_PERMANENT -> Quadruple(
+            Icons.Outlined.ErrorOutline,
+            androidx.compose.ui.graphics.Color(0xFFF87171),
+            "Sync failed—tap to retry",
+            true,
+        )
+        SyncStatus.SYNCED, SyncStatus.CANCELLED -> return
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(androidx.compose.ui.graphics.Color(0xFF151A21))
+            .then(if (showRetry) Modifier.clickable { onRetry() } else Modifier)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector        = icon,
+            contentDescription = null,
+            tint               = tint,
+            modifier           = Modifier.size(14.dp),
+        )
+        Text(
+            text     = operationLabel(pendingOp.operationType) + " · " + label,
+            fontSize = 12.sp,
+            color    = tint,
+            modifier = Modifier.weight(1f),
+        )
+        if (showRetry) {
+            Text(
+                text       = "Retry",
+                fontSize   = 12.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                color      = tint,
+            )
+        }
+    }
+}
+
+private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component1() = first
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component2() = second
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component3() = third
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component4() = fourth
+
+private fun operationLabel(operationType: String): String = when (operationType) {
+    "CREATE_EXPENSE"  -> "Creating"
+    "UPDATE_EXPENSE"  -> "Editing"
+    "DELETE_EXPENSE"  -> "Deleting"
+    "RESTORE_EXPENSE" -> "Restoring"
+    else              -> "Syncing"
 }
