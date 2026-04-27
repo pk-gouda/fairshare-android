@@ -35,7 +35,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NotificationEntity::class,
         PendingOperationEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -241,6 +241,40 @@ abstract class FairShareDatabase : RoomDatabase() {
         }
 
 
+
+
+        /**
+         * 13 → 14: Add cacheScope column to balances; update composite PK to include it.
+         *
+         * Balances are cache-only. Old rows are discarded rather than copied because
+         * the v13 table contains mixed-scope rows (getAllBalances, getNetBalanceWithUser,
+         * getBreakdownWithUser, getGroupBalances) that cannot be reliably reclassified.
+         * Copying them all as ALL_BALANCES would carry the double-counting bug forward.
+         *
+         * CacheWarmupCoordinator and repositories will refill scoped rows on next
+         * network access. A brief empty-cache state is safer than wrong financial data.
+         */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Drop old mixed-scope table and recreate clean with cacheScope in PK.
+                db.execSQL("DROP TABLE IF EXISTS balances")
+                db.execSQL("""
+                    CREATE TABLE balances (
+                        userId            TEXT    NOT NULL,
+                        otherUserId       TEXT    NOT NULL,
+                        otherUserName     TEXT    NOT NULL,
+                        amount            REAL    NOT NULL,
+                        currency          TEXT    NOT NULL,
+                        groupId           TEXT    NOT NULL,
+                        groupName         TEXT,
+                        cacheScope        TEXT    NOT NULL DEFAULT 'ALL_BALANCES',
+                        cachedAt          INTEGER NOT NULL DEFAULT 0,
+                        groupLastActivity TEXT,
+                        PRIMARY KEY (userId, otherUserId, currency, groupId, cacheScope)
+                    )
+                """.trimIndent())
+            }
+        }
 
         /** 12 → 13: Add notifications table for offline Activity restore access. */
         val MIGRATION_12_13 = object : Migration(12, 13) {

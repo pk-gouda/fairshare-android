@@ -159,9 +159,18 @@ class FriendDetailViewModel @Inject constructor(
                 else -> Unit
             }
 
-            // Only direct (non-group) expenses in the timeline
-            val directExpenses =
-                (directDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
+            // Only direct (non-group) expenses in the timeline.
+            // When offline and no cache exists, keep whatever state was previously
+            // loaded (do not overwrite a successful prior state with empty list).
+            val directResult = directDeferred.await()
+            val directExpenses = when (directResult) {
+                is ApiResult.Success -> directResult.data
+                else -> {
+                    // Network failed — preserve existing data if already loaded.
+                    (_expensesState.value as? FriendExpensesState.Success)?.expenses
+                        ?: emptyList()
+                }
+            }
 
             // Settlement history with this friend
             when (val result = settlementsDeferred.await()) {
@@ -202,12 +211,12 @@ class FriendDetailViewModel @Inject constructor(
                 else -> Unit
             }
 
-            // Refresh direct expenses only
+            // Refresh direct expenses — on network failure keep existing loaded state.
             when (val result = expenseRepository.getDirectExpensesWithFriend(friendId)) {
                 is ApiResult.Success -> _expensesState.value = FriendExpensesState.Success(
                     result.data.sortedByDescending { it.expenseDate }
                 )
-
+                // Do not touch _expensesState on failure; existing data stays visible.
                 else -> Unit
             }
 

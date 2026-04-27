@@ -262,15 +262,21 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun getDirectExpensesWithFriend(friendId: String): ApiResult<List<Expense>> {
         val result = safeApiCall { expenseService.getDirectExpensesWithFriend(friendId) }
         if (result is ApiResult.Success) {
-            // Cache with otherUserId so Friend Detail can fall back offline.
             val entities = result.data.map { it.toEntity(otherUserId = friendId) }
-            // Delete stale direct-expense rows for this friend, then reinsert fresh.
+            android.util.Log.d("DirectExpenseCache",
+                "Online fetched ${result.data.size} direct expenses for friendId=$friendId")
             expenseDao.deleteByOtherUserIdExcludingPendingCreates(friendId)
             expenseDao.insertAll(entities)
+            android.util.Log.d("DirectExpenseCache",
+                "Cached ${entities.size} direct expenses with otherUserId=$friendId")
             return result.mapSuccess { list -> list.map { it.toDomain() } }
         }
         val cached = expenseDao.getByOtherUserId(friendId)
+        android.util.Log.d("DirectExpenseCache",
+            "Offline fallback for friendId=$friendId: ${cached.size} rows found")
         if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
+        android.util.Log.w("DirectExpenseCache",
+            "No cached direct expenses for friendId=$friendId — cache miss")
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }
 

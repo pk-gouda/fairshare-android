@@ -2,9 +2,8 @@ package com.prathik.fairshare
 
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
-import com.prathik.fairshare.data.local.EncryptedTokenStore
-import com.prathik.fairshare.data.sync.CacheWarmupWorker
 import androidx.work.Configuration
+import com.prathik.fairshare.data.sync.CacheWarmupWorker
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -12,7 +11,6 @@ import javax.inject.Inject
 class FairShareApplication : Application(), Configuration.Provider {
 
     @Inject lateinit var workerFactory: HiltWorkerFactory
-    @Inject lateinit var tokenStore: EncryptedTokenStore
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -21,13 +19,9 @@ class FairShareApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        // Schedule periodic warmup (runs every 6 h while network is available).
+        // Schedule periodic background warmup (every 6 h while network is available).
+        // Immediate foreground warmup is triggered from MainActivity.onStart() via
+        // CacheWarmupCoordinator, which requires no extra lifecycle dependency.
         CacheWarmupWorker.schedule(this)
-        // If the user is already logged in (app restart / foreground),
-        // trigger an immediate one-off warmup so offline data is ready now.
-        // Uses KEEP policy — duplicate calls (login + app start) are collapsed.
-        if (tokenStore.isLoggedIn()) {
-            CacheWarmupWorker.triggerNow(this)
-        }
     }
 }

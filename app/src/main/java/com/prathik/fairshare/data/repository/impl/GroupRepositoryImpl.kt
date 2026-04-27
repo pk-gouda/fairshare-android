@@ -181,6 +181,7 @@ class GroupRepositoryImpl @Inject constructor(
                         currency      = r.currency,
                         groupId       = groupId,
                         groupName     = r.groupName,
+                        cacheScope    = BalanceEntity.CacheScope.GROUP_BALANCE,
                     )
                 }
                 // Delete then insert for this group only — preserves other groups' cached rows.
@@ -192,7 +193,8 @@ class GroupRepositoryImpl @Inject constructor(
         // Network failed — return cached group balance rows.
         val userId = tokenStore.getUserId()
         if (userId != null) {
-            val cached = balanceDao.getByGroupId(userId, groupId)
+            val cached = balanceDao.getGroupBalanceRows(userId, groupId)
+            android.util.Log.d("BalanceCache", "getGroupBalances offline fallback: ${cached.size} rows for $groupId")
             if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
         }
         return result.mapSuccess { list -> list.map { it.toDomain() } }

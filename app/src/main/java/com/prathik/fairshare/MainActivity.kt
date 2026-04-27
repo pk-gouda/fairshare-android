@@ -15,14 +15,25 @@ import androidx.navigation.compose.rememberNavController
 import com.prathik.fairshare.ui.navigation.NavGraph
 import com.prathik.fairshare.ui.theme.FairShareTheme
 import com.prathik.fairshare.ui.theme.Surface0
+import com.prathik.fairshare.data.sync.CacheWarmupCoordinator
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @Inject lateinit var cacheWarmupCoordinator: CacheWarmupCoordinator
+
     // Holds the current intent so deep links arriving via onNewIntent
     // trigger recomposition without a full recreate().
     private var currentIntent by mutableStateOf(intent)
+
+    override fun onStart() {
+        super.onStart()
+        // Foreground warmup — fires immediately in-process when the app
+        // is opened or returns to foreground. Throttled to once per 5 min.
+        cacheWarmupCoordinator.warmupIfNeeded()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
