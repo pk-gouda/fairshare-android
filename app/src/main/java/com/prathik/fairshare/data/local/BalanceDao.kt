@@ -14,6 +14,26 @@ interface BalanceDao {
     @Query("SELECT * FROM balances WHERE userId = :userId")
     suspend fun getByUserId(userId: String): List<BalanceEntity>
 
+    /** Cached net balance rows for a specific friend (non-group, groupId = ''). */
+    @Query("SELECT * FROM balances WHERE userId = :userId AND otherUserId = :otherUserId AND groupId = ''")
+    suspend fun getByOtherUserId(userId: String, otherUserId: String): List<BalanceEntity>
+
+    /** Cached group balance rows for a specific group. */
+    @Query("SELECT * FROM balances WHERE userId = :userId AND groupId = :groupId")
+    suspend fun getByGroupId(userId: String, groupId: String): List<BalanceEntity>
+
+    /** Delete cached group balance rows for a specific group before re-inserting fresh data. */
+    @Query("DELETE FROM balances WHERE userId = :userId AND groupId = :groupId")
+    suspend fun deleteByGroupId(userId: String, groupId: String)
+
+    /** Delete cached net-balance rows for a specific friend (non-group, groupId = ''). */
+    @Query("DELETE FROM balances WHERE userId = :userId AND otherUserId = :otherUserId AND groupId = ''")
+    suspend fun deleteNetBalanceForFriend(userId: String, otherUserId: String)
+
+    /** Delete cached group-breakdown rows for a specific friend (non-empty groupId). */
+    @Query("DELETE FROM balances WHERE userId = :userId AND otherUserId = :otherUserId AND groupId != ''")
+    suspend fun deleteBreakdownForFriend(userId: String, otherUserId: String)
+
     @Query("DELETE FROM balances WHERE userId = :userId")
     suspend fun deleteByUserId(userId: String)
 

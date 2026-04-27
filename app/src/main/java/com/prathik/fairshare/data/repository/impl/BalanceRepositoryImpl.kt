@@ -56,18 +56,68 @@ class BalanceRepositoryImpl @Inject constructor(
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }
 
-    override suspend fun getBreakdownWithUser(otherUserId: String): ApiResult<List<Balance>> =
-        safeApiCall { balanceService.getBreakdownWithUser(otherUserId) }
-            .mapSuccess { list -> list.map { it.toDomain() } }
+    override suspend fun getBreakdownWithUser(otherUserId: String): ApiResult<List<Balance>> {
+        val result = safeApiCall { balanceService.getBreakdownWithUser(otherUserId) }
+        val userId = tokenStore.getUserId()
+        if (result is ApiResult.Success) {
+            // Cache group-breakdown rows for this friend with targeted delete (not broad wipe).
+            if (userId != null) {
+                balanceDao.deleteBreakdownForFriend(userId, otherUserId)
+                balanceDao.insertAll(result.data.map { r ->
+                    BalanceEntity(
+                        userId        = userId,
+                        otherUserId   = r.otherUserId,
+                        otherUserName = r.otherUserName,
+                        amount        = r.amount,
+                        currency      = r.currency,
+                        groupId       = r.groupId ?: "",
+                        groupName     = r.groupName,
+                    )
+                })
+            }
+            return result.mapSuccess { list -> list.map { it.toDomain() } }
+        }
+        // Network failed — return cached group-breakdown rows for this friend.
+        if (userId != null) {
+            val cached = balanceDao.getByUserId(userId)
+                .filter { it.otherUserId == otherUserId && it.groupId.isNotEmpty() }
+            if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
+        }
+        return result.mapSuccess { list -> list.map { it.toDomain() } }
+    }
 
     /**
-     * Always hits the network — returns UserBalance records (net balance, not per-group).
-     * Used by SettleUpViewModel for non-group settlements to guarantee a fresh balance
-     * and avoid serving the Room-cached result from getAllBalances().
+     * Caches the returned net balance rows and falls back to cache on network failure.
+     * This ensures FriendDetail balance is readable offline after the first online visit.
      */
-    override suspend fun getNetBalanceWithUser(otherUserId: String): ApiResult<List<Balance>> =
-        safeApiCall { balanceService.getBalanceWithUser(otherUserId) }
-            .mapSuccess { list -> list.map { it.toDomain() } }
+    override suspend fun getNetBalanceWithUser(otherUserId: String): ApiResult<List<Balance>> {
+        val result = safeApiCall { balanceService.getBalanceWithUser(otherUserId) }
+        val userId = tokenStore.getUserId()
+        if (result is ApiResult.Success) {
+            // Cache the direct friend net-balance rows (groupId = '') with targeted delete.
+            if (userId != null) {
+                balanceDao.deleteNetBalanceForFriend(userId, otherUserId)
+                balanceDao.insertAll(result.data.map { r ->
+                    BalanceEntity(
+                        userId        = userId,
+                        otherUserId   = r.otherUserId,
+                        otherUserName = r.otherUserName,
+                        amount        = r.amount,
+                        currency      = r.currency,
+                        groupId       = r.groupId ?: "",
+                        groupName     = r.groupName,
+                    )
+                })
+            }
+            return result.mapSuccess { list -> list.map { it.toDomain() } }
+        }
+        // Network failed — return cached net-balance rows for this friend.
+        if (userId != null) {
+            val cached = balanceDao.getByOtherUserId(userId, otherUserId)
+            if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
+        }
+        return result.mapSuccess { list -> list.map { it.toDomain() } }
+    }
 
     override suspend fun getBalanceSummary(): ApiResult<BalanceSummaryResponse> =
         safeApiCall { balanceService.getBalanceSummary() }

@@ -200,6 +200,12 @@ fun GroupDetailScreen(
     val pendingExpenseIds      by viewModel.pendingExpenseIds.collectAsState()
     val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
     val balancesLoadFailed      by viewModel.balancesLoadFailed.collectAsState()
+    val optimisticYourBalance   by viewModel.optimisticYourBalance.collectAsState()
+    val hasPendingBalanceSync      by viewModel.hasPendingBalanceSync.collectAsState()
+    val optimisticBalanceCurrency  by viewModel.optimisticBalanceCurrency.collectAsState()
+    // Optimistic balance: use pending-adjusted balance when available.
+    val effectiveYourBalance = optimisticYourBalance ?: yourBalance
+    val effectiveCurrency    = optimisticBalanceCurrency ?: (balances.firstOrNull()?.currency ?: "USD")
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -293,7 +299,7 @@ fun GroupDetailScreen(
                             expensesState is ExpensesUiState.Loading -> GroupUiState.NEW_GROUP // neutral while loading
                             group.memberCount <= 1                   -> GroupUiState.SOLO
                             !hasActivity                             -> GroupUiState.NEW_GROUP
-                            yourBalance == 0.0 && !balancesLoadFailed -> GroupUiState.ALL_SETTLED
+                            effectiveYourBalance == 0.0 && !balancesLoadFailed && !hasPendingBalanceSync -> GroupUiState.ALL_SETTLED
                             else                                     -> GroupUiState.ACTIVE_DEBT
                         }
 
@@ -303,7 +309,7 @@ fun GroupDetailScreen(
                             GroupUiState.ALL_SETTLED                  -> 1f
                             GroupUiState.ACTIVE_DEBT                  -> {
                                 val settled = settlements.sumOf { it.amount }
-                                val outstanding = Math.abs(yourBalance)
+                                val outstanding = Math.abs(effectiveYourBalance)
                                 if (settled + outstanding > 0)
                                     (settled / (settled + outstanding)).toFloat().coerceIn(0f, 0.99f)
                                 else 0f
@@ -320,7 +326,7 @@ fun GroupDetailScreen(
                                     group           = group,
                                     settledPct      = settledPct,
                                     groupUiState    = groupUiState,
-                                    yourBalance     = yourBalance,
+                                    yourBalance     = effectiveYourBalance,
                                     onSettingsClick = { onNavigateToSettings(viewModel.groupId) },
                                     onSearchClick   = { onNavigateToSearch(viewModel.groupId) },
                                 )
@@ -329,10 +335,11 @@ fun GroupDetailScreen(
                             // ── Sticky balance bar ────────────────────────────
                             stickyHeader {
                                 StickyBalanceBar(
-                                    yourBalance  = yourBalance,
-                                    balances     = balances,
-                                    currency     = balances.firstOrNull()?.currency ?: "USD",
-                                    groupUiState = groupUiState,
+                                    yourBalance           = effectiveYourBalance,
+                                    balances              = balances,
+                                    currency              = effectiveCurrency,
+                                    groupUiState          = groupUiState,
+                                    hasPendingBalanceSync = hasPendingBalanceSync,
                                 )
                             }
 
@@ -881,10 +888,11 @@ private fun GroupCoverHeader(
 
 @Composable
 private fun StickyBalanceBar(
-    yourBalance : Double,
-    balances    : List<Balance>,
-    currency    : String,
-    groupUiState: GroupUiState = GroupUiState.ACTIVE_DEBT,
+    yourBalance           : Double,
+    balances              : List<Balance>,
+    currency              : String,
+    groupUiState          : GroupUiState = GroupUiState.ACTIVE_DEBT,
+    hasPendingBalanceSync : Boolean = false,
 ) {
     val isCentered = groupUiState == GroupUiState.SOLO ||
             groupUiState == GroupUiState.NEW_GROUP ||
@@ -908,64 +916,73 @@ private fun StickyBalanceBar(
                     color = Color(0xFF00C896))
             }
             GroupUiState.ACTIVE_DEBT -> {
-                // Per-currency nets — never sum across currencies
-                val netByCurrency = balances.groupBy { it.currency }
-                    .mapValues { (_, list) -> list.sumOf { it.amount } }
-                    .filter { it.value != 0.0 }
-                val owedToYou = netByCurrency.filter { it.value > 0 }
-                val youOwe    = netByCurrency.filter { it.value < 0 }
-                val isMixed   = owedToYou.isNotEmpty() && youOwe.isNotEmpty()
-                val posTotal  = owedToYou.values.sumOf { it }
-                val negTotal  = youOwe.values.sumOf { -it }
-
                 Column(modifier = Modifier.weight(1f)) {
-                    when {
-                        // All same direction
-                        youOwe.isEmpty() -> {
-                            Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                            Text(
-                                text = owedToYou.entries.sortedByDescending { it.value }
-                                    .joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
-                                fontSize = if (owedToYou.size > 1) 14.sp else 18.sp,
-                                fontWeight = FontWeight.Bold, color = Color(0xFF00C896)
-                            )
-                        }
-                        owedToYou.isEmpty() -> {
-                            Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                            Text(
-                                text = youOwe.entries.sortedBy { it.value }
-                                    .joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
-                                fontSize = if (youOwe.size > 1) 14.sp else 18.sp,
-                                fontWeight = FontWeight.Bold, color = Color(0xFFF87171)
-                            )
-                        }
-                        // Mixed — dominant main line, sub-line for opposite (Splitwise style)
-                        negTotal >= posTotal -> {
-                            Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                            Text(
-                                text = youOwe.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
-                                fontSize = if (youOwe.size > 1) 14.sp else 16.sp,
-                                fontWeight = FontWeight.Bold, color = Color(0xFFF87171)
-                            )
-                            Text(
-                                text = "You lent " + owedToYou.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
-                                fontSize = 11.sp, color = Color(0xFF00C896)
-                            )
-                        }
-                        else -> {
-                            Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                            Text(
-                                text = owedToYou.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
-                                fontSize = if (owedToYou.size > 1) 14.sp else 16.sp,
-                                fontWeight = FontWeight.Bold, color = Color(0xFF00C896)
-                            )
-                            Text(
-                                text = "You owe " + youOwe.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
-                                fontSize = 11.sp, color = Color(0xFFF87171)
-                            )
-                        }
-                    }
-                }
+                    if (hasPendingBalanceSync) {
+                        // Show the optimistic scalar (yourBalance = effectiveYourBalance from parent)
+                        // as one number while pending ops are in flight, not the stale per-currency list.
+                        val label  = if (yourBalance >= 0) "Owed to you" else "You owe"
+                        val color  = if (yourBalance >= 0) Color(0xFF00C896) else Color(0xFFF87171)
+                        Text(label, fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                        Text(
+                            text = MoneyUtils.format(kotlin.math.abs(yourBalance), currency),
+                            fontSize = 18.sp, fontWeight = FontWeight.Bold, color = color
+                        )
+                        Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
+                    } else {
+                        // Normal confirmed multi-currency display
+                        val netByCurrency = balances.groupBy { it.currency }
+                            .mapValues { (_, list) -> list.sumOf { it.amount } }
+                            .filter { it.value != 0.0 }
+                        val owedToYou = netByCurrency.filter { it.value > 0 }
+                        val youOwe    = netByCurrency.filter { it.value < 0 }
+                        val posTotal  = owedToYou.values.sumOf { it }
+                        val negTotal  = youOwe.values.sumOf { -it }
+                        when {
+                            youOwe.isEmpty() -> {
+                                Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                                Text(
+                                    text = owedToYou.entries.sortedByDescending { it.value }
+                                        .joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
+                                    fontSize = if (owedToYou.size > 1) 14.sp else 18.sp,
+                                    fontWeight = FontWeight.Bold, color = Color(0xFF00C896)
+                                )
+                            }
+                            owedToYou.isEmpty() -> {
+                                Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                                Text(
+                                    text = youOwe.entries.sortedBy { it.value }
+                                        .joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
+                                    fontSize = if (youOwe.size > 1) 14.sp else 18.sp,
+                                    fontWeight = FontWeight.Bold, color = Color(0xFFF87171)
+                                )
+                            }
+                            negTotal >= posTotal -> {
+                                Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                                Text(
+                                    text = youOwe.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
+                                    fontSize = if (youOwe.size > 1) 14.sp else 16.sp,
+                                    fontWeight = FontWeight.Bold, color = Color(0xFFF87171)
+                                )
+                                Text(
+                                    text = "You lent " + owedToYou.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
+                                    fontSize = 11.sp, color = Color(0xFF00C896)
+                                )
+                            }
+                            else -> {
+                                Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                                Text(
+                                    text = owedToYou.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
+                                    fontSize = if (owedToYou.size > 1) 14.sp else 16.sp,
+                                    fontWeight = FontWeight.Bold, color = Color(0xFF00C896)
+                                )
+                                Text(
+                                    text = "You owe " + youOwe.entries.toList().joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
+                                    fontSize = 11.sp, color = Color(0xFFF87171)
+                                )
+                            }   // closes else ->
+                        }       // closes when {
+                    }           // closes } else { (hasPendingBalanceSync)
+                }               // closes Column
                 // Avatar stack — colored by balance direction
                 val relevant = balances.filter { it.amount != 0.0 }.take(3)
                 if (relevant.isNotEmpty()) {

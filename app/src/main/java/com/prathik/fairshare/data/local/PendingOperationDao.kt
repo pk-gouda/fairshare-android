@@ -169,4 +169,18 @@ interface PendingOperationDao {
           AND localResourceId IS NOT NULL
     """)
     fun observePendingDeleteResourceIds(): Flow<List<String>>
+
+    /**
+     * All active (non-terminal, non-permanent-failure) expense-related pending
+     * operations. Used by ViewModels to compute an optimistic balance delta.
+     * FAILED_PERMANENT is excluded — we don't apply a wrong number indefinitely.
+     */
+    @Query("""
+        SELECT * FROM pending_operations
+        WHERE operationType IN (
+            'CREATE_EXPENSE', 'UPDATE_EXPENSE', 'DELETE_EXPENSE', 'RESTORE_EXPENSE'
+        )
+          AND status IN ('PENDING', 'SYNCING', 'FAILED_RETRYABLE')
+    """)
+    fun observeActivePendingExpenseOps(): Flow<List<PendingOperationEntity>>
 }

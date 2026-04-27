@@ -146,6 +146,13 @@ class PendingOperationRepository @Inject constructor(
         dao.observePendingDeleteResourceIds().map { it.toSet() }
 
     /**
+     * All active (non-terminal) CREATE/UPDATE/DELETE/RESTORE expense pending ops.
+     * ViewModels use this to compute an optimistic balance delta while ops are in flight.
+     */
+    fun observeActivePendingExpenseOps(): Flow<List<PendingOperationEntity>> =
+        dao.observeActivePendingExpenseOps()
+
+    /**
      * Reset a FAILED_RETRYABLE or FAILED_PERMANENT operation back to PENDING
      * so SyncWorker will attempt it again.
      *

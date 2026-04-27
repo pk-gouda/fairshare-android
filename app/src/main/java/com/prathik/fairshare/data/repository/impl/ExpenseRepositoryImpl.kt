@@ -149,8 +149,8 @@ class ExpenseRepositoryImpl @Inject constructor(
         clearRepeat: Boolean?,
         nextRepeatDate: String?,
         idempotencyKey: String?,
-    ): ApiResult<Expense> =
-        safeApiCall {
+    ): ApiResult<Expense> {
+        val result = safeApiCall {
             expenseService.updateExpense(
                 expenseId,
                 UpdateExpenseRequest(
@@ -169,7 +169,41 @@ class ExpenseRepositoryImpl @Inject constructor(
                     idempotencyKey = idempotencyKey,
                 )
             )
-        }.mapSuccess { it.toDomain() }
+        }
+        if (result is ApiResult.Success) {
+            val response = result.data
+            val existingOtherUserId = expenseDao.getById(expenseId)?.otherUserId
+            expenseDao.insert(response.toEntity(otherUserId = existingOtherUserId))
+
+            val hasPayers = !response.payers.isNullOrEmpty()
+            val hasSplits = !response.splits.isNullOrEmpty()
+            val isFinancialUpdate = totalAmount != null || currency != null ||
+                    splitType != null || payerData != null || splitData != null
+
+            when {
+                hasPayers && hasSplits -> {
+                    // Replace payer/split cache with server-confirmed data.
+                    expensePayerDao.deleteByExpenseId(expenseId)
+                    expensePayerDao.insertAll(
+                        response.payers!!.map { it.toPayerEntity(expenseId) }
+                    )
+                    expenseSplitDao.deleteByExpenseId(expenseId)
+                    expenseSplitDao.insertAll(
+                        response.splits!!.map { it.toSplitEntity(expenseId) }
+                    )
+                }
+                isFinancialUpdate -> {
+                    // Financial change but response has no payer/split rows —
+                    // delete stale cache so offline shows "unavailable" rather
+                    // than wrong old breakdown.
+                    expensePayerDao.deleteByExpenseId(expenseId)
+                    expenseSplitDao.deleteByExpenseId(expenseId)
+                }
+                // Metadata-only update: keep existing payer/split rows unchanged.
+            }
+        }
+        return result.mapSuccess { it.toDomain() }
+    }
 
     override suspend fun deleteExpense(expenseId: String, idempotencyKey: String?): ApiResult<Unit> {
         val result = safeApiCall { expenseService.deleteExpense(expenseId, idempotencyKey) }
@@ -196,8 +230,16 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun restoreExpense(expenseId: String, idempotencyKey: String?): ApiResult<Expense> {
         val result = safeApiCall { expenseService.restoreExpense(expenseId, idempotencyKey) }
         if (result is ApiResult.Success) {
-            // Mark locally undeleted and update cached entity with server-confirmed state.
-            expenseDao.insert(result.data.toEntity())
+            val response = result.data
+            val existingOtherUserId = expenseDao.getById(expenseId)?.otherUserId
+            expenseDao.insert(response.toEntity(otherUserId = existingOtherUserId))
+            // Cache payer/split rows if the restore response includes them.
+            if (!response.payers.isNullOrEmpty() && !response.splits.isNullOrEmpty()) {
+                expensePayerDao.deleteByExpenseId(expenseId)
+                expensePayerDao.insertAll(response.payers!!.map { it.toPayerEntity(expenseId) })
+                expenseSplitDao.deleteByExpenseId(expenseId)
+                expenseSplitDao.insertAll(response.splits!!.map { it.toSplitEntity(expenseId) })
+            }
         }
         return result.mapSuccess { it.toDomain() }
     }
@@ -352,6 +394,14 @@ class ExpenseRepositoryImpl @Inject constructor(
         createdAt    = createdAt,
         updatedAt    = updatedAt,
     )
+
+    // ── Optimistic balance read (Wave 2D-Balance Optimism) ──────────────────────
+
+    override suspend fun getCachedExpense(expenseId: String): com.prathik.fairshare.domain.model.Expense? =
+        expenseDao.getById(expenseId)?.toDomain()
+
+    override suspend fun getCachedDirectOtherUserId(expenseId: String): String? =
+        expenseDao.getById(expenseId)?.otherUserId
 
     // ── Local cache operations for offline optimistic UI (Wave 2D-Final) ───────
 

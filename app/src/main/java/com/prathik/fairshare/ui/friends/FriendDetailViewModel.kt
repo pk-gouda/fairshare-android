@@ -35,8 +35,8 @@ class FriendDetailViewModel @Inject constructor(
     private val getSettlementHistoryUseCase: GetSettlementHistoryUseCase,
     private val settlementRepository: SettlementRepository,
     private val tokenStore: EncryptedTokenStore,
-    private val importRepository            : ImportRepository,
-    private val pendingOperationRepository  : PendingOperationRepository,
+    private val importRepository: ImportRepository,
+    private val pendingOperationRepository: PendingOperationRepository,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
@@ -45,27 +45,35 @@ class FriendDetailViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    /** Wave 2D-Final: IDs of direct expenses with an active DELETE_EXPENSE pending op. */
-    val pendingDeleteExpenseIds: StateFlow<Set<String>> =
-        pendingOperationRepository.observePendingDeleteResourceIds()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
-
     private val _friend = MutableStateFlow<Friend?>(null)
     val friend: StateFlow<Friend?> = _friend.asStateFlow()
 
     private val _friendStatus = MutableStateFlow<String?>(null)
     val friendStatus: StateFlow<String?> = _friendStatus.asStateFlow()
 
-    private val _friends = MutableStateFlow<List<com.prathik.fairshare.domain.model.Friend>>(emptyList())
+    private val _friends =
+        MutableStateFlow<List<com.prathik.fairshare.domain.model.Friend>>(emptyList())
     val friends: StateFlow<List<com.prathik.fairshare.domain.model.Friend>> = _friends.asStateFlow()
 
     private val _netBalance = MutableStateFlow(0.0)
     val netBalance: StateFlow<Double> = _netBalance.asStateFlow()
 
-    /** True when balance network call failed — never treat empty balances as "settled". */
     private val _balancesLoadFailed = MutableStateFlow(false)
     val balancesLoadFailed: StateFlow<Boolean> = _balancesLoadFailed.asStateFlow()
 
+    val pendingDeleteExpenseIds: StateFlow<Set<String>> =
+        pendingOperationRepository.observePendingDeleteResourceIds()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    private val _optimisticNetBalance = MutableStateFlow<Double?>(null)
+    val optimisticNetBalance: StateFlow<Double?> = _optimisticNetBalance.asStateFlow()
+
+    /** Currency of the optimistic balance; null when delta is not applied (unsafe/mixed). */
+    private val _optimisticBalanceCurrency = MutableStateFlow<String?>(null)
+    val optimisticBalanceCurrency: StateFlow<String?> = _optimisticBalanceCurrency.asStateFlow()
+
+    private val _hasPendingBalanceSync = MutableStateFlow(false)
+    val hasPendingBalanceSync: StateFlow<Boolean> = _hasPendingBalanceSync.asStateFlow()
 
     private val _currency = MutableStateFlow("USD")
     val currency: StateFlow<String> = _currency.asStateFlow()
@@ -91,6 +99,7 @@ class FriendDetailViewModel @Inject constructor(
 
     init {
         loadData()
+        observeOptimisticBalance()
     }
 
     fun loadData() {
@@ -100,11 +109,11 @@ class FriendDetailViewModel @Inject constructor(
             }
             _isLoading.value = true
 
-            val friendsDeferred  = async { friendRepository.getFriends() }
-            val sentDeferred     = async { friendRepository.getSentRequests() }
+            val friendsDeferred = async { friendRepository.getFriends() }
+            val sentDeferred = async { friendRepository.getSentRequests() }
             val balancesDeferred = async { balanceRepository.getNetBalanceWithUser(friendId) }
             val breakdownDeferred = async { balanceRepository.getBreakdownWithUser(friendId) }
-            val directDeferred      = async { expenseRepository.getDirectExpensesWithFriend(friendId) }
+            val directDeferred = async { expenseRepository.getDirectExpensesWithFriend(friendId) }
             val settlementsDeferred = async { getSettlementHistoryUseCase(friendId) }
 
             // Resolve friend
@@ -117,8 +126,8 @@ class FriendDetailViewModel @Inject constructor(
                 _friend.value = found
                 _friendStatus.value = when {
                     found.isPlaceholder -> "placeholder"
-                    found.isInvited     -> "invited"
-                    else                -> null
+                    found.isInvited -> "invited"
+                    else -> null
                 }
             } else {
                 val sent = (sentDeferred.await() as? ApiResult.Success)
@@ -138,8 +147,9 @@ class FriendDetailViewModel @Inject constructor(
                     _balancesLoadFailed.value = false
                     _userBalances.value = result.data
                     _netBalance.value = result.data.sumOf { it.amount }
-                    _currency.value   = result.data.firstOrNull()?.currency ?: "USD"
+                    _currency.value = result.data.firstOrNull()?.currency ?: "USD"
                 }
+
                 else -> _balancesLoadFailed.value = true
             }
 
@@ -160,6 +170,7 @@ class FriendDetailViewModel @Inject constructor(
                     // Show only non-group (direct) settlements in the friend detail screen.
                     _settlements.value = result.data.filter { it.groupId == null }
                 }
+
                 else -> Unit
             }
 
@@ -179,8 +190,9 @@ class FriendDetailViewModel @Inject constructor(
                     _balancesLoadFailed.value = false
                     _userBalances.value = result.data
                     _netBalance.value = result.data.sumOf { it.amount }
-                    _currency.value   = result.data.firstOrNull()?.currency ?: "USD"
+                    _currency.value = result.data.firstOrNull()?.currency ?: "USD"
                 }
+
                 else -> _balancesLoadFailed.value = true
             }
 
@@ -195,6 +207,7 @@ class FriendDetailViewModel @Inject constructor(
                 is ApiResult.Success -> _expensesState.value = FriendExpensesState.Success(
                     result.data.sortedByDescending { it.expenseDate }
                 )
+
                 else -> Unit
             }
 
@@ -203,6 +216,7 @@ class FriendDetailViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     _settlements.value = result.data.filter { it.groupId == null }
                 }
+
                 else -> Unit
             }
         }
@@ -219,10 +233,13 @@ class FriendDetailViewModel @Inject constructor(
                     refreshExpenses()
                     _actionState.value = FriendDetailActionState.Success("Settlement cancelled")
                 }
+
                 is ApiResult.NetworkError ->
                     _actionState.value = FriendDetailActionState.Error("No internet connection.")
+
                 else ->
-                    _actionState.value = FriendDetailActionState.Error("Failed to cancel settlement.")
+                    _actionState.value =
+                        FriendDetailActionState.Error("Failed to cancel settlement.")
             }
         }
     }
@@ -237,10 +254,13 @@ class FriendDetailViewModel @Inject constructor(
                     refreshExpenses()
                     _actionState.value = FriendDetailActionState.Success("Settlement restored")
                 }
+
                 is ApiResult.NetworkError ->
                     _actionState.value = FriendDetailActionState.Error("No internet connection.")
+
                 else ->
-                    _actionState.value = FriendDetailActionState.Error("Failed to restore settlement.")
+                    _actionState.value =
+                        FriendDetailActionState.Error("Failed to restore settlement.")
             }
         }
     }
@@ -256,8 +276,10 @@ class FriendDetailViewModel @Inject constructor(
                     // on the now-deactivated placeholder screen
                     _actionState.value = FriendDetailActionState.LinkedToFriend(friendUserId)
                 }
+
                 is ApiResult.NetworkError ->
                     _actionState.value = FriendDetailActionState.Error("No internet connection.")
+
                 else ->
                     _actionState.value = FriendDetailActionState.Error("Failed to link friend.")
             }
@@ -290,9 +312,13 @@ class FriendDetailViewModel @Inject constructor(
         }
     }
 
-    fun clearCsvNames() { _csvMemberNames.value = emptyList() }
+    fun clearCsvNames() {
+        _csvMemberNames.value = emptyList()
+    }
 
-    fun resetImportState() { _importState.value = SplitwiseImportState.Idle }
+    fun resetImportState() {
+        _importState.value = SplitwiseImportState.Idle
+    }
 
     /**
      * Imports a friend-level Splitwise CSV and automatically links the other
@@ -304,7 +330,7 @@ class FriendDetailViewModel @Inject constructor(
             when (val result = importRepository.importFriend(csvContent, importerCsvName)) {
                 is ApiResult.Success -> {
                     val data = result.data
-                    val expensesCreated    = (data["expensesCreated"] as? Int) ?: 0
+                    val expensesCreated = (data["expensesCreated"] as? Int) ?: 0
                     val settlementsCreated = (data["settlementsCreated"] as? Int) ?: 0
 
                     // Auto-link the other person's placeholder to this friend
@@ -316,14 +342,90 @@ class FriendDetailViewModel @Inject constructor(
                         importRepository.assignFriendPlaceholder(placeholderUserId, friendId)
                     }
 
-                    _importState.value = SplitwiseImportState.Success(expensesCreated, settlementsCreated)
+                    _importState.value =
+                        SplitwiseImportState.Success(expensesCreated, settlementsCreated)
                     refreshExpenses()
                 }
+
                 is ApiResult.NetworkError ->
                     _importState.value = SplitwiseImportState.Error("No internet connection.")
+
                 else ->
-                    _importState.value = SplitwiseImportState.Error("Import failed. Please check the CSV and try again.")
+                    _importState.value =
+                        SplitwiseImportState.Error("Import failed. Please check the CSV and try again.")
             }
+        }
+    }
+
+    // ── Optimistic balance (Wave 2D-Balance Optimism) ─────────────────────────
+
+    private fun observeOptimisticBalance() {
+        viewModelScope.launch {
+            pendingOperationRepository.observeActivePendingExpenseOps()
+                .collect { ops ->
+                    val confirmedBalance = _netBalance.value
+
+                    // Filter to ops whose cached expense belongs to THIS friend.
+                    // groupId == null scopes to direct expenses; otherUserId == friendId
+                    // scopes to this specific friend. UPDATE is included for Pending sync
+                    // label but its delta is not applied (unsafe without parsing JSON).
+                    val relevantOps = ops.filter { op ->
+                        val resourceId =
+                            op.localResourceId ?: op.serverResourceId ?: return@filter false
+                        val expense =
+                            expenseRepository.getCachedExpense(resourceId) ?: return@filter false
+                        if (expense.groupId != null) return@filter false
+                        expenseRepository.getCachedDirectOtherUserId(resourceId) == friendId
+                    }
+
+                    if (relevantOps.isEmpty()) {
+                        val wasSync = _hasPendingBalanceSync.value
+                        _optimisticNetBalance.value = null
+                        _optimisticBalanceCurrency.value = null
+                        _hasPendingBalanceSync.value = false
+                        // Pending ops cleared → refresh so confirmed balance fills
+                        // the gap immediately rather than waiting for next load.
+                        if (wasSync) refreshExpenses()
+                        return@collect
+                    }
+                    _hasPendingBalanceSync.value = true   // scoped: only this friend's ops
+
+                    // Currency safety: only apply optimistic delta when all relevant
+                    // expenses share one currency that matches what we display.
+                    val deltaExpenses = relevantOps.mapNotNull { op ->
+                        val resourceId = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
+                        expenseRepository.getCachedExpense(resourceId)
+                    }
+                    val pendingCurrencies = deltaExpenses.map { it.currency }.toSet()
+                    val confirmedCurrencies = _userBalances.value.map { it.currency }.toSet()
+                    val displayCurrency = when {
+                        confirmedCurrencies.size == 1 -> confirmedCurrencies.single()
+                        confirmedCurrencies.isEmpty() && pendingCurrencies.size == 1 ->
+                            pendingCurrencies.single()
+                        else -> _currency.value
+                    }
+                    val currencySafe = pendingCurrencies.size == 1 &&
+                            pendingCurrencies.single() == displayCurrency
+
+                    if (!currencySafe) {
+                        _optimisticNetBalance.value = null
+                        _optimisticBalanceCurrency.value = null
+                    } else {
+                        var delta = 0.0
+                        for (op in relevantOps) {
+                            val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
+                            val expense = expenseRepository.getCachedExpense(resourceId) ?: continue
+                            when (op.operationType) {
+                                "CREATE_EXPENSE"  -> delta += expense.yourBalance
+                                "DELETE_EXPENSE"  -> delta -= expense.yourBalance
+                                "RESTORE_EXPENSE" -> delta += expense.yourBalance
+                                // UPDATE: show Pending sync but skip delta (unsafe)
+                            }
+                        }
+                        _optimisticNetBalance.value = confirmedBalance + delta
+                        _optimisticBalanceCurrency.value = displayCurrency
+                    }
+                }
         }
     }
 }
@@ -342,8 +444,10 @@ sealed class FriendDetailActionState {
 }
 
 sealed class SplitwiseImportState {
-    object Idle    : SplitwiseImportState()
+    object Idle : SplitwiseImportState()
     object Loading : SplitwiseImportState()
-    data class Success(val expensesCreated: Int, val settlementsCreated: Int) : SplitwiseImportState()
+    data class Success(val expensesCreated: Int, val settlementsCreated: Int) :
+        SplitwiseImportState()
+
     data class Error(val message: String) : SplitwiseImportState()
 }

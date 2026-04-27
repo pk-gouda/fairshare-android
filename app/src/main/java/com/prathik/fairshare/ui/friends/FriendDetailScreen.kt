@@ -137,45 +137,48 @@ private fun friendGradient(userId: String): List<Color> {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FriendDetailScreen(
-    onBack                : () -> Unit,
-    onNavigateToSettings  : () -> Unit,
-    onNavigateToExpense   : (String) -> Unit,
+    onBack: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+    onNavigateToExpense: (String) -> Unit,
     onNavigateToAddExpense: () -> Unit,
-    onNavigateToSettle    : (friendId: String, groupId: String?, payerId: String?, payerName: String?) -> Unit,
-    onNavigateToSearch    : () -> Unit,
+    onNavigateToSettle: (friendId: String, groupId: String?, payerId: String?, payerName: String?) -> Unit,
+    onNavigateToSearch: () -> Unit,
     onNavigateToSettlement: (String) -> Unit = {},
-    onNavigateToGroup     : (String) -> Unit = {},
-    onNavigateToGroupsTab : () -> Unit = {},
-    onNavigateToAnalytics : () -> Unit = {},
+    onNavigateToGroup: (String) -> Unit = {},
+    onNavigateToGroupsTab: () -> Unit = {},
+    onNavigateToAnalytics: () -> Unit = {},
     onNavigateToRealFriend: (String) -> Unit = {},
-    viewModel             : FriendDetailViewModel = hiltViewModel(),
+    viewModel: FriendDetailViewModel = hiltViewModel(),
 ) {
-    val isLoading              by viewModel.isLoading.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
     val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
-    val balancesLoadFailed      by viewModel.balancesLoadFailed.collectAsState()
-    val friend        by viewModel.friend.collectAsState()
-    val netBalance    by viewModel.netBalance.collectAsState()
-    val currency      by viewModel.currency.collectAsState()
-    val userBalances  by viewModel.userBalances.collectAsState()
+    val balancesLoadFailed by viewModel.balancesLoadFailed.collectAsState()
+    val optimisticNetBalance by viewModel.optimisticNetBalance.collectAsState()
+    val hasPendingBalanceSync      by viewModel.hasPendingBalanceSync.collectAsState()
+    val optimisticBalanceCurrency  by viewModel.optimisticBalanceCurrency.collectAsState()
+    val friend by viewModel.friend.collectAsState()
+    val netBalance by viewModel.netBalance.collectAsState()
+    val currency by viewModel.currency.collectAsState()
+    val userBalances by viewModel.userBalances.collectAsState()
     val groupBalances by viewModel.groupBalances.collectAsState()
     val expensesState by viewModel.expensesState.collectAsState()
-    val settlements   by viewModel.settlements.collectAsState()
-    val actionState   by viewModel.actionState.collectAsState()
-    val friendStatus  by viewModel.friendStatus.collectAsState()
+    val settlements by viewModel.settlements.collectAsState()
+    val actionState by viewModel.actionState.collectAsState()
+    val friendStatus by viewModel.friendStatus.collectAsState()
 
     var showBalanceSheet by remember { mutableStateOf(false) }
-    var showLinkSheet    by remember { mutableStateOf(false) }
-    var showPayerSheet   by remember { mutableStateOf(false) }
+    var showLinkSheet by remember { mutableStateOf(false) }
+    var showPayerSheet by remember { mutableStateOf(false) }
 
     // ── Splitwise import flow ─────────────────────────────────────────────────
     var showImportInstructionsSheet by remember { mutableStateOf(false) }
-    var showImportWhoAreYouSheet    by remember { mutableStateOf(false) }
-    var showImportDisclaimerSheet   by remember { mutableStateOf(false) }
-    var pendingImportCsv            by remember { mutableStateOf<String?>(null) }
-    var pendingImporterName         by remember { mutableStateOf<String?>(null) }
-    val csvMemberNames              by viewModel.csvMemberNames.collectAsState()
-    val importState                 by viewModel.importState.collectAsState()
-    val importContext               = androidx.compose.ui.platform.LocalContext.current
+    var showImportWhoAreYouSheet by remember { mutableStateOf(false) }
+    var showImportDisclaimerSheet by remember { mutableStateOf(false) }
+    var pendingImportCsv by remember { mutableStateOf<String?>(null) }
+    var pendingImporterName by remember { mutableStateOf<String?>(null) }
+    val csvMemberNames by viewModel.csvMemberNames.collectAsState()
+    val importState by viewModel.importState.collectAsState()
+    val importContext = androidx.compose.ui.platform.LocalContext.current
 
     val importFilePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -186,7 +189,9 @@ fun FriendDetailScreen(
                     ?.bufferedReader()?.readText()
                     ?.replace("\r\n", "\n")
                     ?.replace("\r", "\n")
-            } catch (e: Exception) { null }
+            } catch (e: Exception) {
+                null
+            }
             if (csv != null) {
                 pendingImportCsv = csv
                 viewModel.parseCsvNames(csv)
@@ -213,7 +218,7 @@ fun FriendDetailScreen(
     val groupBalanceSum = groupByCurrency.values.sumOf { it }
     val nonGroupBalance = nonGroupByCurrency.values.sumOf { it }
 
-    val snackbarHost  = remember { SnackbarHostState() }
+    val snackbarHost = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
     // Internal representation of one settleable balance context.
@@ -238,6 +243,7 @@ fun FriendDetailScreen(
             0 -> coroutineScope.launch {
                 snackbarHost.showSnackbar("No balance to settle")
             }
+
             1 -> {
                 // Single context — skip the chooser and navigate directly.
                 // For GROUP: pass groupId so SettleUpScreen scopes to that group.
@@ -251,6 +257,7 @@ fun FriendDetailScreen(
                     if (ctx.groupId == null) ctx.currency else null,
                 )
             }
+
             else -> showBalanceSheet = true   // multiple contexts — show chooser as usual
         }
     }
@@ -265,19 +272,26 @@ fun FriendDetailScreen(
     }
 
     val friendName = friend?.fullName ?: ""
-    val friendId   = friend?.id ?: viewModel.friendId
+    val friendId = friend?.id ?: viewModel.friendId
     val groupCount = groupBalances.count { it.groupId != null }
 
 
 
     LaunchedEffect(actionState) {
         when (val s = actionState) {
-            is FriendDetailActionState.Error        -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
-            is FriendDetailActionState.Success      -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
+            is FriendDetailActionState.Error -> {
+                snackbarHost.showSnackbar(s.message); viewModel.resetActionState()
+            }
+
+            is FriendDetailActionState.Success -> {
+                snackbarHost.showSnackbar(s.message); viewModel.resetActionState()
+            }
+
             is FriendDetailActionState.LinkedToFriend -> {
                 viewModel.resetActionState()
                 onNavigateToRealFriend(s.realFriendId)
             }
+
             else -> Unit
         }
     }
@@ -288,10 +302,12 @@ fun FriendDetailScreen(
                 snackbarHost.showSnackbar("Imported ${s.expensesCreated} expenses ✓")
                 viewModel.resetImportState()
             }
+
             is SplitwiseImportState.Error -> {
                 snackbarHost.showSnackbar(s.message)
                 viewModel.resetImportState()
             }
+
             else -> Unit
         }
     }
@@ -304,6 +320,9 @@ fun FriendDetailScreen(
         }
     }
 
+    // Use optimistic balance when available (pending expense changes in flight).
+    val effectiveNetBalance = optimisticNetBalance ?: netBalance
+    val effectiveCurrency   = optimisticBalanceCurrency ?: currency
     val hasAnyActivity = netBalance != 0.0 ||
             groupBalances.isNotEmpty() ||
             settlements.isNotEmpty() ||
@@ -315,10 +334,13 @@ fun FriendDetailScreen(
     val ubPositives = userBalances.filter { it.amount > 0 }.sumOf { it.amount }
     val ubNegatives = userBalances.filter { it.amount < 0 }.sumOf { -it.amount }
     val friendState: FriendUiState = when {
+        hasPendingBalanceSync && effectiveNetBalance > 0.01  -> FriendUiState.THEY_OWE_YOU
+        hasPendingBalanceSync && effectiveNetBalance < -0.01 -> FriendUiState.YOU_OWE_THEM
+        hasPendingBalanceSync                                -> FriendUiState.BRAND_NEW
         ubPositives == 0.0 && ubNegatives == 0.0 && hasAnyActivity && !balancesLoadFailed -> FriendUiState.SETTLED_WITH_HISTORY
         ubPositives == 0.0 && ubNegatives == 0.0 -> FriendUiState.BRAND_NEW
-        ubNegatives > ubPositives -> FriendUiState.YOU_OWE_THEM   // dominant = you owe
-        else -> FriendUiState.THEY_OWE_YOU                         // dominant = owed to you (or equal)
+        ubNegatives > ubPositives -> FriendUiState.YOU_OWE_THEM
+        else -> FriendUiState.THEY_OWE_YOU
     }
 
     // Progress % for ring — depends on friendState
@@ -326,12 +348,13 @@ fun FriendDetailScreen(
         FriendUiState.BRAND_NEW, FriendUiState.SETTLED_WITH_HISTORY -> 1f
         FriendUiState.THEY_OWE_YOU -> {
             val settled = settlements.sumOf { it.amount }
-            val total   = settled + netBalance
+            val total = settled + netBalance
             if (total > 0) (settled / total).toFloat().coerceIn(0f, 0.99f) else 0f
         }
+
         FriendUiState.YOU_OWE_THEM -> {
             val settled = settlements.sumOf { it.amount }
-            val total   = settled + (-netBalance)
+            val total = settled + (-netBalance)
             if (total > 0) (settled / total).toFloat().coerceIn(0f, 0.99f) else 0f
         }
     }
@@ -341,8 +364,8 @@ fun FriendDetailScreen(
     if (showImportInstructionsSheet) {
         ModalBottomSheet(
             onDismissRequest = { showImportInstructionsSheet = false },
-            sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor   = Surface2,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Surface2,
         ) {
             Column(
                 modifier = Modifier
@@ -351,16 +374,16 @@ fun FriendDetailScreen(
                     .padding(bottom = 40.dp),
             ) {
                 Text(
-                    text       = "Import from Splitwise",
-                    fontSize   = 20.sp,
+                    text = "Import from Splitwise",
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    color      = TextPrimary,
-                    modifier   = Modifier.padding(vertical = Spacing.md),
+                    color = TextPrimary,
+                    modifier = Modifier.padding(vertical = Spacing.md),
                 )
                 Text(
-                    text     = "This imports your shared Splitwise history with $friendName into FairShare.",
+                    text = "This imports your shared Splitwise history with $friendName into FairShare.",
                     fontSize = 14.sp,
-                    color    = TextSecondary,
+                    color = TextSecondary,
                 )
                 Spacer(modifier = Modifier.height(Spacing.lg))
                 listOf(
@@ -370,32 +393,42 @@ fun FriendDetailScreen(
                     "4" to "Save the file and come back here",
                 ).forEach { (step, text) ->
                     Row(
-                        modifier          = Modifier.padding(vertical = Spacing.sm),
+                        modifier = Modifier.padding(vertical = Spacing.sm),
                         verticalAlignment = Alignment.Top,
                     ) {
                         Box(
                             contentAlignment = Alignment.Center,
-                            modifier         = Modifier
+                            modifier = Modifier
                                 .size(24.dp)
                                 .clip(CircleShape)
                                 .background(Green400.copy(alpha = 0.15f)),
                         ) {
-                            Text(step, fontSize = 12.sp, color = Green400, fontWeight = FontWeight.Bold)
+                            Text(
+                                step,
+                                fontSize = 12.sp,
+                                color = Green400,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                         Spacer(modifier = Modifier.width(Spacing.md))
-                        Text(text, fontSize = 14.sp, color = TextSecondary, modifier = Modifier.weight(1f))
+                        Text(
+                            text,
+                            fontSize = 14.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(Spacing.xl))
                 FsPrimaryButton(
-                    text     = "Choose CSV file",
-                    onClick  = { importFilePicker.launch(arrayOf("text/*", "text/csv", "*/*")) },
+                    text = "Choose CSV file",
+                    onClick = { importFilePicker.launch(arrayOf("text/*", "text/csv", "*/*")) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(Spacing.sm))
                 FsSecondaryButton(
-                    text     = "Cancel",
-                    onClick  = { showImportInstructionsSheet = false },
+                    text = "Cancel",
+                    onClick = { showImportInstructionsSheet = false },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -411,16 +444,16 @@ fun FriendDetailScreen(
                 viewModel.clearCsvNames()
                 pendingImportCsv = null
             },
-            sheetState     = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = Surface2,
         ) {
             Column(modifier = Modifier.padding(bottom = 40.dp)) {
                 Text(
-                    text       = "Which one is you?",
-                    fontSize   = 18.sp,
+                    text = "Which one is you?",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color      = TextPrimary,
-                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 )
                 if (myName.isNotBlank()) {
                     Row(
@@ -434,13 +467,18 @@ fun FriendDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("You are signed in as ", fontSize = 13.sp, color = TextSecondary)
-                        Text(myName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Green400)
+                        Text(
+                            myName,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Green400
+                        )
                     }
                 }
                 Text(
-                    text     = "Your Splitwise name may differ from your FairShare name.",
+                    text = "Your Splitwise name may differ from your FairShare name.",
                     fontSize = 13.sp,
-                    color    = TextSecondary,
+                    color = TextSecondary,
                     modifier = Modifier
                         .padding(horizontal = Spacing.lg)
                         .padding(bottom = Spacing.md),
@@ -461,21 +499,23 @@ fun FriendDetailScreen(
                     ) {
                         Box(
                             contentAlignment = Alignment.Center,
-                            modifier         = Modifier
+                            modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
                                 .background(Surface4),
                         ) {
                             Text(
                                 name.firstOrNull()?.uppercase() ?: "?",
-                                fontSize   = 16.sp,
-                                color      = TextPrimary,
+                                fontSize = 16.sp,
+                                color = TextPrimary,
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
                         Spacer(modifier = Modifier.width(Spacing.md))
-                        Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                            color = TextPrimary, modifier = Modifier.weight(1f))
+                        Text(
+                            name, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                            color = TextPrimary, modifier = Modifier.weight(1f)
+                        )
                         Text("→", fontSize = 18.sp, color = TextTertiary)
                     }
                     HorizontalDivider(color = Surface3, thickness = 0.5.dp)
@@ -492,7 +532,7 @@ fun FriendDetailScreen(
                 pendingImportCsv = null
                 pendingImporterName = null
             },
-            sheetState     = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = Surface2,
         ) {
             Column(
@@ -502,11 +542,11 @@ fun FriendDetailScreen(
                     .padding(bottom = 40.dp),
             ) {
                 Text(
-                    text       = "Before you import",
-                    fontSize   = 18.sp,
+                    text = "Before you import",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color      = TextPrimary,
-                    modifier   = Modifier.padding(vertical = Spacing.md),
+                    color = TextPrimary,
+                    modifier = Modifier.padding(vertical = Spacing.md),
                 )
                 Column(
                     modifier = Modifier
@@ -524,18 +564,23 @@ fun FriendDetailScreen(
                     ).forEach { text ->
                         Row(verticalAlignment = Alignment.Top) {
                             Text("•  ", fontSize = 14.sp, color = Green400)
-                            Text(text, fontSize = 13.sp, color = TextSecondary, modifier = Modifier.weight(1f))
+                            Text(
+                                text,
+                                fontSize = 13.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
                 Spacer(modifier = Modifier.height(Spacing.xl))
                 FsPrimaryButton(
-                    text    = "I understand, import now",
+                    text = "I understand, import now",
                     onClick = {
-                        val csv  = pendingImportCsv
+                        val csv = pendingImportCsv
                         val name = pendingImporterName
                         showImportDisclaimerSheet = false
-                        pendingImportCsv    = null
+                        pendingImportCsv = null
                         pendingImporterName = null
                         if (csv != null && name != null) {
                             viewModel.importFromSplitwise(csv, name)
@@ -545,10 +590,10 @@ fun FriendDetailScreen(
                 )
                 Spacer(modifier = Modifier.height(Spacing.sm))
                 FsSecondaryButton(
-                    text     = "Cancel",
-                    onClick  = {
+                    text = "Cancel",
+                    onClick = {
                         showImportDisclaimerSheet = false
-                        pendingImportCsv    = null
+                        pendingImportCsv = null
                         pendingImporterName = null
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -558,25 +603,27 @@ fun FriendDetailScreen(
     }
 
     Scaffold(
-        containerColor      = Surface0,
+        containerColor = Surface0,
         contentWindowInsets = WindowInsets(0),
-        snackbarHost        = { SnackbarHost(snackbarHost) },
+        snackbarHost = { SnackbarHost(snackbarHost) },
         floatingActionButton = {
             FloatingActionButton(
-                onClick        = onNavigateToAddExpense,
+                onClick = onNavigateToAddExpense,
                 containerColor = Green400,
-                contentColor   = Surface0,
-                shape          = RoundedCornerShape(16.dp),
+                contentColor = Surface0,
+                shape = RoundedCornerShape(16.dp),
             ) {
                 Icon(Icons.Filled.Add, "Add expense", modifier = Modifier.size(24.dp))
             }
         },
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+        Box(modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)) {
             PullToRefreshBox(
                 isRefreshing = isLoading,
-                onRefresh    = { viewModel.loadData() },
-                modifier     = Modifier.fillMaxSize(),
+                onRefresh = { viewModel.loadData() },
+                modifier = Modifier.fillMaxSize(),
             ) {
                 if (isLoading && friend == null) {
                     FsLoadingScreen()
@@ -586,10 +633,10 @@ fun FriendDetailScreen(
                         // ── Cover header ──────────────────────────────────────
                         item {
                             FriendCoverHeader(
-                                name        = friendName,
-                                userId      = friendId,
-                                settledPct  = settledPct,
-                                groupCount  = groupCount,
+                                name = friendName,
+                                userId = friendId,
+                                settledPct = settledPct,
+                                groupCount = groupCount,
                                 friendState = friendState,
                             )
                         }
@@ -597,13 +644,14 @@ fun FriendDetailScreen(
                         // ── Sticky balance bar ────────────────────────────────
                         stickyHeader {
                             FriendStickyBalanceBar(
-                                netBalance         = netBalance,
-                                currency           = currency,
-                                userBalances       = userBalances,
-                                friendName         = friendName,
-                                groupCount         = groupCount,
-                                friendState        = friendState,
-                                balancesLoadFailed = balancesLoadFailed,
+                                netBalance            = effectiveNetBalance,
+                                currency              = effectiveCurrency,
+                                userBalances          = userBalances,
+                                friendName            = friendName,
+                                groupCount            = groupCount,
+                                friendState           = friendState,
+                                balancesLoadFailed    = balancesLoadFailed,
+                                hasPendingBalanceSync = hasPendingBalanceSync,
                             )
                         }
 
@@ -612,10 +660,10 @@ fun FriendDetailScreen(
                             item {
                                 PlaceholderLinkBanner(
                                     friendName = friendName,
-                                    onLink     = { showLinkSheet = true },
-                                    modifier   = Modifier.padding(
+                                    onLink = { showLinkSheet = true },
+                                    modifier = Modifier.padding(
                                         horizontal = Spacing.lg,
-                                        vertical   = Spacing.sm,
+                                        vertical = Spacing.sm,
                                     ),
                                 )
                             }
@@ -624,10 +672,10 @@ fun FriendDetailScreen(
                         // ── Action bar ────────────────────────────────────────
                         item {
                             FriendActionBar(
-                                onSettleUp            = handleSettle,
+                                onSettleUp = handleSettle,
                                 onNavigateToAnalytics = onNavigateToAnalytics,
-                                onImportSplitwise     = { showImportInstructionsSheet = true },
-                                friendState           = friendState,
+                                onImportSplitwise = { showImportInstructionsSheet = true },
+                                friendState = friendState,
                             )
                         }
 
@@ -636,18 +684,26 @@ fun FriendDetailScreen(
                             is FriendExpensesState.Loading -> {
                                 item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
                             }
+
                             is FriendExpensesState.Error -> {
                                 item {
                                     FsEmptyState(
-                                        title    = "Couldn't load expenses",
+                                        title = "Couldn't load expenses",
                                         subtitle = state.message,
                                         modifier = Modifier.height(200.dp),
                                     )
                                 }
                             }
+
                             is FriendExpensesState.Success -> {
                                 val allItems = buildList<FriendTimelineItem> {
-                                    groupBalances.forEach { add(FriendTimelineItem.GroupBalanceItem(it)) }
+                                    groupBalances.forEach {
+                                        add(
+                                            FriendTimelineItem.GroupBalanceItem(
+                                                it
+                                            )
+                                        )
+                                    }
                                     state.expenses
                                         .filter { !it.isDeleted }
                                         .forEach { add(FriendTimelineItem.DirectExpenseItem(it)) }
@@ -664,9 +720,9 @@ fun FriendDetailScreen(
                                 if (allItems.isEmpty()) {
                                     item {
                                         FriendEmptyState(
-                                            friendName        = friendName,
-                                            friendState       = friendState,
-                                            onAddExpense      = onNavigateToAddExpense,
+                                            friendName = friendName,
+                                            friendState = friendState,
+                                            onAddExpense = onNavigateToAddExpense,
                                             onNavigateToGroup = onNavigateToGroupsTab,
                                         )
                                     }
@@ -679,21 +735,24 @@ fun FriendDetailScreen(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .background(Color(0xFF0B0E13))
-                                                    .padding(horizontal = Spacing.lg, vertical = 6.dp),
-                                                verticalAlignment     = Alignment.CenterVertically,
+                                                    .padding(
+                                                        horizontal = Spacing.lg,
+                                                        vertical = 6.dp
+                                                    ),
+                                                verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                                             ) {
                                                 Text(
-                                                    text          = month.uppercase(),
-                                                    fontSize      = 12.sp,
-                                                    fontWeight    = FontWeight.SemiBold,
-                                                    color         = TextSecondary,
+                                                    text = month.uppercase(),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = TextSecondary,
                                                     letterSpacing = 0.5.sp,
                                                 )
                                                 HorizontalDivider(
-                                                    color     = Surface4,
+                                                    color = Surface4,
                                                     thickness = 0.5.dp,
-                                                    modifier  = Modifier.weight(1f),
+                                                    modifier = Modifier.weight(1f),
                                                 )
                                             }
                                         }
@@ -705,10 +764,10 @@ fun FriendDetailScreen(
                                                 items = dayItems,
                                                 key = {
                                                     when (it) {
-                                                        is FriendTimelineItem.GroupBalanceItem  -> "gb_${it.balance.groupId}_${it.balance.currency}"
+                                                        is FriendTimelineItem.GroupBalanceItem -> "gb_${it.balance.groupId}_${it.balance.currency}"
                                                         is FriendTimelineItem.DirectExpenseItem -> "ex_${it.expense.id}"
-                                                        is FriendTimelineItem.SettlementItem    -> "st_${it.settlement.id}"
-                                                        is FriendTimelineItem.FullySettledItem  -> "fs_${it.settlement.id}"
+                                                        is FriendTimelineItem.SettlementItem -> "st_${it.settlement.id}"
+                                                        is FriendTimelineItem.FullySettledItem -> "fs_${it.settlement.id}"
                                                     }
                                                 },
                                             ) { item ->
@@ -716,33 +775,48 @@ fun FriendDetailScreen(
                                                 when (item) {
                                                     is FriendTimelineItem.GroupBalanceItem ->
                                                         GroupBalanceRow(
-                                                            balance      = item.balance,
+                                                            balance = item.balance,
                                                             showDateRail = showDateRail,
-                                                            onClick      = { gId -> if (gId != null) onNavigateToGroup(gId) },
+                                                            onClick = { gId ->
+                                                                if (gId != null) onNavigateToGroup(
+                                                                    gId
+                                                                )
+                                                            },
                                                         )
+
                                                     is FriendTimelineItem.DirectExpenseItem -> {
                                                         // Hide immediately when offline delete is queued
                                                         if (item.expense.id !in pendingDeleteExpenseIds) {
                                                             FriendExpenseRow(
-                                                                expense      = item.expense,
+                                                                expense = item.expense,
                                                                 showDateRail = showDateRail,
-                                                                onClick      = { onNavigateToExpense(item.expense.id) },
+                                                                onClick = { onNavigateToExpense(item.expense.id) },
                                                             )
                                                         }
                                                     }
+
                                                     is FriendTimelineItem.SettlementItem ->
                                                         FriendSettlementRow(
-                                                            settlement   = item.settlement,
+                                                            settlement = item.settlement,
                                                             showDateRail = showDateRail,
-                                                            onClick      = { onNavigateToSettlement(item.settlement.id) },
-                                                            onDelete     = { viewModel.cancelSettlement(item.settlement.id) },
-                                                            onRestore    = { viewModel.restoreSettlement(item.settlement.id) },
+                                                            onClick = { onNavigateToSettlement(item.settlement.id) },
+                                                            onDelete = {
+                                                                viewModel.cancelSettlement(
+                                                                    item.settlement.id
+                                                                )
+                                                            },
+                                                            onRestore = {
+                                                                viewModel.restoreSettlement(
+                                                                    item.settlement.id
+                                                                )
+                                                            },
                                                         )
+
                                                     is FriendTimelineItem.FullySettledItem ->
                                                         FriendFullySettledRow(
-                                                            settlement   = item.settlement,
+                                                            settlement = item.settlement,
                                                             showDateRail = showDateRail,
-                                                            onClick      = { onNavigateToSettlement(item.settlement.id) },
+                                                            onClick = { onNavigateToSettlement(item.settlement.id) },
                                                         )
                                                 }
                                             }
@@ -765,29 +839,33 @@ fun FriendDetailScreen(
                     .offset(y = (-20).dp)
                     .padding(horizontal = Spacing.lg, vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier         = Modifier
+                    modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(Color(0x55000000))
                         .clickable { onBack() },
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White,
-                        modifier = Modifier.size(20.dp))
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
 
                 if (showTopBarName) {
                     Text(
-                        text       = friendName,
-                        fontSize   = 17.sp,
+                        text = friendName,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color      = Color.White,
-                        maxLines   = 1,
-                        overflow   = TextOverflow.Ellipsis,
-                        modifier   = Modifier.weight(1f).padding(horizontal = Spacing.md),
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = Spacing.md),
                     )
                 } else {
                     Spacer(Modifier.weight(1f))
@@ -796,23 +874,33 @@ fun FriendDetailScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier         = Modifier
+                        modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(Color(0x55000000))
                             .clickable { onNavigateToSearch() },
                     ) {
-                        Icon(Icons.Outlined.Search, "Search", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(
+                            Icons.Outlined.Search,
+                            "Search",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier         = Modifier
+                        modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(Color(0x55000000))
                             .clickable { onNavigateToSettings() },
                     ) {
-                        Icon(Icons.Outlined.Settings, "Settings", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(
+                            Icons.Outlined.Settings,
+                            "Settings",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
@@ -824,62 +912,97 @@ fun FriendDetailScreen(
     if (showLinkSheet && friendStatus == "placeholder") {
         FriendLinkSheet(
             friendName = friendName,
-            friends    = friendsList,
-            onLink     = { fId -> showLinkSheet = false; viewModel.assignFriendPlaceholder(viewModel.friendId, fId) },
-            onDismiss  = { showLinkSheet = false },
+            friends = friendsList,
+            onLink = { fId ->
+                showLinkSheet = false; viewModel.assignFriendPlaceholder(viewModel.friendId, fId)
+            },
+            onDismiss = { showLinkSheet = false },
         )
     }
 
     if (showBalanceSheet) {
-        ModalBottomSheet(onDismissRequest = { showBalanceSheet = false }, containerColor = Surface2) {
+        ModalBottomSheet(
+            onDismissRequest = { showBalanceSheet = false },
+            containerColor = Surface2
+        ) {
             Column(modifier = Modifier.padding(bottom = 32.dp)) {
                 Text(
-                    text       = "Select a balance to settle with ${friendName.ifBlank { "friend" }}",
-                    fontSize   = 16.sp,
+                    text = "Select a balance to settle with ${friendName.ifBlank { "friend" }}",
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color      = TextPrimary,
-                    modifier   = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 )
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                 val sheetByCur = userBalances.groupBy { it.currency }
                     .mapValues { (_, list) -> list.sumOf { it.amount } }
                     .filter { it.value != 0.0 }
-                val isMixedSheet = sheetByCur.values.any { it > 0 } && sheetByCur.values.any { it < 0 }
+                val isMixedSheet =
+                    sheetByCur.values.any { it > 0 } && sheetByCur.values.any { it < 0 }
                 if (sheetByCur.isNotEmpty()) {
                     if (!isMixedSheet) {
                         // Single-direction: "Settle all balances" is safe and unambiguous
                         val allOwed = sheetByCur.values.all { it > 0 }
                         val amtText = sheetByCur.entries.toList()
-                            .joinToString(" + ") { (c,a) -> MoneyUtils.format(Math.abs(a), c) }
+                            .joinToString(" + ") { (c, a) -> MoneyUtils.format(Math.abs(a), c) }
                         Row(
-                            modifier          = Modifier
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null, null) }
+                                .clickable {
+                                    showBalanceSheet = false; onNavigateToSettle(
+                                    viewModel.friendId,
+                                    null,
+                                    null,
+                                    null
+                                )
+                                }
                                 .padding(horizontal = Spacing.lg, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            FsAvatar(name = friendName, userId = viewModel.friendId, size = ComponentSize.avatarMd)
+                            FsAvatar(
+                                name = friendName,
+                                userId = viewModel.friendId,
+                                size = ComponentSize.avatarMd
+                            )
                             Spacer(Modifier.width(Spacing.md))
-                            Text("Settle all balances", fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                                color = TextPrimary, modifier = Modifier.weight(1f))
+                            Text(
+                                "Settle all balances",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
                             Column(horizontalAlignment = Alignment.End) {
-                                Text(if (allOwed) "you are owed" else "you owe", fontSize = 11.sp, color = TextTertiary)
-                                Text(amtText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                                    color = if (allOwed) Green400 else Negative)
+                                Text(
+                                    if (allOwed) "you are owed" else "you owe",
+                                    fontSize = 11.sp,
+                                    color = TextTertiary
+                                )
+                                Text(
+                                    amtText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                                    color = if (allOwed) Green400 else Negative
+                                )
                             }
                         }
                         HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                     } else {
                         // Mixed currencies with opposite signs — show per-currency rows
                         // so user always settles one currency at a time
-                        Text("Settle by currency", fontSize = 12.sp, color = TextSecondary,
-                            modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, top = Spacing.md, bottom = Spacing.sm))
+                        Text(
+                            "Settle by currency", fontSize = 12.sp, color = TextSecondary,
+                            modifier = Modifier.padding(
+                                start = Spacing.lg,
+                                end = Spacing.lg,
+                                top = Spacing.md,
+                                bottom = Spacing.sm
+                            )
+                        )
                         sheetByCur.entries.toList()
                             .sortedByDescending { Math.abs(it.value) }
                             .forEach { (cur, amt) ->
                                 val isOwed = amt > 0
                                 Row(
-                                    modifier          = Modifier
+                                    modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
                                             showBalanceSheet = false
@@ -888,7 +1011,11 @@ fun FriendDetailScreen(
                                         .padding(horizontal = Spacing.lg, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    FsAvatar(name = friendName, userId = viewModel.friendId, size = ComponentSize.avatarMd)
+                                    FsAvatar(
+                                        name = friendName,
+                                        userId = viewModel.friendId,
+                                        size = ComponentSize.avatarMd
+                                    )
                                     Spacer(Modifier.width(Spacing.md))
                                     Text(
                                         text = MoneyUtils.format(Math.abs(amt), cur),
@@ -896,42 +1023,84 @@ fun FriendDetailScreen(
                                         color = TextPrimary, modifier = Modifier.weight(1f)
                                     )
                                     Column(horizontalAlignment = Alignment.End) {
-                                        Text(if (isOwed) "you are owed" else "you owe",
-                                            fontSize = 11.sp, color = TextTertiary)
-                                        Text(MoneyUtils.format(Math.abs(amt), cur),
+                                        Text(
+                                            if (isOwed) "you are owed" else "you owe",
+                                            fontSize = 11.sp, color = TextTertiary
+                                        )
+                                        Text(
+                                            MoneyUtils.format(Math.abs(amt), cur),
                                             fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                                            color = if (isOwed) Green400 else Negative)
+                                            color = if (isOwed) Green400 else Negative
+                                        )
                                     }
                                 }
                                 HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                             }
                     }
                 }
-                val groupsWithBalance = groupBalances.filter { it.groupId != null && it.amount != 0.0 }
+                val groupsWithBalance =
+                    groupBalances.filter { it.groupId != null && it.amount != 0.0 }
                 if (groupsWithBalance.isNotEmpty()) {
-                    Text("Or settle a specific group balance", fontSize = 12.sp, color = TextSecondary,
-                        modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, top = Spacing.md, bottom = Spacing.sm))
+                    Text(
+                        "Or settle a specific group balance",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(
+                            start = Spacing.lg,
+                            end = Spacing.lg,
+                            top = Spacing.md,
+                            bottom = Spacing.sm
+                        )
+                    )
                     groupsWithBalance.forEach { balance ->
                         Row(
-                            modifier          = Modifier
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, balance.groupId, null, null) }
+                                .clickable {
+                                    showBalanceSheet = false; onNavigateToSettle(
+                                    viewModel.friendId,
+                                    balance.groupId,
+                                    null,
+                                    null
+                                )
+                                }
                                 .padding(horizontal = Spacing.lg, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(contentAlignment = Alignment.Center,
-                                modifier = Modifier.size(ComponentSize.avatarMd).clip(RoundedCornerShape(12.dp)).background(Surface4)) {
-                                Text(balance.groupName?.firstOrNull()?.uppercase() ?: "G", fontSize = 18.sp,
-                                    color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(ComponentSize.avatarMd)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Surface4)
+                            ) {
+                                Text(
+                                    balance.groupName?.firstOrNull()?.uppercase() ?: "G",
+                                    fontSize = 18.sp,
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                             Spacer(Modifier.width(Spacing.md))
-                            Text(balance.groupName ?: "Group", fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                                color = TextPrimary, modifier = Modifier.weight(1f))
+                            Text(
+                                balance.groupName ?: "Group",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
                             Column(horizontalAlignment = Alignment.End) {
-                                Text(if (balance.amount > 0) "you are owed" else "you owe", fontSize = 11.sp, color = TextTertiary)
-                                Text(MoneyUtils.format(Math.abs(balance.amount), balance.currency), fontSize = 14.sp,
+                                Text(
+                                    if (balance.amount > 0) "you are owed" else "you owe",
+                                    fontSize = 11.sp,
+                                    color = TextTertiary
+                                )
+                                Text(
+                                    MoneyUtils.format(Math.abs(balance.amount), balance.currency),
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = if (balance.amount > 0) Green400 else Negative)
+                                    color = if (balance.amount > 0) Green400 else Negative
+                                )
                             }
                         }
                         HorizontalDivider(color = Surface3, thickness = 0.5.dp)
@@ -943,37 +1112,65 @@ fun FriendDetailScreen(
                         .forEach { (cur, amt) ->
                             val isOwed = amt > 0
                             Row(
-                                modifier          = Modifier
+                                modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { showBalanceSheet = false; onNavigateToSettle(viewModel.friendId, null, null, cur) }
+                                    .clickable {
+                                        showBalanceSheet = false; onNavigateToSettle(
+                                        viewModel.friendId,
+                                        null,
+                                        null,
+                                        cur
+                                    )
+                                    }
                                     .padding(horizontal = Spacing.lg, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Box(contentAlignment = Alignment.Center,
-                                    modifier = Modifier.size(ComponentSize.avatarMd).clip(RoundedCornerShape(12.dp)).background(Surface4)) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(ComponentSize.avatarMd)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Surface4)
+                                ) {
                                     Text("📋", fontSize = 18.sp)
                                 }
                                 Spacer(Modifier.width(Spacing.md))
-                                Text(if (nonGroupByCurrency.size > 1) "Non-group · $cur" else "Non-group expenses", fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                                    color = TextPrimary, modifier = Modifier.weight(1f))
+                                Text(
+                                    if (nonGroupByCurrency.size > 1) "Non-group · $cur" else "Non-group expenses",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextPrimary,
+                                    modifier = Modifier.weight(1f)
+                                )
                                 Column(horizontalAlignment = Alignment.End) {
-                                    Text(if (isOwed) "you are owed" else "you owe", fontSize = 11.sp, color = TextTertiary)
-                                    Text(MoneyUtils.format(Math.abs(amt), cur), fontSize = 14.sp,
+                                    Text(
+                                        if (isOwed) "you are owed" else "you owe",
+                                        fontSize = 11.sp,
+                                        color = TextTertiary
+                                    )
+                                    Text(
+                                        MoneyUtils.format(Math.abs(amt), cur), fontSize = 14.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = if (isOwed) Green400 else Negative)
+                                        color = if (isOwed) Green400 else Negative
+                                    )
                                 }
                             }
                             HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                         }
                 }
                 Row(
-                    modifier          = Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showBalanceSheet = false; showPayerSheet = true }
                         .padding(horizontal = Spacing.lg, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("More options", fontSize = 15.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
+                    Text(
+                        "More options",
+                        fontSize = 15.sp,
+                        color = TextSecondary,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
@@ -982,21 +1179,39 @@ fun FriendDetailScreen(
     if (showPayerSheet) {
         ModalBottomSheet(onDismissRequest = { showPayerSheet = false }, containerColor = Surface2) {
             Column(modifier = Modifier.padding(bottom = 32.dp)) {
-                Text("Who paid?", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
-                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md))
+                Text(
+                    "Who paid?",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)
+                )
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                 val meId = viewModel.currentUserId ?: ""
                 listOf(meId to "You", viewModel.friendId to friendName).forEach { (userId, name) ->
                     Row(
-                        modifier          = Modifier
+                        modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { showPayerSheet = false; onNavigateToSettle(viewModel.friendId, null, userId, name) }
+                            .clickable {
+                                showPayerSheet = false; onNavigateToSettle(
+                                viewModel.friendId,
+                                null,
+                                userId,
+                                name
+                            )
+                            }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         FsAvatar(name = name, userId = userId, size = ComponentSize.avatarMd)
                         Spacer(Modifier.width(Spacing.md))
-                        Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.weight(1f))
+                        Text(
+                            name,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                     HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                 }
@@ -1009,10 +1224,10 @@ fun FriendDetailScreen(
 
 @Composable
 private fun FriendCoverHeader(
-    name       : String,
-    userId     : String,
-    settledPct : Float,
-    groupCount : Int,
+    name: String,
+    userId: String,
+    settledPct: Float,
+    groupCount: Int,
     friendState: FriendUiState = FriendUiState.BRAND_NEW,
 ) {
     val gradientColors = remember(userId) { friendGradient(userId) }
@@ -1029,22 +1244,24 @@ private fun FriendCoverHeader(
                 .fillMaxWidth()
                 .height(120.dp)
                 .align(Alignment.BottomCenter)
-                .background(Brush.verticalGradient(
-                    listOf(Color.Transparent, Color(0xEE0B0E13))
-                )),
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color(0xEE0B0E13))
+                    )
+                ),
         )
 
         // Content — centered
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier            = Modifier
+            modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = Spacing.md),
         ) {
             // Progress ring + avatar
             Box(
                 contentAlignment = Alignment.Center,
-                modifier         = Modifier.size(88.dp),
+                modifier = Modifier.size(88.dp),
             ) {
                 Canvas(modifier = Modifier.size(88.dp)) {
                     val stroke = 6f
@@ -1054,27 +1271,49 @@ private fun FriendCoverHeader(
                         FriendUiState.BRAND_NEW, FriendUiState.SETTLED_WITH_HISTORY -> {
                             // Gold ring — full circle
                             drawCircle(
-                                brush  = Brush.sweepGradient(listOf(Color(0xFFF59E0B), Color(0xFFFFD700), Color(0xFFFBBF24), Color(0xFFF59E0B))),
+                                brush = Brush.sweepGradient(
+                                    listOf(
+                                        Color(0xFFF59E0B),
+                                        Color(0xFFFFD700),
+                                        Color(0xFFFBBF24),
+                                        Color(0xFFF59E0B)
+                                    )
+                                ),
                                 radius = radius,
-                                style  = Stroke(width = stroke),
+                                style = Stroke(width = stroke),
                             )
                         }
+
                         FriendUiState.THEY_OWE_YOU -> {
-                            drawCircle(color = Color.White.copy(alpha = 0.15f), radius = radius, style = Stroke(width = stroke))
+                            drawCircle(
+                                color = Color.White.copy(alpha = 0.15f),
+                                radius = radius,
+                                style = Stroke(width = stroke)
+                            )
                             if (settledPct > 0f) {
-                                drawArc(color = Color(0xFF00C896), startAngle = -90f,
+                                drawArc(
+                                    color = Color(0xFF00C896), startAngle = -90f,
                                     sweepAngle = 360f * settledPct, useCenter = false,
-                                    style = Stroke(width = stroke, cap = StrokeCap.Round))
+                                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                )
                             }
                         }
+
                         FriendUiState.YOU_OWE_THEM -> {
-                            drawCircle(color = Color.White.copy(alpha = 0.15f), radius = radius, style = Stroke(width = stroke))
+                            drawCircle(
+                                color = Color.White.copy(alpha = 0.15f),
+                                radius = radius,
+                                style = Stroke(width = stroke)
+                            )
                             if (settledPct > 0f) {
-                                drawArc(color = Color(0xFFF87171), startAngle = -90f,
+                                drawArc(
+                                    color = Color(0xFFF87171), startAngle = -90f,
                                     sweepAngle = 360f * settledPct, useCenter = false,
-                                    style = Stroke(width = stroke, cap = StrokeCap.Round))
+                                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                )
                             }
                         }
+
                         else -> {}
                     }
                 }
@@ -1085,45 +1324,84 @@ private fun FriendCoverHeader(
                         // Gold checkmark — no avatar
                         Box(
                             contentAlignment = Alignment.Center,
-                            modifier         = Modifier.size(56.dp).clip(CircleShape).background(Color(0xFF1A1A1C)),
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1A1A1C)),
                         ) {
                             Canvas(modifier = Modifier.size(28.dp)) {
-                                val w = size.width; val h = size.height
+                                val w = size.width;
+                                val h = size.height
                                 drawPath(
                                     path = androidx.compose.ui.graphics.Path().apply {
                                         moveTo(w * 0.15f, h * 0.52f)
                                         lineTo(w * 0.40f, h * 0.75f)
                                         lineTo(w * 0.85f, h * 0.25f)
                                     },
-                                    brush = Brush.linearGradient(listOf(Color(0xFFF59E0B), Color(0xFFFBBF24))),
-                                    style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round,
-                                        join = androidx.compose.ui.graphics.StrokeJoin.Round),
+                                    brush = Brush.linearGradient(
+                                        listOf(
+                                            Color(0xFFF59E0B),
+                                            Color(0xFFFBBF24)
+                                        )
+                                    ),
+                                    style = Stroke(
+                                        width = 3.5.dp.toPx(), cap = StrokeCap.Round,
+                                        join = androidx.compose.ui.graphics.StrokeJoin.Round
+                                    ),
                                 )
                             }
                         }
                     }
+
                     FriendUiState.BRAND_NEW -> {
                         // Gray avatar
-                        FsAvatar(name = name, userId = userId, size = 56.dp, modifier = Modifier.clip(CircleShape))
+                        FsAvatar(
+                            name = name,
+                            userId = userId,
+                            size = 56.dp,
+                            modifier = Modifier.clip(CircleShape)
+                        )
                     }
+
                     FriendUiState.THEY_OWE_YOU -> {
                         // Green tinted avatar background
-                        Box(contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(56.dp).clip(CircleShape).background(Color(0xFF00C896))) {
-                            Text(name.take(2).uppercase(), fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold, color = Color.Black)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF00C896))
+                        ) {
+                            Text(
+                                name.take(2).uppercase(), fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold, color = Color.Black
+                            )
                         }
                     }
+
                     FriendUiState.YOU_OWE_THEM -> {
                         // Red tinted avatar background
-                        Box(contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(56.dp).clip(CircleShape).background(Color(0xFFF87171))) {
-                            Text(name.take(2).uppercase(), fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold, color = Color.White)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFF87171))
+                        ) {
+                            Text(
+                                name.take(2).uppercase(), fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold, color = Color.White
+                            )
                         }
                     }
+
                     else -> {
-                        FsAvatar(name = name, userId = userId, size = 56.dp, modifier = Modifier.clip(CircleShape))
+                        FsAvatar(
+                            name = name,
+                            userId = userId,
+                            size = 56.dp,
+                            modifier = Modifier.clip(CircleShape)
+                        )
                     }
                 }
 
@@ -1133,14 +1411,16 @@ private fun FriendCoverHeader(
                 if (showBadge) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier         = Modifier
+                        modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .offset(x = 4.dp, y = 4.dp)
                             .background(Color(0x99000000), RoundedCornerShape(Radius.full))
                             .padding(horizontal = 5.dp, vertical = 2.dp),
                     ) {
-                        Text("${(settledPct * 100).toInt()}%", fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(
+                            "${(settledPct * 100).toInt()}%", fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold, color = Color.White
+                        )
                     }
                 }
             }
@@ -1154,7 +1434,7 @@ private fun FriendCoverHeader(
             // Pills row
             Row(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                verticalAlignment     = Alignment.CenterVertically,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (groupCount > 0) {
                     Box(
@@ -1164,10 +1444,10 @@ private fun FriendCoverHeader(
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                     ) {
                         Text(
-                            text       = "${groupCount} ${if (groupCount == 1) "group" else "groups"}".uppercase(),
-                            fontSize   = 10.sp,
+                            text = "${groupCount} ${if (groupCount == 1) "group" else "groups"}".uppercase(),
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color      = Color.White,
+                            color = Color.White,
                             letterSpacing = 0.5.sp,
                         )
                     }
@@ -1181,109 +1461,150 @@ private fun FriendCoverHeader(
 
 @Composable
 private fun FriendStickyBalanceBar(
-    netBalance          : Double,
-    currency            : String,
-    userBalances        : List<com.prathik.fairshare.domain.model.Balance> = emptyList(),
-    groupCount          : Int,
-    friendState         : FriendUiState,
-    friendName          : String = "",
-    balancesLoadFailed  : Boolean = false,
+    netBalance: Double,
+    currency: String,
+    userBalances: List<com.prathik.fairshare.domain.model.Balance> = emptyList(),
+    groupCount: Int,
+    friendState: FriendUiState,
+    friendName: String = "",
+    balancesLoadFailed: Boolean = false,
+    hasPendingBalanceSync: Boolean = false,
 ) {
-    val isCentered = friendState == FriendUiState.BRAND_NEW || friendState == FriendUiState.SETTLED_WITH_HISTORY
+    val isCentered =
+        friendState == FriendUiState.BRAND_NEW || friendState == FriendUiState.SETTLED_WITH_HISTORY
 
     Row(
-        modifier              = Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xF2111112))
             .padding(horizontal = Spacing.lg, vertical = 6.dp),
-        verticalAlignment     = Alignment.CenterVertically,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (isCentered) Arrangement.Center else Arrangement.Start,
     ) {
         when (friendState) {
             FriendUiState.BRAND_NEW -> {
                 if (balancesLoadFailed) {
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Outlined.WifiOff, null,
-                            tint = Color(0xFF9AA3AF), modifier = Modifier.size(14.dp))
-                        Text("Balances unavailable offline.",
-                            fontSize = 12.sp, color = Color(0xFF9AA3AF))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.WifiOff, null,
+                            tint = Color(0xFF9AA3AF), modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            "Balances unavailable offline.",
+                            fontSize = 12.sp, color = Color(0xFF9AA3AF)
+                        )
                     }
                 } else {
-                    Text("No expenses yet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF9AA3AF))
+                    Text(
+                        "No expenses yet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF9AA3AF)
+                    )
+                }
+                if (hasPendingBalanceSync) {
+                    Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
                 }
             }
+
             FriendUiState.SETTLED_WITH_HISTORY -> {
-                Text("All settled 🎉", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF00C896))
+                Text(
+                    "All settled 🎉", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF00C896)
+                )
             }
+
             FriendUiState.THEY_OWE_YOU -> {
-                val ubByCur   = userBalances.groupBy { it.currency }
+                val ubByCur = userBalances.groupBy { it.currency }
                     .mapValues { (_, list) -> list.sumOf { it.amount } }
                 val owedParts = ubByCur.filter { it.value > 0 }
-                val oweParts  = ubByCur.filter { it.value < 0 }
+                val oweParts = ubByCur.filter { it.value < 0 }
                 Column(modifier = Modifier.weight(1f)) {
                     // Main line: what they owe you
                     Text("Owed to you", fontSize = 10.sp, color = Color(0xFF9AA3AF))
+                    // When pending ops exist use optimistic scalar so the user sees
+                    // the adjusted value immediately rather than stale confirmed balance.
                     Text(
-                        text = owedParts.entries.sortedByDescending { it.value }
-                            .joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) }
+                        text = if (hasPendingBalanceSync)
+                            MoneyUtils.format(
+                                netBalance,
+                                currency
+                            )  // netBalance = effectiveNetBalance passed in
+                        else owedParts.entries.sortedByDescending { it.value }
+                            .joinToString(" + ") { (c, a) -> MoneyUtils.format(a, c) }
                             .ifEmpty { MoneyUtils.format(netBalance, currency) },
-                        fontSize = if (owedParts.size > 1) 14.sp else 18.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold, color = Color(0xFF00C896)
                     )
-                    // Sub-line: what you owe them (Splitwise style)
-                    if (oweParts.isNotEmpty()) {
+                    if (hasPendingBalanceSync) {
+                        Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
+                    } else if (oweParts.isNotEmpty()) {
                         Text(
                             text = "You owe " + oweParts.entries
-                                .joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) },
+                                .joinToString(" + ") { (c, a) -> MoneyUtils.format(-a, c) },
                             fontSize = 11.sp, color = Color(0xFFF87171)
                         )
                     }
                 }
                 if (groupCount > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text("👥", fontSize = 12.sp)
-                        Text("in $groupCount ${if (groupCount == 1) "group" else "groups"}",
-                            fontSize = 12.sp, color = Color(0xFF9AA3AF))
+                        Text(
+                            "in $groupCount ${if (groupCount == 1) "group" else "groups"}",
+                            fontSize = 12.sp, color = Color(0xFF9AA3AF)
+                        )
                     }
                 }
             }
+
             FriendUiState.YOU_OWE_THEM -> {
-                val ubByCur2   = userBalances.groupBy { it.currency }
+                val ubByCur2 = userBalances.groupBy { it.currency }
                     .mapValues { (_, list) -> list.sumOf { it.amount } }
-                val oweParts2  = ubByCur2.filter { it.value < 0 }
+                val oweParts2 = ubByCur2.filter { it.value < 0 }
                 val owedParts2 = ubByCur2.filter { it.value > 0 }
                 Column(modifier = Modifier.weight(1f)) {
                     // Main line: what you owe (dominant)
                     Text("You owe", fontSize = 10.sp, color = Color(0xFF9AA3AF))
                     Text(
-                        text = oweParts2.entries.sortedBy { it.value }
-                            .joinToString(" + ") { (c,a) -> MoneyUtils.format(-a,c) }
+                        text = if (hasPendingBalanceSync)
+                            MoneyUtils.format(
+                                -netBalance,
+                                currency
+                            )  // netBalance = effectiveNetBalance
+                        else oweParts2.entries.sortedBy { it.value }
+                            .joinToString(" + ") { (c, a) -> MoneyUtils.format(-a, c) }
                             .ifEmpty { MoneyUtils.format(-netBalance, currency) },
-                        fontSize = if (oweParts2.size > 1) 14.sp else 18.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold, color = Color(0xFFF87171)
                     )
-                    // Sub-line: what they owe you (Splitwise style)
-                    if (owedParts2.isNotEmpty()) {
+                    if (hasPendingBalanceSync) {
+                        Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
+                    } else if (owedParts2.isNotEmpty()) {
                         Text(
                             text = "${friendName.ifBlank { "They" }} owes you " + owedParts2.entries
-                                .joinToString(" + ") { (c,a) -> MoneyUtils.format(a,c) },
+                                .joinToString(" + ") { (c, a) -> MoneyUtils.format(a, c) },
                             fontSize = 11.sp, color = Color(0xFF00C896)
                         )
                     }
                 }
                 if (groupCount > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text("👥", fontSize = 12.sp)
-                        Text("in $groupCount ${if (groupCount == 1) "group" else "groups"}",
-                            fontSize = 12.sp, color = Color(0xFF9AA3AF))
+                        Text(
+                            "in $groupCount ${if (groupCount == 1) "group" else "groups"}",
+                            fontSize = 12.sp, color = Color(0xFF9AA3AF)
+                        )
                     }
                 }
             }
+
             else -> {}
         }
     }
@@ -1294,24 +1615,26 @@ private fun FriendStickyBalanceBar(
 
 @Composable
 private fun FriendActionBar(
-    onSettleUp           : () -> Unit,
+    onSettleUp: () -> Unit,
     onNavigateToAnalytics: () -> Unit,
-    onImportSplitwise    : () -> Unit = {},
-    friendState          : FriendUiState = FriendUiState.BRAND_NEW,
+    onImportSplitwise: () -> Unit = {},
+    friendState: FriendUiState = FriendUiState.BRAND_NEW,
 ) {
     // Per-spec rules (see Summary of Rules):
     //   Brand new:          settle=off, remind=off, charts=off, history=off
     //   Settled w/ history: settle=off, remind=off, charts=on,  history=on
     //   They owe you:       settle=on,  remind=on,  charts=on,  history=on
     //   You owe them:       settle=on,  remind=HIDDEN, charts=on, history=on
-    val settleEnabled    = friendState == FriendUiState.THEY_OWE_YOU || friendState == FriendUiState.YOU_OWE_THEM
-    val showRemind       = friendState != FriendUiState.YOU_OWE_THEM  // hidden when you owe them
-    val remindEnabled    = friendState == FriendUiState.THEY_OWE_YOU  // disabled in brand new + settled
+    val settleEnabled =
+        friendState == FriendUiState.THEY_OWE_YOU || friendState == FriendUiState.YOU_OWE_THEM
+    val showRemind = friendState != FriendUiState.YOU_OWE_THEM  // hidden when you owe them
+    val remindEnabled =
+        friendState == FriendUiState.THEY_OWE_YOU  // disabled in brand new + settled
     val secondaryEnabled = friendState != FriendUiState.BRAND_NEW
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier              = Modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
@@ -1320,28 +1643,32 @@ private fun FriendActionBar(
             // Settle up
             Box(
                 contentAlignment = Alignment.Center,
-                modifier         = Modifier
+                modifier = Modifier
                     .clip(RoundedCornerShape(Radius.full))
                     .background(if (settleEnabled) Color(0xFF00C896) else Color(0xFF232A34))
                     .then(if (settleEnabled) Modifier.clickable { onSettleUp() } else Modifier)
                     .padding(horizontal = Spacing.md, vertical = 10.dp),
             ) {
-                Text("Settle up", fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    color = if (settleEnabled) Color.Black else Color(0xFF6B7280))
+                Text(
+                    "Settle up", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    color = if (settleEnabled) Color.Black else Color(0xFF6B7280)
+                )
             }
 
             // Remind — hidden on YOU_OWE_THEM, disabled on Brand New + Settled
             if (showRemind) {
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier         = Modifier
+                    modifier = Modifier
                         .clip(RoundedCornerShape(Radius.full))
                         .background(if (remindEnabled) Color(0xFF151A21) else Color(0xFF232A34))
                         .then(if (remindEnabled) Modifier.clickable { } else Modifier)
                         .padding(horizontal = Spacing.md, vertical = 10.dp),
                 ) {
-                    Text("Remind", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (remindEnabled) Color(0xFFE8ECF2) else Color(0xFF6B7280))
+                    Text(
+                        "Remind", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (remindEnabled) Color(0xFFE8ECF2) else Color(0xFF6B7280)
+                    )
                 }
             }
 
@@ -1349,28 +1676,32 @@ private fun FriendActionBar(
             listOf("Charts" to onNavigateToAnalytics).forEach { (label, action) ->
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier         = Modifier
+                    modifier = Modifier
                         .clip(RoundedCornerShape(Radius.full))
                         .background(if (secondaryEnabled) Color(0xFF151A21) else Color(0xFF232A34))
                         .then(if (secondaryEnabled) Modifier.clickable { action() } else Modifier)
                         .padding(horizontal = Spacing.md, vertical = 10.dp),
                 ) {
-                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (secondaryEnabled) Color(0xFFE8ECF2) else Color(0xFF6B7280))
+                    Text(
+                        label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (secondaryEnabled) Color(0xFFE8ECF2) else Color(0xFF6B7280)
+                    )
                 }
             }
 
             // Import from Splitwise — always visible
             Box(
                 contentAlignment = Alignment.Center,
-                modifier         = Modifier
+                modifier = Modifier
                     .clip(RoundedCornerShape(Radius.full))
                     .background(Color(0xFF151A21))
                     .clickable { onImportSplitwise() }
                     .padding(horizontal = Spacing.md, vertical = 10.dp),
             ) {
-                Text("Import", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFE8ECF2))
+                Text(
+                    "Import", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFE8ECF2)
+                )
             }
         }
 
@@ -1389,18 +1720,22 @@ private fun FriendActionBar(
 
 @Composable
 private fun FriendExpenseRow(
-    expense     : Expense,
+    expense: Expense,
     showDateRail: Boolean,
-    onClick     : () -> Unit,
+    onClick: () -> Unit,
 ) {
     val youLent = expense.yourBalance > 0
-    val youOwe  = expense.yourBalance < 0
-    val balanceColor  = when { youLent -> Color(0xFF00C896); youOwe -> Color(0xFFF87171); else -> TextTertiary }
-    val balanceLabel  = when { youLent -> "you lent"; youOwe -> "you owe"; else -> "settled" }
+    val youOwe = expense.yourBalance < 0
+    val balanceColor = when {
+        youLent -> Color(0xFF00C896); youOwe -> Color(0xFFF87171); else -> TextTertiary
+    }
+    val balanceLabel = when {
+        youLent -> "you lent"; youOwe -> "you owe"; else -> "settled"
+    }
     val balanceAmount = when {
         youLent -> MoneyUtils.format(expense.yourBalance, expense.currency)
-        youOwe  -> MoneyUtils.format(-expense.yourBalance, expense.currency)
-        else    -> ""
+        youOwe -> MoneyUtils.format(-expense.yourBalance, expense.currency)
+        else -> ""
     }
     val paidByText = expense.payers.firstOrNull()?.let {
         "${it.fullName} paid ${MoneyUtils.format(it.amountPaid, expense.currency)}"
@@ -1410,48 +1745,70 @@ private fun FriendExpenseRow(
         try {
             val dt = LocalDateTime.parse(expense.expenseDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
             dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
-        } catch (e: Exception) { "" to "" }
+        } catch (e: Exception) {
+            "" to ""
+        }
     }
 
     Row(
-        modifier          = Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Date rail
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(24.dp)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(24.dp)
+        ) {
             if (showDateRail) {
-                Text(monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center)
-                Text(dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center)
+                Text(
+                    monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center
+                )
+                Text(
+                    dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center
+                )
             }
         }
         Spacer(Modifier.width(10.dp))
 
         // Card
         Row(
-            modifier          = Modifier
+            modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF151A21))
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(contentAlignment = Alignment.Center,
-                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF232A34))) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF232A34))
+            ) {
                 Text(categoryEmoji(expense.category), fontSize = 20.sp)
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(expense.description, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFE8ECF2), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    expense.description, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFE8ECF2), maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
                 if (expense.groupName != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(expense.groupName, fontSize = 12.sp, color = Color(0xFF9AA3AF),
-                            fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            expense.groupName,
+                            fontSize = 12.sp,
+                            color = Color(0xFF9AA3AF),
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         Text(" · group", fontSize = 11.sp, color = Color(0xFF6B7280))
                     }
                 } else {
@@ -1461,7 +1818,12 @@ private fun FriendExpenseRow(
             if (expense.yourBalance != 0.0) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(balanceLabel, fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                    Text(balanceAmount, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = balanceColor)
+                    Text(
+                        balanceAmount,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = balanceColor
+                    )
                 }
             }
         }
@@ -1471,34 +1833,43 @@ private fun FriendExpenseRow(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FriendSettlementRow(
-    settlement  : Settlement,
+    settlement: Settlement,
     showDateRail: Boolean,
-    onClick     : () -> Unit,
-    onDelete    : () -> Unit,
-    onRestore   : (() -> Unit)? = null,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onRestore: (() -> Unit)? = null,
 ) {
     val isCancelled = settlement.status == SettlementStatus.CANCELLED
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
-            val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            val dt = LocalDateTime.parse(
+                settlement.settlementDate,
+                DateTimeFormatter.ISO_LOCAL_DATE_TIME
+            )
             dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
-        } catch (e: Exception) { "—" to "—" }
+        } catch (e: Exception) {
+            "—" to "—"
+        }
     }
-    var showCancelDialog  by remember { mutableStateOf(false) }
+    var showCancelDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
 
     if (showCancelDialog) {
         AlertDialog(
             onDismissRequest = { showCancelDialog = false },
-            title   = { Text("Cancel settlement?") },
-            text    = { Text("This will reverse the balance changes.") },
+            title = { Text("Cancel settlement?") },
+            text = { Text("This will reverse the balance changes.") },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { showCancelDialog = false; onDelete() }) {
+                androidx.compose.material3.TextButton(onClick = {
+                    showCancelDialog = false; onDelete()
+                }) {
                     Text("Cancel settlement", color = Negative)
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showCancelDialog = false }) { Text("Keep") }
+                androidx.compose.material3.TextButton(onClick = {
+                    showCancelDialog = false
+                }) { Text("Keep") }
             },
         )
     }
@@ -1506,77 +1877,97 @@ private fun FriendSettlementRow(
     if (showRestoreDialog && onRestore != null) {
         AlertDialog(
             onDismissRequest = { showRestoreDialog = false },
-            title   = { Text("Restore settlement?") },
-            text    = { Text("This will apply the settlement again and update balances.") },
+            title = { Text("Restore settlement?") },
+            text = { Text("This will apply the settlement again and update balances.") },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { showRestoreDialog = false; onRestore() }) {
+                androidx.compose.material3.TextButton(onClick = {
+                    showRestoreDialog = false; onRestore()
+                }) {
                     Text("Restore", color = Green400)
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showRestoreDialog = false }) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = {
+                    showRestoreDialog = false
+                }) { Text("Cancel") }
             },
         )
     }
 
     Row(
-        modifier          = Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick     = onClick,
+                onClick = onClick,
                 onLongClick = {
-                    if (isCancelled) { if (onRestore != null) showRestoreDialog = true }
-                    else showCancelDialog = true
+                    if (isCancelled) {
+                        if (onRestore != null) showRestoreDialog = true
+                    } else showCancelDialog = true
                 },
             )
             .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(24.dp)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(24.dp)
+        ) {
             if (showDateRail) {
-                Text(monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center)
-                Text(dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center)
+                Text(
+                    monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center
+                )
+                Text(
+                    dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center
+                )
             }
         }
         Spacer(Modifier.width(10.dp))
         Row(
-            modifier          = Modifier
+            modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF151A21))
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(contentAlignment = Alignment.Center,
-                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
-                    .background((if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896)).copy(alpha = 0.12f))) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        (if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896)).copy(
+                            alpha = 0.12f
+                        )
+                    )
+            ) {
                 Text(if (isCancelled) "↩️" else "🤝", fontSize = 20.sp)
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text           = "${settlement.payerName} paid ${settlement.receiverName}",
-                    fontSize       = 14.sp,
-                    fontWeight     = FontWeight.Medium,
-                    color          = if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896),
-                    maxLines       = 1,
-                    overflow       = TextOverflow.Ellipsis,
+                    text = "${settlement.payerName} paid ${settlement.receiverName}",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     textDecoration = if (isCancelled) TextDecoration.LineThrough else TextDecoration.None,
                 )
                 Text(
-                    text     = if (isCancelled) "Payment cancelled" else
+                    text = if (isCancelled) "Payment cancelled" else
                         settlement.notes?.takeIf { it.isNotBlank() } ?: "Payment",
                     fontSize = 12.sp,
-                    color    = Color(0xFF6B7280),
+                    color = Color(0xFF6B7280),
                 )
             }
             Text(
-                text           = MoneyUtils.format(settlement.amount, settlement.currency),
-                fontSize       = 14.sp,
-                fontWeight     = FontWeight.SemiBold,
-                color          = if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896),
+                text = MoneyUtils.format(settlement.amount, settlement.currency),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isCancelled) Color(0xFF6B7280) else Color(0xFF00C896),
                 textDecoration = if (isCancelled) TextDecoration.LineThrough else TextDecoration.None,
             )
         }
@@ -1585,72 +1976,104 @@ private fun FriendSettlementRow(
 
 @Composable
 private fun FriendFullySettledRow(
-    settlement  : Settlement,
+    settlement: Settlement,
     showDateRail: Boolean,
-    onClick     : () -> Unit,
+    onClick: () -> Unit,
 ) {
     val (monthAbbr, dayNum) = remember(settlement.settlementDate) {
         try {
-            val dt = LocalDateTime.parse(settlement.settlementDate, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            val dt = LocalDateTime.parse(
+                settlement.settlementDate,
+                DateTimeFormatter.ISO_LOCAL_DATE_TIME
+            )
             dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
-        } catch (e: Exception) { "—" to "—" }
+        } catch (e: Exception) {
+            "—" to "—"
+        }
     }
 
     Row(
-        modifier          = Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(24.dp)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(24.dp)
+        ) {
             if (showDateRail) {
-                Text(monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center)
-                Text(dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center)
+                Text(
+                    monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center
+                )
+                Text(
+                    dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center
+                )
             }
         }
         Spacer(Modifier.width(10.dp))
         Row(
-            modifier          = Modifier
+            modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF151A21))
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(contentAlignment = Alignment.Center,
-                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF00C896).copy(alpha = 0.12f))) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF00C896).copy(alpha = 0.12f))
+            ) {
                 Text("⚖️", fontSize = 20.sp)
             }
             Spacer(Modifier.width(10.dp))
-            Text("You fully settled up in all groups", fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                color = Color(0xFF00C896), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f))
+            Text(
+                "You fully settled up in all groups",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF00C896),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
 
 @Composable
 private fun GroupBalanceRow(
-    balance     : Balance,
+    balance: Balance,
     showDateRail: Boolean,
-    onClick     : (String?) -> Unit,
+    onClick: (String?) -> Unit,
 ) {
-    val isOwed    = balance.amount > 0
+    val isOwed = balance.amount > 0
     val isSettled = balance.amount == 0.0
-    val balanceColor = when { isSettled -> TextTertiary; isOwed -> Color(0xFF00C896); else -> Color(0xFFF87171) }
-    val balanceLabel = when { isSettled -> "settled up"; isOwed -> "you lent"; else -> "you owe" }
-    val displayAmount = if (isSettled) "" else MoneyUtils.format(Math.abs(balance.amount), balance.currency)
+    val balanceColor = when {
+        isSettled -> TextTertiary; isOwed -> Color(0xFF00C896); else -> Color(0xFFF87171)
+    }
+    val balanceLabel = when {
+        isSettled -> "settled up"; isOwed -> "you lent"; else -> "you owe"
+    }
+    val displayAmount =
+        if (isSettled) "" else MoneyUtils.format(Math.abs(balance.amount), balance.currency)
 
     val (monthAbbr, dayNum) = remember(balance.groupLastActivity) {
         if (balance.groupLastActivity.isNullOrBlank()) "—" to "—"
         else try {
-            val dt = LocalDateTime.parse(balance.groupLastActivity, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            val dt = LocalDateTime.parse(
+                balance.groupLastActivity,
+                DateTimeFormatter.ISO_LOCAL_DATE_TIME
+            )
             dt.format(DateTimeFormatter.ofPattern("MMM")) to dt.dayOfMonth.toString()
-        } catch (e: Exception) { "—" to "—" }
+        } catch (e: Exception) {
+            "—" to "—"
+        }
     }
 
     val boxColor = remember(balance.groupName) {
@@ -1666,38 +2089,58 @@ private fun GroupBalanceRow(
     }
 
     Row(
-        modifier          = Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick(balance.groupId) }
             .padding(start = Spacing.lg, end = Spacing.lg, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(24.dp)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(24.dp)
+        ) {
             if (showDateRail) {
-                Text(monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center)
-                Text(dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center)
+                Text(
+                    monthAbbr, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF), textAlign = TextAlign.Center
+                )
+                Text(
+                    dayNum, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE8ECF2), textAlign = TextAlign.Center
+                )
             }
         }
         Spacer(Modifier.width(10.dp))
         Row(
-            modifier          = Modifier
+            modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF151A21))
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(contentAlignment = Alignment.Center,
-                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)).background(boxColor)) {
-                Text(balance.groupName?.firstOrNull()?.uppercaseChar()?.toString() ?: "G",
-                    fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(boxColor)
+            ) {
+                Text(
+                    balance.groupName?.firstOrNull()?.uppercaseChar()?.toString() ?: "G",
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White
+                )
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(balance.groupName ?: "Group", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFE8ECF2), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    balance.groupName ?: "Group",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFE8ECF2),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text("in group", fontSize = 12.sp, color = Color(0xFF9AA3AF))
             }
             if (isSettled) {
@@ -1705,7 +2148,12 @@ private fun GroupBalanceRow(
             } else {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(balanceLabel, fontSize = 10.sp, color = Color(0xFF9AA3AF))
-                    Text(displayAmount, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = balanceColor)
+                    Text(
+                        displayAmount,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = balanceColor
+                    )
                 }
             }
         }
@@ -1717,11 +2165,11 @@ private fun GroupBalanceRow(
 @Composable
 private fun PlaceholderLinkBanner(
     friendName: String,
-    onLink    : () -> Unit,
-    modifier  : Modifier = Modifier,
+    onLink: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier          = modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.xl))
             .background(Surface2)
@@ -1732,10 +2180,14 @@ private fun PlaceholderLinkBanner(
         Text("🔗", fontSize = 20.sp)
         Spacer(Modifier.width(Spacing.sm))
         Column(modifier = Modifier.weight(1f)) {
-            Text("Link $friendName to a FairShare friend", fontSize = 14.sp,
-                fontWeight = FontWeight.Medium, color = TextPrimary)
-            Text("Tap to connect this placeholder to a real account",
-                fontSize = 12.sp, color = TextSecondary)
+            Text(
+                "Link $friendName to a FairShare friend", fontSize = 14.sp,
+                fontWeight = FontWeight.Medium, color = TextPrimary
+            )
+            Text(
+                "Tap to connect this placeholder to a real account",
+                fontSize = 12.sp, color = TextSecondary
+            )
         }
         Text("→", fontSize = 16.sp, color = Green400, fontWeight = FontWeight.SemiBold)
     }
@@ -1747,41 +2199,66 @@ private fun PlaceholderLinkBanner(
 @Composable
 fun FriendLinkSheet(
     friendName: String,
-    friends   : List<com.prathik.fairshare.domain.model.Friend>,
-    onLink    : (friendId: String) -> Unit,
-    onDismiss : () -> Unit,
+    friends: List<com.prathik.fairshare.domain.model.Friend>,
+    onLink: (friendId: String) -> Unit,
+    onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor   = Surface2,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Surface2,
     ) {
         Column(modifier = Modifier.padding(bottom = 32.dp)) {
-            Text("Who is $friendName on FairShare?", fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                color = TextPrimary, modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md))
-            Text("Link their expenses to a real account.", fontSize = 13.sp, color = TextSecondary,
-                modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md))
+            Text(
+                "Who is $friendName on FairShare?",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)
+            )
+            Text(
+                "Link their expenses to a real account.", fontSize = 13.sp, color = TextSecondary,
+                modifier = Modifier.padding(
+                    start = Spacing.lg,
+                    end = Spacing.lg,
+                    bottom = Spacing.md
+                )
+            )
             HorizontalDivider(color = Surface3, thickness = 0.5.dp)
             if (friends.isEmpty()) {
-                Text("No FairShare friends found.", fontSize = 14.sp, color = TextTertiary,
-                    modifier = Modifier.padding(Spacing.lg))
+                Text(
+                    "No FairShare friends found.", fontSize = 14.sp, color = TextTertiary,
+                    modifier = Modifier.padding(Spacing.lg)
+                )
             } else {
                 friends.forEach { friend ->
                     Row(
-                        modifier          = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .clickable { onLink(friend.id) }
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = friend.fullName, userId = friend.id, size = ComponentSize.avatarMd)
+                        FsAvatar(
+                            name = friend.fullName,
+                            userId = friend.id,
+                            size = ComponentSize.avatarMd
+                        )
                         Spacer(Modifier.width(Spacing.md))
-                        Text(friend.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                        Text(
+                            friend.fullName,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextPrimary
+                        )
                     }
                     HorizontalDivider(color = Surface3, thickness = 0.5.dp)
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onDismiss)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onDismiss)
                     .padding(horizontal = Spacing.lg, vertical = 16.dp)
             ) {
                 Text("Cancel", fontSize = 14.sp, color = TextTertiary)
@@ -1793,26 +2270,31 @@ fun FriendLinkSheet(
 // ── Timeline model ────────────────────────────────────────────────────────────
 
 sealed class FriendTimelineItem(val sortDate: String) {
-    data class GroupBalanceItem(val balance: Balance)      : FriendTimelineItem(balance.groupLastActivity ?: "")
-    data class DirectExpenseItem(val expense: Expense)     : FriendTimelineItem(expense.expenseDate)
-    data class SettlementItem(val settlement: Settlement)  : FriendTimelineItem(settlement.settlementDate)
-    data class FullySettledItem(val settlement: Settlement): FriendTimelineItem(settlement.settlementDate)
+    data class GroupBalanceItem(val balance: Balance) :
+        FriendTimelineItem(balance.groupLastActivity ?: "")
+
+    data class DirectExpenseItem(val expense: Expense) : FriendTimelineItem(expense.expenseDate)
+    data class SettlementItem(val settlement: Settlement) :
+        FriendTimelineItem(settlement.settlementDate)
+
+    data class FullySettledItem(val settlement: Settlement) :
+        FriendTimelineItem(settlement.settlementDate)
 }
 
 // ── Friend Empty State ────────────────────────────────────────────────────────
 
 @Composable
 private fun FriendEmptyState(
-    friendName       : String,
-    friendState      : FriendUiState,
-    onAddExpense     : () -> Unit,
+    friendName: String,
+    friendState: FriendUiState,
+    onAddExpense: () -> Unit,
     onNavigateToGroup: () -> Unit,
 ) {
     val isSettled = friendState == FriendUiState.SETTLED_WITH_HISTORY
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier            = Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Spacing.xl)
             .padding(top = 40.dp),
@@ -1820,7 +2302,7 @@ private fun FriendEmptyState(
         // Icon box
         Box(
             contentAlignment = Alignment.Center,
-            modifier         = Modifier
+            modifier = Modifier
                 .size(80.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(Color(0xFF151A21)),
@@ -1831,21 +2313,21 @@ private fun FriendEmptyState(
         Spacer(Modifier.height(Spacing.xl))
 
         Text(
-            text       = if (isSettled) "All settled with ${friendName.ifBlank { "your friend" }} 🎉"
+            text = if (isSettled) "All settled with ${friendName.ifBlank { "your friend" }} 🎉"
             else "You and ${friendName.ifBlank { "your friend" }} are all set",
-            fontSize   = 18.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
-            color      = Color(0xFFE8ECF2),
-            textAlign  = TextAlign.Center,
+            color = Color(0xFFE8ECF2),
+            textAlign = TextAlign.Center,
         )
 
         Spacer(Modifier.height(Spacing.sm))
 
         Text(
-            text      = if (isSettled) "No outstanding balances"
+            text = if (isSettled) "No outstanding balances"
             else "Split your first expense to start tracking\nwho owes who",
-            fontSize  = 14.sp,
-            color     = Color(0xFF9AA3AF),
+            fontSize = 14.sp,
+            color = Color(0xFF9AA3AF),
             textAlign = TextAlign.Center,
         )
 
@@ -1855,36 +2337,40 @@ private fun FriendEmptyState(
             // View past expenses — dark secondary button
             Box(
                 contentAlignment = Alignment.Center,
-                modifier         = Modifier
+                modifier = Modifier
                     .clip(RoundedCornerShape(Radius.full))
                     .background(Color(0xFF151A21))
                     .clickable { }
                     .padding(horizontal = 24.dp, vertical = 12.dp),
             ) {
-                Text("View past expenses", fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold, color = Color(0xFFE8ECF2))
+                Text(
+                    "View past expenses", fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold, color = Color(0xFFE8ECF2)
+                )
             }
         } else {
             // Add first expense — green primary
             Box(
                 contentAlignment = Alignment.Center,
-                modifier         = Modifier
+                modifier = Modifier
                     .clip(RoundedCornerShape(Radius.full))
                     .background(Color(0xFF00C896))
                     .clickable { onAddExpense() }
                     .padding(horizontal = 32.dp, vertical = 14.dp),
             ) {
-                Text("Add your first expense", fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold, color = Color.Black)
+                Text(
+                    "Add your first expense", fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold, color = Color.Black
+                )
             }
 
             Spacer(Modifier.height(Spacing.lg))
 
             Text(
-                text      = "Or add to a group together",
-                fontSize  = 14.sp,
-                color     = Color(0xFF9AA3AF),
-                modifier  = Modifier.clickable { onNavigateToGroup() },
+                text = "Or add to a group together",
+                fontSize = 14.sp,
+                color = Color(0xFF9AA3AF),
+                modifier = Modifier.clickable { onNavigateToGroup() },
             )
         }
 
@@ -1897,49 +2383,53 @@ private fun FriendEmptyState(
 private fun String.toMonthHeader(): String = try {
     LocalDateTime.parse(this, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
         .format(DateTimeFormatter.ofPattern("MMMM yyyy"))
-} catch (e: Exception) { "Earlier" }
+} catch (e: Exception) {
+    "Earlier"
+}
 
 private fun String.toDayKey(): String = try {
     LocalDateTime.parse(this, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
         .format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-} catch (e: Exception) { this }
+} catch (e: Exception) {
+    this
+}
 
 private fun categoryEmoji(category: ExpenseCategory?): String = when (category) {
-    ExpenseCategory.GAMES        -> "🎮"
-    ExpenseCategory.MOVIES       -> "🎬"
-    ExpenseCategory.MUSIC        -> "🎵"
-    ExpenseCategory.SPORTS       -> "⚽"
-    ExpenseCategory.DINING_OUT   -> "🍽️"
-    ExpenseCategory.GROCERIES    -> "🛒"
-    ExpenseCategory.LIQUOR       -> "🍺"
-    ExpenseCategory.ELECTRONICS  -> "📱"
-    ExpenseCategory.FURNITURE    -> "🛋️"
+    ExpenseCategory.GAMES -> "🎮"
+    ExpenseCategory.MOVIES -> "🎬"
+    ExpenseCategory.MUSIC -> "🎵"
+    ExpenseCategory.SPORTS -> "⚽"
+    ExpenseCategory.DINING_OUT -> "🍽️"
+    ExpenseCategory.GROCERIES -> "🛒"
+    ExpenseCategory.LIQUOR -> "🍺"
+    ExpenseCategory.ELECTRONICS -> "📱"
+    ExpenseCategory.FURNITURE -> "🛋️"
     ExpenseCategory.HOUSEHOLD_SUPPLIES -> "🧹"
-    ExpenseCategory.MAINTENANCE  -> "🔧"
-    ExpenseCategory.MORTGAGE     -> "🏦"
-    ExpenseCategory.PETS         -> "🐾"
-    ExpenseCategory.RENT         -> "🏠"
-    ExpenseCategory.SERVICES     -> "🛠️"
-    ExpenseCategory.CHILDCARE    -> "👶"
-    ExpenseCategory.CLOTHING     -> "👕"
-    ExpenseCategory.EDUCATION    -> "📚"
-    ExpenseCategory.GIFTS        -> "🎁"
-    ExpenseCategory.INSURANCE    -> "🛡️"
-    ExpenseCategory.MEDICAL      -> "💊"
-    ExpenseCategory.TAXES        -> "🧾"
-    ExpenseCategory.BICYCLE      -> "🚲"
-    ExpenseCategory.BUS_TRAIN    -> "🚌"
-    ExpenseCategory.CAR          -> "🚗"
-    ExpenseCategory.GAS_FUEL     -> "⛽"
-    ExpenseCategory.HOTEL        -> "🏨"
-    ExpenseCategory.PARKING      -> "🅿️"
-    ExpenseCategory.PLANE        -> "✈️"
-    ExpenseCategory.TAXI         -> "🚕"
-    ExpenseCategory.CLEANING     -> "🧽"
-    ExpenseCategory.ELECTRICITY  -> "⚡"
-    ExpenseCategory.HEAT_GAS     -> "🔥"
-    ExpenseCategory.TRASH        -> "🗑️"
+    ExpenseCategory.MAINTENANCE -> "🔧"
+    ExpenseCategory.MORTGAGE -> "🏦"
+    ExpenseCategory.PETS -> "🐾"
+    ExpenseCategory.RENT -> "🏠"
+    ExpenseCategory.SERVICES -> "🛠️"
+    ExpenseCategory.CHILDCARE -> "👶"
+    ExpenseCategory.CLOTHING -> "👕"
+    ExpenseCategory.EDUCATION -> "📚"
+    ExpenseCategory.GIFTS -> "🎁"
+    ExpenseCategory.INSURANCE -> "🛡️"
+    ExpenseCategory.MEDICAL -> "💊"
+    ExpenseCategory.TAXES -> "🧾"
+    ExpenseCategory.BICYCLE -> "🚲"
+    ExpenseCategory.BUS_TRAIN -> "🚌"
+    ExpenseCategory.CAR -> "🚗"
+    ExpenseCategory.GAS_FUEL -> "⛽"
+    ExpenseCategory.HOTEL -> "🏨"
+    ExpenseCategory.PARKING -> "🅿️"
+    ExpenseCategory.PLANE -> "✈️"
+    ExpenseCategory.TAXI -> "🚕"
+    ExpenseCategory.CLEANING -> "🧽"
+    ExpenseCategory.ELECTRICITY -> "⚡"
+    ExpenseCategory.HEAT_GAS -> "🔥"
+    ExpenseCategory.TRASH -> "🗑️"
     ExpenseCategory.TV_PHONE_INTERNET -> "📺"
-    ExpenseCategory.WATER        -> "💧"
-    else                         -> "💰"
+    ExpenseCategory.WATER -> "💧"
+    else -> "💰"
 }

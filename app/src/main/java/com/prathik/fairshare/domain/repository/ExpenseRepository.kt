@@ -134,17 +134,25 @@ interface ExpenseRepository {
     suspend fun deleteLocalExpense(localId: String)
 
     /**
-     * Copy the [otherUserId] from the local placeholder ([fromId]) to the
-     * server-confirmed expense ([toId]). Called by SyncWorker after a
-     * CREATE_EXPENSE sync so direct friend expenses remain visible in
-     * Friend Detail even before the next online refresh.
-     */
-    suspend fun propagateOtherUserId(fromId: String, toId: String)
-
-    /**
      * Update the [isDeleted] flag on a cached expense immediately when an
      * offline delete or restore is queued. Gives instant list-level feedback
      * without waiting for SyncWorker to reach the backend.
      */
     suspend fun updateLocalDeletedStatus(expenseId: String, isDeleted: Boolean)
+
+    /**
+     * Read-only Room lookup — never hits the network.
+     * Returns null if the expense is not cached locally.
+     * Used for optimistic balance calculation from pending operations.
+     */
+    suspend fun getCachedExpense(expenseId: String): com.prathik.fairshare.domain.model.Expense?
+
+    /** Returns the [otherUserId] of a cached direct expense, or null if not cached / not a direct expense. */
+    suspend fun getCachedDirectOtherUserId(expenseId: String): String?
+
+    /**
+     * Copy the [otherUserId] from the local placeholder ([fromId]) to the
+     * server-confirmed expense ([toId]).
+     */
+    suspend fun propagateOtherUserId(fromId: String, toId: String)
 }

@@ -18,6 +18,7 @@ import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import com.prathik.fairshare.data.sync.PendingOperationRepository
+import com.prathik.fairshare.domain.repository.ExpenseRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,14 +29,15 @@ import javax.inject.Inject
 
 @HiltViewModel
 class GroupDetailViewModel @Inject constructor(
-    private val getGroupUseCase         : GetGroupUseCase,
-    private val getGroupExpensesUseCase : GetGroupExpensesUseCase,
-    private val getGroupBalancesUseCase : GetGroupBalancesUseCase,
-    private val getGroupMembersUseCase  : GetGroupMembersUseCase,
-    private val groupRepository         : GroupRepository,
-    private val settlementRepository       : SettlementRepository,
-    private val pendingOperationRepository : PendingOperationRepository,
-    savedStateHandle                       : SavedStateHandle,
+    private val getGroupUseCase: GetGroupUseCase,
+    private val getGroupExpensesUseCase: GetGroupExpensesUseCase,
+    private val getGroupBalancesUseCase: GetGroupBalancesUseCase,
+    private val getGroupMembersUseCase: GetGroupMembersUseCase,
+    private val groupRepository: GroupRepository,
+    private val settlementRepository: SettlementRepository,
+    private val pendingOperationRepository: PendingOperationRepository,
+    private val expenseRepository: ExpenseRepository,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     val groupId: String = checkNotNull(savedStateHandle["groupId"])
@@ -66,6 +68,18 @@ class GroupDetailViewModel @Inject constructor(
         pendingOperationRepository.observePendingDeleteResourceIds()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    /** Optimistic yourBalance including pending expense changes. Null = use confirmed. */
+    private val _optimisticYourBalance = MutableStateFlow<Double?>(null)
+    val optimisticYourBalance: StateFlow<Double?> = _optimisticYourBalance.asStateFlow()
+
+    /** Currency of the optimistic balance; null when delta is not applied (unsafe/mixed). */
+    private val _optimisticBalanceCurrency = MutableStateFlow<String?>(null)
+    val optimisticBalanceCurrency: StateFlow<String?> = _optimisticBalanceCurrency.asStateFlow()
+
+    /** True when displayed balance reflects unsynced pending expense changes. */
+    private val _hasPendingBalanceSync = MutableStateFlow(false)
+    val hasPendingBalanceSync: StateFlow<Boolean> = _hasPendingBalanceSync.asStateFlow()
+
     private val _yourBalance = MutableStateFlow(0.0)
     val yourBalance: StateFlow<Double> = _yourBalance.asStateFlow()
 
@@ -78,7 +92,10 @@ class GroupDetailViewModel @Inject constructor(
     // at the same time as the 5 requests already in-flight from init { loadData() }.
     private var initialLoadDone = false
 
-    init { loadData() }
+    init {
+        loadData()
+        observeOptimisticBalance()
+    }
 
     fun loadData() {
         viewModelScope.launch {
@@ -87,11 +104,11 @@ class GroupDetailViewModel @Inject constructor(
             if (_expensesState.value !is ExpensesUiState.Success)
                 _expensesState.value = ExpensesUiState.Loading
 
-            val groupDeferred       = async { getGroupUseCase(groupId) }
-            val expensesDeferred    = async { getGroupExpensesUseCase(groupId) }
-            val balancesDeferred    = async { getGroupBalancesUseCase(groupId) }
+            val groupDeferred = async { getGroupUseCase(groupId) }
+            val expensesDeferred = async { getGroupExpensesUseCase(groupId) }
+            val balancesDeferred = async { getGroupBalancesUseCase(groupId) }
             val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
-            val membersDeferred     = async { getGroupMembersUseCase(groupId) }
+            val membersDeferred = async { getGroupMembersUseCase(groupId) }
 
             when (val result = groupDeferred.await()) {
                 is ApiResult.Success -> _groupState.value = GroupDetailUiState.Success(result.data)
@@ -99,6 +116,7 @@ class GroupDetailViewModel @Inject constructor(
                     if (_groupState.value !is GroupDetailUiState.Success)
                         _groupState.value = GroupDetailUiState.Error(result.message, true)
                 }
+
                 else -> {
                     if (_groupState.value !is GroupDetailUiState.Success)
                         _groupState.value = GroupDetailUiState.Error("Failed to load group.", false)
@@ -111,9 +129,11 @@ class GroupDetailViewModel @Inject constructor(
                     if (_expensesState.value !is ExpensesUiState.Success)
                         _expensesState.value = ExpensesUiState.Error(result.message, true)
                 }
+
                 else -> {
                     if (_expensesState.value !is ExpensesUiState.Success)
-                        _expensesState.value = ExpensesUiState.Error("Failed to load expenses.", false)
+                        _expensesState.value =
+                            ExpensesUiState.Error("Failed to load expenses.", false)
                 }
             }
 
@@ -128,6 +148,7 @@ class GroupDetailViewModel @Inject constructor(
                     _balances.value = result.data
                     _yourBalance.value = result.data.sumOf { it.amount }
                 }
+
                 else -> _balancesLoadFailed.value = true
             }
 
@@ -146,12 +167,13 @@ class GroupDetailViewModel @Inject constructor(
         // Do NOT skip on subsequent resumes — this ensures new expenses appear immediately
         // when returning from AddExpense without waiting for another loadData() cycle.
         if (_groupState.value is GroupDetailUiState.Loading &&
-            _expensesState.value is ExpensesUiState.Loading) return
+            _expensesState.value is ExpensesUiState.Loading
+        ) return
 
         viewModelScope.launch {
-            val expensesDeferred    = async { getGroupExpensesUseCase(groupId) }
+            val expensesDeferred = async { getGroupExpensesUseCase(groupId) }
             val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
-            val balancesDeferred    = async { getGroupBalancesUseCase(groupId) }
+            val balancesDeferred = async { getGroupBalancesUseCase(groupId) }
 
             when (val result = expensesDeferred.await()) {
                 is ApiResult.Success -> _expensesState.value = ExpensesUiState.Success(result.data)
@@ -167,13 +189,16 @@ class GroupDetailViewModel @Inject constructor(
                     _balances.value = result.data
                     _yourBalance.value = result.data.sumOf { it.amount }
                 }
+
                 else -> _balancesLoadFailed.value = true
             }
         }
     }
 
-    private val _settlementActionState = MutableStateFlow<SettlementActionState>(SettlementActionState.Idle)
-    val settlementActionState: StateFlow<SettlementActionState> = _settlementActionState.asStateFlow()
+    private val _settlementActionState =
+        MutableStateFlow<SettlementActionState>(SettlementActionState.Idle)
+    val settlementActionState: StateFlow<SettlementActionState> =
+        _settlementActionState.asStateFlow()
 
     fun cancelSettlement(settlementId: String) {
         viewModelScope.launch {
@@ -187,8 +212,10 @@ class GroupDetailViewModel @Inject constructor(
                     refreshExpenses()
                     _settlementActionState.value = SettlementActionState.Cancelled
                 }
+
                 is ApiResult.NetworkError -> _settlementActionState.value =
                     SettlementActionState.Error("No internet connection.")
+
                 else -> _settlementActionState.value =
                     SettlementActionState.Error("Failed to cancel settlement.")
             }
@@ -206,8 +233,10 @@ class GroupDetailViewModel @Inject constructor(
                     refreshExpenses()
                     _settlementActionState.value = SettlementActionState.Restored
                 }
+
                 is ApiResult.NetworkError -> _settlementActionState.value =
                     SettlementActionState.Error("No internet connection.")
+
                 else -> _settlementActionState.value =
                     SettlementActionState.Error("Failed to restore settlement.")
             }
@@ -216,7 +245,72 @@ class GroupDetailViewModel @Inject constructor(
 
     /** @deprecated Use cancelSettlement() */
     fun deleteSettlement(settlementId: String) = cancelSettlement(settlementId)
-    fun resetSettlementActionState() { _settlementActionState.value = SettlementActionState.Idle }
+    fun resetSettlementActionState() {
+        _settlementActionState.value = SettlementActionState.Idle
+    }
+
+    // ── Optimistic balance (Wave 2D-Balance Optimism) ─────────────────────────
+
+    private fun observeOptimisticBalance() {
+        viewModelScope.launch {
+            pendingOperationRepository.observeActivePendingExpenseOps()
+                .collect { ops ->
+                    val confirmedBalance = _yourBalance.value
+
+                    // Filter to ops whose cached expense belongs to THIS group.
+                    val relevantOps = ops.filter { op ->
+                        val resourceId =
+                            op.localResourceId ?: op.serverResourceId ?: return@filter false
+                        val expense =
+                            expenseRepository.getCachedExpense(resourceId) ?: return@filter false
+                        expense.groupId == groupId
+                    }
+
+                    if (relevantOps.isEmpty()) {
+                        val wasSync = _hasPendingBalanceSync.value
+                        _optimisticYourBalance.value = null
+                        _optimisticBalanceCurrency.value = null
+                        _hasPendingBalanceSync.value = false
+                        // Pending ops cleared → refresh immediately
+                        if (wasSync) refreshExpenses()
+                        return@collect
+                    }
+                    _hasPendingBalanceSync.value = true   // scoped: only this group's ops
+
+                    // Currency safety: only apply delta when all pending expenses
+                    // are in the same currency as the confirmed balance display.
+                    val deltaExpenses = relevantOps.mapNotNull { op ->
+                        val resourceId = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
+                        expenseRepository.getCachedExpense(resourceId)
+                    }
+                    val pendingCurrencies = deltaExpenses.map { it.currency }.toSet()
+                    val displayCurrency = _balances.value.firstOrNull()?.currency
+                        ?: pendingCurrencies.singleOrNull()
+                        ?: "USD"
+                    val currencySafe = pendingCurrencies.size == 1 &&
+                            pendingCurrencies.single() == displayCurrency
+
+                    if (!currencySafe) {
+                        _optimisticYourBalance.value = null
+                        _optimisticBalanceCurrency.value = null
+                    } else {
+                        var delta = 0.0
+                        for (op in relevantOps) {
+                            val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
+                            val expense = expenseRepository.getCachedExpense(resourceId) ?: continue
+                            when (op.operationType) {
+                                "CREATE_EXPENSE"  -> delta += expense.yourBalance
+                                "DELETE_EXPENSE"  -> delta -= expense.yourBalance
+                                "RESTORE_EXPENSE" -> delta += expense.yourBalance
+                                // UPDATE: show Pending sync but skip delta (unsafe)
+                            }
+                        }
+                        _optimisticYourBalance.value = confirmedBalance + delta
+                        _optimisticBalanceCurrency.value = displayCurrency
+                    }
+                }
+        }
+    }
 }
 
 sealed class GroupDetailUiState {
@@ -237,11 +331,13 @@ sealed class TimelineItem(val date: String) {
 }
 
 sealed class SettlementActionState {
-    object Idle      : SettlementActionState()
-    object Loading   : SettlementActionState()
+    object Idle : SettlementActionState()
+    object Loading : SettlementActionState()
     object Cancelled : SettlementActionState()
-    object Restored  : SettlementActionState()
+    object Restored : SettlementActionState()
+
     /** @deprecated kept for backward compat */
-    object Deleted   : SettlementActionState()
+    object Deleted : SettlementActionState()
     data class Error(val message: String) : SettlementActionState()
+
 }

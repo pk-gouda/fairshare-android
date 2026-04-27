@@ -1,5 +1,8 @@
 package com.prathik.fairshare.data.repository.impl
 
+import com.prathik.fairshare.data.local.BalanceDao
+import com.prathik.fairshare.data.local.BalanceEntity
+import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.local.GroupDao
 import com.prathik.fairshare.data.local.GroupMemberDao
 import com.prathik.fairshare.data.local.GroupMemberEntity
@@ -31,6 +34,8 @@ class GroupRepositoryImpl @Inject constructor(
     private val groupService   : GroupApiService,
     private val groupDao       : GroupDao,
     private val groupMemberDao : GroupMemberDao,
+    private val balanceDao     : BalanceDao,
+    private val tokenStore     : EncryptedTokenStore,
 ) : GroupRepository {
 
     override suspend fun getMyGroups(): ApiResult<List<Group>> {
@@ -160,9 +165,50 @@ class GroupRepositoryImpl @Inject constructor(
         safeApiCall { groupService.getDeletedGroups() }
             .mapSuccess { list -> list.map { it.toDomainDirect() } }
 
-    override suspend fun getGroupBalances(groupId: String): ApiResult<List<Balance>> =
-        safeApiCall { groupService.getGroupBalances(groupId) }
-            .mapSuccess { list -> list.map { it.toDomain() } }
+    override suspend fun getGroupBalances(groupId: String): ApiResult<List<Balance>> {
+        val result = safeApiCall { groupService.getGroupBalances(groupId) }
+        if (result is ApiResult.Success) {
+            // Cache the fresh rows so GroupDetail balance is readable after app restart offline.
+            val userId = tokenStore.getUserId()
+            if (userId != null) {
+                // Replace stale group balance rows for this group.
+                val fresh = result.data.map { r ->
+                    BalanceEntity(
+                        userId        = userId,
+                        otherUserId   = r.otherUserId,
+                        otherUserName = r.otherUserName,
+                        amount        = r.amount,
+                        currency      = r.currency,
+                        groupId       = groupId,
+                        groupName     = r.groupName,
+                    )
+                }
+                // Delete then insert for this group only — preserves other groups' cached rows.
+                balanceDao.deleteByGroupId(userId, groupId)
+                balanceDao.insertAll(fresh)
+            }
+            return result.mapSuccess { list -> list.map { it.toDomain() } }
+        }
+        // Network failed — return cached group balance rows.
+        val userId = tokenStore.getUserId()
+        if (userId != null) {
+            val cached = balanceDao.getByGroupId(userId, groupId)
+            if (cached.isNotEmpty()) return ApiResult.Success(cached.map { it.toDomain() })
+        }
+        return result.mapSuccess { list -> list.map { it.toDomain() } }
+    }
+
+    private fun com.prathik.fairshare.data.local.BalanceEntity.toDomain() =
+        com.prathik.fairshare.domain.model.Balance(
+            userId            = userId,
+            otherUserId       = otherUserId,
+            otherUserName     = otherUserName,
+            amount            = amount,
+            currency          = currency,
+            groupId           = groupId.ifEmpty { null },
+            groupName         = groupName,
+            groupLastActivity = null,
+        )
 
     override suspend fun getAllGroupBalances(groupId: String): ApiResult<List<Balance>> =
         safeApiCall { groupService.getAllGroupBalances(groupId) }
