@@ -107,8 +107,11 @@ fun FriendsScreen(
     val isLoading        by viewModel.isLoading.collectAsState()
     val owedToYou        by viewModel.owedToYou.collectAsState()
     val youOwe           by viewModel.youOwe.collectAsState()
-    val balanceMap       by viewModel.balanceMap.collectAsState()
-    val balanceEntries   by viewModel.balanceEntries.collectAsState()
+    val balanceMap               by viewModel.balanceMap.collectAsState()
+    val optimisticFriendBalanceMap by viewModel.optimisticFriendBalanceMap.collectAsState()
+    val friendsWithPendingSync   by viewModel.friendsWithPendingSync.collectAsState()
+    val effectiveSummary         by viewModel.effectiveSummary.collectAsState()
+    val balanceEntries           by viewModel.balanceEntries.collectAsState()
     val actionState      by viewModel.actionState.collectAsState()
     val searchQuery      by viewModel.searchQuery.collectAsState()
     val friends          by viewModel.friends.collectAsState()   // collect directly — triggers recomposition instantly
@@ -127,9 +130,16 @@ fun FriendsScreen(
         else list.filter { it.fullName.lowercase().contains(q) }
     }
 
-    val netBalance = owedToYou - youOwe
-    val hasAnyBalance = balanceMap.isNotEmpty()
-    val hasMultiCurrency = balanceEntries.size > 1
+    val effectiveOwedToYou = effectiveSummary?.owedToMe ?: owedToYou
+    val effectiveYouOwe    = effectiveSummary?.youOwe   ?: youOwe
+    val effectiveEntries   = effectiveSummary?.entries   ?: balanceEntries
+    val netBalance         = effectiveOwedToYou - effectiveYouOwe
+    // hasAnyBalance considers both confirmed and effective pending data.
+    val hasAnyBalance =
+        effectiveEntries.isNotEmpty() ||
+                balanceMap.isNotEmpty() ||
+                optimisticFriendBalanceMap.isNotEmpty()
+    val hasMultiCurrency = effectiveEntries.size > 1
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -259,7 +269,7 @@ fun FriendsScreen(
                     val hasFriends = filteredFriends.isNotEmpty() || nonActiveFriends.isNotEmpty()
                     if (hasFriends) {
                         FriendsNetBalanceBar(
-                            entries       = balanceEntries,
+                            entries       = effectiveEntries,
                             hasAnyBalance = hasAnyBalance,
                         )
                     }
@@ -297,8 +307,8 @@ fun FriendsScreen(
                 EmptyFriendsState(onAddFriend = { showSheet = true })
             } else {
                 // Compute total owed / owed-to-me for ring fractions
-                val totalOwedMe = owedToYou.takeIf { it > 0 } ?: 1.0
-                val totalOwed   = youOwe.takeIf { it > 0 } ?: 1.0
+                val totalOwedMe = effectiveOwedToYou.takeIf { it > 0 } ?: 1.0
+                val totalOwed   = effectiveYouOwe.takeIf { it > 0 } ?: 1.0
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -312,7 +322,11 @@ fun FriendsScreen(
                 ) {
                     // ── Active friends ────────────────────────────────────────
                     items(filteredFriends, key = { it.id }) { friend ->
-                        val entries = balanceMap[friend.id] ?: emptyList()
+                        val isPendingFriend = friend.id in friendsWithPendingSync
+                        val entries = if (isPendingFriend)
+                            optimisticFriendBalanceMap[friend.id] ?: balanceMap[friend.id] ?: emptyList()
+                        else
+                            balanceMap[friend.id] ?: emptyList()
                         val netAmt = entries.sumOf { it.first }
                         val fraction: Float = when {
                             entries.isEmpty() || netAmt == 0.0 -> 0f
@@ -329,7 +343,13 @@ fun FriendsScreen(
 
                     // ── Pending / Placeholder friends ─────────────────────────
                     items(nonActiveFriends, key = { "pending_${it.id}" }) { friend ->
-                        val pendingEntries = balanceMap[friend.id] ?: emptyList()
+                        // Use optimistic entries first so pending Placeholder balances
+                        // show immediately without requiring a refresh.
+                        // Note: optimisticFriendBalanceMap only reflects DIRECT friend
+                        // expense ops. Group expense impacts on friend rows require
+                        // payer/split data and will be addressed in a future patch.
+                        val pendingEntries =
+                            optimisticFriendBalanceMap[friend.id] ?: balanceMap[friend.id] ?: emptyList()
                         val pendingAmt = pendingEntries.sumOf { it.first }
                         val pendingCur = pendingEntries.maxByOrNull { Math.abs(it.first) }?.second ?: "USD"
                         PendingFriendCard(

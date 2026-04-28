@@ -9,6 +9,7 @@ import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.repository.BalanceRepository
+import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.repository.ImportRepository
@@ -159,18 +160,9 @@ class FriendDetailViewModel @Inject constructor(
                 else -> Unit
             }
 
-            // Only direct (non-group) expenses in the timeline.
-            // When offline and no cache exists, keep whatever state was previously
-            // loaded (do not overwrite a successful prior state with empty list).
-            val directResult = directDeferred.await()
-            val directExpenses = when (directResult) {
-                is ApiResult.Success -> directResult.data
-                else -> {
-                    // Network failed — preserve existing data if already loaded.
-                    (_expensesState.value as? FriendExpensesState.Success)?.expenses
-                        ?: emptyList()
-                }
-            }
+            // Only direct (non-group) expenses in the timeline
+            val directExpenses =
+                (directDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
 
             // Settlement history with this friend
             when (val result = settlementsDeferred.await()) {
@@ -211,12 +203,12 @@ class FriendDetailViewModel @Inject constructor(
                 else -> Unit
             }
 
-            // Refresh direct expenses — on network failure keep existing loaded state.
+            // Refresh direct expenses only
             when (val result = expenseRepository.getDirectExpensesWithFriend(friendId)) {
                 is ApiResult.Success -> _expensesState.value = FriendExpensesState.Success(
                     result.data.sortedByDescending { it.expenseDate }
                 )
-                // Do not touch _expensesState on failure; existing data stays visible.
+
                 else -> Unit
             }
 
@@ -420,6 +412,11 @@ class FriendDetailViewModel @Inject constructor(
                         _optimisticNetBalance.value = null
                         _optimisticBalanceCurrency.value = null
                     } else {
+                        // Load UPDATE impact rows from Option A table.
+                        val updateImpacts: Map<String, PendingBalanceImpactEntity> =
+                            pendingOperationRepository.getImpactsForFriend(friendId)
+                                .associateBy { it.operationId }
+
                         var delta = 0.0
                         for (op in relevantOps) {
                             val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
@@ -428,7 +425,10 @@ class FriendDetailViewModel @Inject constructor(
                                 "CREATE_EXPENSE"  -> delta += expense.yourBalance
                                 "DELETE_EXPENSE"  -> delta -= expense.yourBalance
                                 "RESTORE_EXPENSE" -> delta += expense.yourBalance
-                                // UPDATE: show Pending sync but skip delta (unsafe)
+                                "UPDATE_EXPENSE"  -> {
+                                    val impact = updateImpacts[op.operationId]
+                                    if (impact != null) delta += impact.delta
+                                }
                             }
                         }
                         _optimisticNetBalance.value = confirmedBalance + delta

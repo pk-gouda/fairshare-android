@@ -11,6 +11,9 @@ import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.ExpenseRepository
+import com.prathik.fairshare.data.local.PendingOperationEntity
+import com.prathik.fairshare.domain.model.Expense
+import com.prathik.fairshare.domain.usecase.balance.EffectiveBalanceCalculator
 import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -39,7 +42,15 @@ class GroupsViewModel @Inject constructor(
     private val pendingOperationRepository  : PendingOperationRepository,
     private val expenseRepository           : ExpenseRepository,
     private val balanceRepository           : BalanceRepository,
+    private val effectiveCalculator         : EffectiveBalanceCalculator,
 ) : ViewModel() {
+
+    // ── Latest state for reactive recompute ───────────────────────────────
+    // Both loadData() and the ops collector update these, then call recomputeEffectiveBalances().
+    // This ensures effective summary is always current regardless of which updates first.
+    private var latestOps: List<PendingOperationEntity> = emptyList()
+    private var latestExpenseCache: Map<String, Expense> = emptyMap()
+    private var latestImpacts: Map<String, com.prathik.fairshare.data.local.PendingBalanceImpactEntity> = emptyMap()
 
     // ── Groups state ──────────────────────────────────────────────────────────
     private val _groupsState = MutableStateFlow<GroupsUiState>(GroupsUiState.Loading)
@@ -76,6 +87,13 @@ class GroupsViewModel @Inject constructor(
     /** Set of groupIds that have active pending expense ops. */
     private val _groupsWithPendingSync = MutableStateFlow<Set<String>>(emptySet())
     val groupsWithPendingSync: StateFlow<Set<String>> = _groupsWithPendingSync.asStateFlow()
+
+    /**
+     * Effective top-bar summary including pending deltas.
+     * Replaces confirmed balanceSummary on GroupsHome while ops are active.
+     */
+    private val _effectiveSummary = MutableStateFlow<BalanceSummary?>(null)
+    val effectiveSummary: StateFlow<BalanceSummary?> = _effectiveSummary.asStateFlow()
 
     init {
         loadData()
@@ -117,11 +135,17 @@ class GroupsViewModel @Inject constructor(
                         _groupBalanceMap.value = groupBalanceResults
                             .mapNotNull { (id, bal) -> bal?.let { id to it } }
                             .toMap()
+                        // Recompute effective group tile balances now that confirmed
+                        // group data is ready (may have arrived after pending ops).
+                        recomputeEffectiveBalances()
                     }
 
                     launch {
                         when (val result = getAllBalancesUseCase()) {
-                            is ApiResult.Success -> _balanceSummary.value = calculateSummary(result.data)
+                            is ApiResult.Success -> {
+                                _balanceSummary.value = calculateSummary(result.data)
+                                recomputeEffectiveBalances()
+                            }
                             else -> Unit
                         }
                     }
@@ -177,71 +201,68 @@ class GroupsViewModel @Inject constructor(
      * confirmed cached group balance for each affected group. This mirrors
      * GroupDetailViewModel but works across ALL groups for GroupsHome tiles.
      */
+
     private fun observeOptimisticGroupBalances() {
         viewModelScope.launch {
             pendingOperationRepository.observeActivePendingExpenseOps()
                 .collect { ops ->
-                    if (ops.isEmpty()) {
-                        _optimisticGroupBalanceMap.value = emptyMap()
-                        _groupsWithPendingSync.value = emptySet()
-                        return@collect
-                    }
-
-                    // Group relevant ops by groupId.
-                    val opsByGroup = mutableMapOf<String, MutableList<com.prathik.fairshare.data.local.PendingOperationEntity>>()
-                    for (op in ops) {
-                        val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
-                        val expense = expenseRepository.getCachedExpense(resourceId) ?: continue
-                        val gId = expense.groupId ?: continue   // skip direct expenses
-                        opsByGroup.getOrPut(gId) { mutableListOf() }.add(op)
-                    }
-
-                    _groupsWithPendingSync.value = opsByGroup.keys.toSet()
-
-                    val result = mutableMapOf<String, List<Pair<Double, String>>>()
-                    for ((gId, groupOps) in opsByGroup) {
-                        val confirmedBase = balanceRepository.getCachedGroupBalance(gId) ?: continue
-
-                        val deltaExpenses = groupOps.mapNotNull { op ->
-                            val resourceId = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
-                            expenseRepository.getCachedExpense(resourceId)
-                        }
-                        val pendingCurrencies = deltaExpenses.map { it.currency }.toSet()
-                        val displayCurrency = pendingCurrencies.singleOrNull() ?: continue
-
-                        if (pendingCurrencies.size != 1) continue   // mixed currencies — skip
-
-                        val updateImpacts: Map<String, PendingBalanceImpactEntity> =
-                            pendingOperationRepository.getImpactsForGroup(gId)
-                                .filter { it.currency == displayCurrency }
-                                .associateBy { it.operationId }
-
-                        var delta = 0.0
-                        for (op in groupOps) {
-                            val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
-                            val expense = expenseRepository.getCachedExpense(resourceId) ?: continue
-                            if (expense.currency != displayCurrency) continue
-                            when (op.operationType) {
-                                "CREATE_EXPENSE"  -> delta += expense.yourBalance
-                                "DELETE_EXPENSE"  -> delta -= expense.yourBalance
-                                "RESTORE_EXPENSE" -> delta += expense.yourBalance
-                                "UPDATE_EXPENSE"  -> {
-                                    val impact = updateImpacts[op.operationId]
-                                    if (impact != null) delta += impact.delta
-                                }
-                            }
-                        }
-                        val effective = confirmedBase + delta
-                        // Store result even when effective == 0.0.
-                        // An empty list signals 'optimistically settled' to GroupsHomeScreen,
-                        // preventing it from falling back to the old confirmed balance.
-                        result[gId] = if (effective != 0.0)
-                            listOf(Pair(effective, displayCurrency))
-                        else
-                            emptyList()   // all-deleted: settled, not 'no data'
-                    }
-                    _optimisticGroupBalanceMap.value = result
+                    // Prefetch all expense data for this op batch.
+                    latestExpenseCache = ops.mapNotNull { op ->
+                        val r = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
+                        expenseRepository.getCachedExpense(r)?.let { r to it }
+                    }.toMap()
+                    latestImpacts = pendingOperationRepository.getAllImpacts()
+                        .associateBy { it.operationId }
+                    latestOps = ops
+                    recomputeEffectiveBalances()
                 }
+        }
+    }
+
+    /**
+     * Single recompute entry point called by BOTH loadData() (when confirmed data refreshes)
+     * AND the ops collector (when pending ops change). Guarantees the effective overlay is
+     * always consistent regardless of which data arrives first.
+     */
+    private suspend fun recomputeEffectiveBalances() {
+        val ops     = latestOps
+        val cache   = latestExpenseCache
+        val impacts = latestImpacts
+
+        if (ops.isEmpty()) {
+            _optimisticGroupBalanceMap.value = emptyMap()
+            _groupsWithPendingSync.value = emptySet()
+            _effectiveSummary.value = null
+            return
+        }
+
+        // ── Per-group tile effective balances ─────────────────────────────────
+        val confirmedGroupBase: Map<String, Pair<Double, String>> = _groupBalanceMap.value
+            .mapNotNull { (gId, entries) ->
+                val pair = entries.maxByOrNull { kotlin.math.abs(it.first) } ?: return@mapNotNull null
+                gId to Pair(pair.first, pair.second)
+            }.toMap()
+
+        val effectiveGroups = effectiveCalculator.effectiveGroupBalances(
+            confirmedGroupBase = confirmedGroupBase,
+            ops                = ops,
+            expenseCache       = cache,
+            impacts            = impacts,
+        )
+        _groupsWithPendingSync.value = effectiveGroups.keys
+        _optimisticGroupBalanceMap.value = effectiveGroups
+            .mapValues { (_, pair) -> listOf(pair) }
+
+        // ── Global top-bar effective summary ──────────────────────────────────
+        val confirmedEntries = _balanceSummary.value?.entries ?: return
+        val globalResult = effectiveCalculator.globalEffectiveSummary(
+            confirmedEntries = confirmedEntries,
+            ops              = ops,
+            expenseCache     = cache,
+            impacts          = impacts,
+        )
+        _effectiveSummary.value = globalResult?.let {
+            BalanceSummary(owedToMe = it.owedToMe, youOwe = it.youOwe, entries = it.entries)
         }
     }
 }

@@ -298,8 +298,11 @@ fun GroupDetailScreen(
                         val groupUiState: GroupUiState = when {
                             expensesState is ExpensesUiState.Loading -> GroupUiState.NEW_GROUP // neutral while loading
                             group.memberCount <= 1                   -> GroupUiState.SOLO
+                            // Pending ops mean the user caused a change offline — show
+                            // ACTIVE_DEBT so the balance bar appears even if list is empty.
+                            hasPendingBalanceSync                    -> GroupUiState.ACTIVE_DEBT
                             !hasActivity                             -> GroupUiState.NEW_GROUP
-                            effectiveYourBalance == 0.0 && !balancesLoadFailed && !hasPendingBalanceSync -> GroupUiState.ALL_SETTLED
+                            effectiveYourBalance == 0.0 && !balancesLoadFailed -> GroupUiState.ALL_SETTLED
                             else                                     -> GroupUiState.ACTIVE_DEBT
                         }
 

@@ -41,24 +41,24 @@ class BalanceRepositoryImpl @Inject constructor(
     private suspend fun refreshBalances(userId: String?): ApiResult<List<Balance>> {
         val result = safeApiCall { balanceService.getAllBalances() }
         if (result is ApiResult.Success && userId != null) {
-            // UPSERT ONLY — no deleteByUserId.
-            // A broad delete wipes group-detail and friend-breakdown rows that
-            // getGroupBalances()/getBreakdownWithUser() cached independently.
-            // OnConflictStrategy.REPLACE handles updates on the composite PK.
             val rows = result.data.map { response ->
                 BalanceEntity(
-                    userId        = response.userId,
+                    userId        = userId,
                     otherUserId   = response.otherUserId,
                     otherUserName = response.otherUserName,
                     amount        = response.amount,
                     currency      = response.currency,
-                    groupId       = "",      // forced: ALL_BALANCES = total, never a group row
-                    groupName     = null,    // forced: no group association for total rows
+                    groupId       = "",    // forced: ALL_BALANCES = total, never a group row
+                    groupName     = null,  // forced: no group association for total rows
                     cacheScope    = BalanceEntity.CacheScope.ALL_BALANCES,
                 )
             }
+            // Delete stale ALL_BALANCES rows first — upsert alone leaves removed
+            // friends (e.g. Placeholder settled to zero) with stale cached rows.
+            // Scoped delete preserves FRIEND_NET / FRIEND_BREAKDOWN / GROUP_BALANCE.
+            balanceDao.deleteAllBalanceRows(userId)
             balanceDao.insertAll(rows)
-            android.util.Log.d("BalanceCache", "getAllBalances upserted ${rows.size} rows")
+            android.util.Log.d("BalanceCache", "getAllBalances replaced with ${rows.size} ALL_BALANCES rows")
         }
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }

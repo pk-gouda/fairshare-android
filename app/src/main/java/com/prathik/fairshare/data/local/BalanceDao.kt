@@ -49,6 +49,13 @@ interface BalanceDao {
     // ── Full-user operations (logout / cache clear only) ──────────────────────
 
     /**
+     * Delete only ALL_BALANCES scope rows before reinserting fresh backend data.
+     * Leaves FRIEND_NET, FRIEND_BREAKDOWN, and GROUP_BALANCE rows untouched.
+     */
+    @Query("DELETE FROM balances WHERE userId = :userId AND cacheScope = 'ALL_BALANCES'")
+    suspend fun deleteAllBalanceRows(userId: String)
+
+    /**
      * Delete all balance rows for this user across all scopes.
      * Use only for logout or a deliberate full cache reset — never for
      * per-screen refresh (that would re-introduce the double-count bug).

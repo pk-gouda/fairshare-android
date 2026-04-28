@@ -46,11 +46,22 @@ class ExpenseRepositoryImpl @Inject constructor(
             expenseDao.insertAll(entities)
             return ApiResult.Success(result.data.map { it.toDomain() })
         }
-        // Network failed — fall back to cache so the screen isn't empty
+        // Network failed — three-tier offline fallback:
+        // 1. Visible (non-deleted) rows → show them.
         val cached = expenseDao.getByGroupId(groupId)
         if (cached.isNotEmpty()) {
             return ApiResult.Success(cached.map { it.toDomain() })
         }
+        // 2. No visible rows but soft-deleted rows exist → all were deleted offline.
+        //    Return Success(emptyList()) so GroupDetail shows $0.00 Pending sync
+        //    rather than "No internet connection".
+        val anyRows = expenseDao.getByGroupIdIncludingDeleted(groupId)
+        if (anyRows.isNotEmpty()) {
+            android.util.Log.d("ExpenseCache",
+                "getGroupExpenses offline: ${anyRows.size} soft-deleted rows — returning empty list")
+            return ApiResult.Success(emptyList())
+        }
+        // 3. Truly nothing cached → surface the original network error.
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }
 

@@ -7,6 +7,12 @@ import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.friend.GetFriendsUseCase
+import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
+import com.prathik.fairshare.data.local.PendingOperationEntity
+import com.prathik.fairshare.data.sync.PendingOperationRepository
+import com.prathik.fairshare.domain.model.Expense
+import com.prathik.fairshare.domain.repository.ExpenseRepository
+import com.prathik.fairshare.domain.usecase.balance.EffectiveBalanceCalculator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,10 +23,18 @@ import com.prathik.fairshare.domain.model.BalanceCurrencyEntry
 
 @HiltViewModel
 class FriendsViewModel @Inject constructor(
-    private val getFriendsUseCase   : GetFriendsUseCase,
-    private val getAllBalancesUseCase: GetAllBalancesUseCase,
-    private val friendEventBus      : FriendEventBus,
+    private val getFriendsUseCase         : GetFriendsUseCase,
+    private val getAllBalancesUseCase      : GetAllBalancesUseCase,
+    private val friendEventBus            : FriendEventBus,
+    private val pendingOperationRepository: PendingOperationRepository,
+    private val expenseRepository         : ExpenseRepository,
+    private val effectiveCalculator       : EffectiveBalanceCalculator,
 ) : ViewModel() {
+
+    // ── Latest state for reactive recompute ───────────────────────────────
+    private var latestOps: List<PendingOperationEntity> = emptyList()
+    private var latestExpenseCache: Map<String, Expense> = emptyMap()
+    private var latestImpacts: Map<String, PendingBalanceImpactEntity> = emptyMap()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -43,6 +57,21 @@ class FriendsViewModel @Inject constructor(
     private val _youOwe = MutableStateFlow(0.0)
     val youOwe: StateFlow<Double> = _youOwe.asStateFlow()
 
+    /** Per-friend optimistic balances — friendId → effective entries including pending delta. */
+    private val _optimisticFriendBalanceMap =
+        MutableStateFlow<Map<String, List<Pair<Double, String>>>>(emptyMap())
+    val optimisticFriendBalanceMap: StateFlow<Map<String, List<Pair<Double, String>>>> =
+        _optimisticFriendBalanceMap.asStateFlow()
+
+    /** Friends that have at least one active pending expense op. */
+    private val _friendsWithPendingSync = MutableStateFlow<Set<String>>(emptySet())
+    val friendsWithPendingSync: StateFlow<Set<String>> = _friendsWithPendingSync.asStateFlow()
+
+    /** Global effective summary — null when no pending ops (fall back to confirmed). */
+    private val _effectiveSummary = MutableStateFlow<com.prathik.fairshare.ui.groups.BalanceSummary?>(null)
+    val effectiveSummary: StateFlow<com.prathik.fairshare.ui.groups.BalanceSummary?> =
+        _effectiveSummary.asStateFlow()
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -51,6 +80,7 @@ class FriendsViewModel @Inject constructor(
 
     init {
         loadData()
+        observeOptimisticFriendBalances()
         viewModelScope.launch {
             friendEventBus.friendAdded.collect { event ->
                 _friends.value = event.updatedList
@@ -95,6 +125,8 @@ class FriendsViewModel @Inject constructor(
                         }.filter { it.owedToMe > 0.0 || it.youOwe > 0.0 }
                         _owedToYou.value = balances.filter { it.amount > 0 }.sumOf { it.amount }
                         _youOwe.value    = balances.filter { it.amount < 0 }.sumOf { -it.amount }
+                        // Recompute effective overlays now that confirmed data is ready.
+                        recomputeEffectiveBalances()
                     }
                     else -> Unit
                 }
@@ -130,8 +162,75 @@ class FriendsViewModel @Inject constructor(
     }
 
     fun resetActionState() { _actionState.value = FriendsActionState.Idle }
-}
 
+
+    // ── Optimistic friend balance overlay ─────────────────────────────────────
+
+    private fun observeOptimisticFriendBalances() {
+        viewModelScope.launch {
+            pendingOperationRepository.observeActivePendingExpenseOps().collect { ops ->
+                latestExpenseCache = ops.mapNotNull { op ->
+                    val r = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
+                    expenseRepository.getCachedExpense(r)?.let { r to it }
+                }.toMap()
+                latestImpacts = pendingOperationRepository.getAllImpacts()
+                    .associateBy { it.operationId }
+                latestOps = ops
+                recomputeEffectiveBalances()
+            }
+        }
+    }
+
+    /**
+     * Single recompute entry called by loadData() (confirmed data) AND ops collector.
+     * Guarantees FriendsHome top total always matches GroupsHome top total.
+     */
+    private suspend fun recomputeEffectiveBalances() {
+        val ops     = latestOps
+        val cache   = latestExpenseCache
+        val impacts = latestImpacts
+
+        if (ops.isEmpty()) {
+            _optimisticFriendBalanceMap.value = emptyMap()
+            _friendsWithPendingSync.value = emptySet()
+            _effectiveSummary.value = null
+            return
+        }
+
+        // ── Per-friend row effective balances ─────────────────────────────────
+        // Pre-build otherUserId map via suspend call — can't call suspend inside the lambda.
+        val otherUserIdMap: Map<String, String?> = ops.mapNotNull { op ->
+            val r = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
+            r to expenseRepository.getCachedDirectOtherUserId(r)
+        }.toMap()
+        val effectiveFriends = effectiveCalculator.effectiveFriendBalances(
+            confirmedFriendBase      = _balanceMap.value,
+            ops                      = ops,
+            expenseCache             = cache,
+            impacts                  = impacts,
+            otherUserIdForExpense    = { resourceId -> otherUserIdMap[resourceId] },
+        )
+        _friendsWithPendingSync.value = effectiveFriends.keys
+        _optimisticFriendBalanceMap.value = effectiveFriends
+
+        // ── Global top-bar effective summary (same formula as GroupsViewModel) ─
+        val confirmedEntries = _balanceEntries.value
+        if (confirmedEntries.isEmpty()) return
+        val globalResult = effectiveCalculator.globalEffectiveSummary(
+            confirmedEntries = confirmedEntries,
+            ops              = ops,
+            expenseCache     = cache,
+            impacts          = impacts,
+        )
+        _effectiveSummary.value = globalResult?.let {
+            com.prathik.fairshare.ui.groups.BalanceSummary(
+                owedToMe = it.owedToMe,
+                youOwe   = it.youOwe,
+                entries  = it.entries,
+            )
+        }
+    }
+}
 sealed class FriendsActionState {
     object Idle : FriendsActionState()
     data class Success(val message: String) : FriendsActionState()

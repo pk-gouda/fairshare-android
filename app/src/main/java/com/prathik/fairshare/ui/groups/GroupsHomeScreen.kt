@@ -106,6 +106,7 @@ fun GroupsHomeScreen(
 ) {
     val groupsState              by viewModel.groupsState.collectAsState()
     val balanceSummary           by viewModel.balanceSummary.collectAsState()
+    val effectiveSummary         by viewModel.effectiveSummary.collectAsState()
     val groupBalanceMap          by viewModel.groupBalanceMap.collectAsState()
     val optimisticGroupBalanceMap by viewModel.optimisticGroupBalanceMap.collectAsState()
     val groupsWithPendingSync    by viewModel.groupsWithPendingSync.collectAsState()
@@ -238,7 +239,7 @@ fun GroupsHomeScreen(
                     }
 
                     // ── Net balance sticky bar ────────────────────────────────
-                    balanceSummary?.let { summary ->
+                    (effectiveSummary ?: balanceSummary)?.let { summary ->
                         val hasGroups = groupsState is GroupsUiState.Success &&
                                 (groupsState as GroupsUiState.Success).groups.isNotEmpty()
                         if (hasGroups) {
@@ -294,8 +295,11 @@ fun GroupsHomeScreen(
                         EmptyGroupsState(onAddGroup = { showAddGroupSheet = true })
                     } else {
                         // Compute total owed / owed-to-me for ring fill fractions
-                        val totalOwed    = balanceSummary?.youOwe?.takeIf { it > 0 } ?: 1.0
-                        val totalOwedMe  = balanceSummary?.owedToMe?.takeIf { it > 0 } ?: 1.0
+                        // Use effectiveSummary for fractions so ring fill matches
+                        // the top bar — both show the same effective number.
+                        val activeSummary = effectiveSummary ?: balanceSummary
+                        val totalOwed    = activeSummary?.youOwe?.takeIf { it > 0 } ?: 1.0
+                        val totalOwedMe  = activeSummary?.owedToMe?.takeIf { it > 0 } ?: 1.0
 
                         var showArchived by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
@@ -529,8 +533,20 @@ private fun GroupCard(
         }
 
         // Balance label — Splitwise pattern
+        val isZeroPending = isPending && entries != null && entries.all { it.first == 0.0 }
         when {
             entries == null -> Text("no expenses", fontSize = 12.sp, color = TextTertiary)
+            // Optimistically settled (all expenses deleted offline): show $0.00 + Pending sync,
+            // NOT "settled up" — the backend hasn't confirmed this yet.
+            isZeroPending -> Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = MoneyUtils.format(0.0, entries!!.firstOrNull()?.second ?: "USD"),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextTertiary,
+                )
+                Text("Pending sync", fontSize = 8.sp, color = androidx.compose.ui.graphics.Color(0xFF9AA3AF))
+            }
             isSettled -> Text("settled up", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Green400)
             else -> Column(horizontalAlignment = Alignment.End) {
                 when {
