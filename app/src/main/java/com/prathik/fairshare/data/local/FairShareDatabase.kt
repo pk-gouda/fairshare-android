@@ -38,7 +38,7 @@ import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
         PendingOperationEntity::class,
         PendingBalanceImpactEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -262,6 +262,18 @@ abstract class FairShareDatabase : RoomDatabase() {
          * 14 → 15: Create pending_balance_impact table for durable UPDATE_EXPENSE
          * balance overlay (Option A). Separate table avoids polluting pending_operations.
          */
+        /**
+         * 15 → 16: Add oldParticipantIds column to pending_balance_impact.
+         * Stores comma-separated original participant IDs (captured before offline edit)
+         * so SyncWorker can refresh removed participants' caches after UPDATE syncs.
+         * Column name must exactly match PendingBalanceImpactEntity.oldParticipantIds.
+         */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pending_balance_impact ADD COLUMN oldParticipantIds TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""

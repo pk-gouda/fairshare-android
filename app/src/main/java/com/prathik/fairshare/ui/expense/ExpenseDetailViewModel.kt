@@ -11,6 +11,7 @@ import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.data.local.PendingOperationEntity
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.data.sync.OperationType
+import com.prathik.fairshare.data.sync.ExpenseMutationCacheRefresher
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.sync.SyncWorker
 import com.prathik.fairshare.domain.model.ApiResult
@@ -46,6 +47,7 @@ class ExpenseDetailViewModel @Inject constructor(
     private val getExpenseUseCase    : GetExpenseUseCase,
     private val deleteExpenseUseCase  : DeleteExpenseUseCase,
     private val restoreExpenseUseCase : RestoreExpenseUseCase,
+    private val mutationCacheRefresher: ExpenseMutationCacheRefresher,
     private val expenseApiService    : ExpenseApiService,
     private val tokenStore           : EncryptedTokenStore,
     private val expenseRepository        : ExpenseRepository,
@@ -221,6 +223,18 @@ class ExpenseDetailViewModel @Inject constructor(
             when (val result = deleteExpenseUseCase(expenseId, enqueued.idempotencyKey)) {
                 is ApiResult.Success -> {
                     pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
+                    // Cascade cache refresh before emitting Deleted so group/friend
+                    // caches are consistent if user goes offline immediately after.
+                    val preDelete = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
+                    val gId = preDelete?.groupId
+                    val participants = ((preDelete?.payers?.map { it.userId } ?: emptyList()) +
+                            (preDelete?.splits?.map { it.userId } ?: emptyList())).toSet()
+                    mutationCacheRefresher.refreshAfterDeleteSuccess(
+                        expenseId      = expenseId,
+                        groupId        = gId,
+                        currentUserId  = userId,
+                        participantIds = participants,
+                    )
                     _actionState.value = ExpenseActionState.Deleted
                 }
 
@@ -241,8 +255,17 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 is ApiResult.NotFound -> {
-                    // Already deleted on server — treat as success locally.
+                    // Already deleted on server — still refresh caches.
                     pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
+                    val preDelete = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
+                    val participants = ((preDelete?.payers?.map { it.userId } ?: emptyList()) +
+                            (preDelete?.splits?.map { it.userId } ?: emptyList())).toSet()
+                    mutationCacheRefresher.refreshAfterDeleteSuccess(
+                        expenseId      = expenseId,
+                        groupId        = preDelete?.groupId,
+                        currentUserId  = userId,
+                        participantIds = participants,
+                    )
                     _actionState.value = ExpenseActionState.Deleted
                 }
 
@@ -282,6 +305,21 @@ class ExpenseDetailViewModel @Inject constructor(
             when (val result = restoreExpenseUseCase(expenseId, enqueued.idempotencyKey)) {
                 is ApiResult.Success -> {
                     pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
+                    val restored = result.data
+                    // Fallback to pre-restore cached context if response lacks payer/split rows.
+                    val preRestoreCtx = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
+                    val responseParticipants = ((restored.payers?.map { it.userId } ?: emptyList()) +
+                            (restored.splits?.map { it.userId } ?: emptyList())).toSet()
+                    val participants = responseParticipants.ifEmpty {
+                        ((preRestoreCtx?.payers?.map { it.userId } ?: emptyList()) +
+                                (preRestoreCtx?.splits?.map { it.userId } ?: emptyList())).toSet()
+                    }
+                    mutationCacheRefresher.refreshAfterRestoreSuccess(
+                        expense        = restored,
+                        groupId        = restored.groupId ?: preRestoreCtx?.groupId,
+                        currentUserId  = userId,
+                        participantIds = participants,
+                    )
                     _actionState.value = ExpenseActionState.Restored
                 }
 

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.model.request.CreateExpenseRequest
 import com.prathik.fairshare.data.sync.OperationType
+import com.prathik.fairshare.data.sync.ExpenseMutationCacheRefresher
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.sync.SyncWorker
 import com.prathik.fairshare.domain.model.ApiResult
@@ -46,6 +47,7 @@ class AddExpenseViewModel @Inject constructor(
     private val scanReceiptUseCase: ScanReceiptUseCase,
     private val tokenStore: EncryptedTokenStore,
     private val pendingOperationRepository: PendingOperationRepository,
+    private val mutationCacheRefresher   : ExpenseMutationCacheRefresher,
     private val json: Json,
     @ApplicationContext private val appContext: Context,
     savedStateHandle: SavedStateHandle,
@@ -635,10 +637,18 @@ class AddExpenseViewModel @Inject constructor(
                 repeatInterval   = _repeatInterval.value,
             )) {
                 is ApiResult.Success -> {
-                    // Online success — mark the operation done and store the server ID.
                     pendingOperationRepository.markSynced(
                         operationId      = enqueued.operationId,
                         serverResourceId = result.data.id,
+                    )
+                    // Await cache cascade before navigating — ensures FRIEND_NET/
+                    // FRIEND_BREAKDOWN/GROUP_BALANCE are ready for immediate offline use.
+                    mutationCacheRefresher.refreshAfterCreateSuccess(
+                        expense       = result.data,
+                        groupId       = groupId,
+                        currentUserId = userId,
+                        payerIds      = _payerData.value.keys,
+                        splitIds      = effectiveSplitData?.keys ?: emptySet(),
                     )
                     _uiState.value = AddExpenseUiState.Success
                 }
@@ -788,6 +798,14 @@ class AddExpenseViewModel @Inject constructor(
             )) {
                 is ApiResult.Success -> {
                     pendingOperationRepository.markSynced(enqueued.operationId, result.data.id)
+                    // Await cache cascade for direct/transfer expenses too.
+                    mutationCacheRefresher.refreshAfterCreateSuccess(
+                        expense       = result.data,
+                        groupId       = groupId,
+                        currentUserId = userId,
+                        payerIds      = setOf(fromId),
+                        splitIds      = setOf(toId),
+                    )
                     _uiState.value = AddExpenseUiState.Success
                 }
 

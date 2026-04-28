@@ -20,6 +20,8 @@ import kotlinx.coroutines.async
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
 import com.prathik.fairshare.domain.repository.BalanceRepository
+import com.prathik.fairshare.data.sync.FairShareSyncManager
+import com.prathik.fairshare.data.sync.SyncReason
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,6 +42,7 @@ class GroupDetailViewModel @Inject constructor(
     private val pendingOperationRepository : PendingOperationRepository,
     private val expenseRepository           : ExpenseRepository,
     private val balanceRepository           : BalanceRepository,
+    private val syncManager                 : FairShareSyncManager,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -166,14 +169,14 @@ class GroupDetailViewModel @Inject constructor(
     }
 
     fun refreshExpenses() {
-        // Only skip if we've never loaded at all (app cold start) — loadData() handles that.
-        // Do NOT skip on subsequent resumes — this ensures new expenses appear immediately
-        // when returning from AddExpense without waiting for another loadData() cycle.
         if (_groupState.value is GroupDetailUiState.Loading &&
             _expensesState.value is ExpensesUiState.Loading
         ) return
 
+        // Sync first, then reload — single coroutine prevents race where
+        // ViewModel state reloads before the sync cache writes complete.
         viewModelScope.launch {
+            syncManager.syncGroupDetail(groupId, SyncReason.MANUAL_REFRESH)
             val expensesDeferred = async { getGroupExpensesUseCase(groupId) }
             val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
             val balancesDeferred = async { getGroupBalancesUseCase(groupId) }

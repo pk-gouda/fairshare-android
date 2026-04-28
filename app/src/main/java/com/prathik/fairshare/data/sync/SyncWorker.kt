@@ -47,7 +47,8 @@ class SyncWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val pendingOperationRepository: PendingOperationRepository,
-    private val expenseRepository: ExpenseRepository,
+    private val expenseRepository       : ExpenseRepository,
+    private val mutationCacheRefresher  : ExpenseMutationCacheRefresher,
     private val json: Json,
 ) : CoroutineWorker(appContext, params) {
 
@@ -68,6 +69,7 @@ class SyncWorker @AssistedInject constructor(
                 requestBodyJson  = operation.requestBodyJson,
                 endpoint         = operation.endpoint,
                 localResourceId  = operation.localResourceId,
+                operationUserId  = operation.userId,
             )
             if (!succeeded) anyRetryableFailure = true
         }
@@ -88,12 +90,13 @@ class SyncWorker @AssistedInject constructor(
      *         false → retryable failure occurred; worker should schedule a retry.
      */
     private suspend fun syncOperation(
-        operationId    : String,
-        operationType  : String,
-        idempotencyKey : String,
-        requestBodyJson: String?,
-        endpoint       : String,
-        localResourceId: String? = null,
+        operationId     : String,
+        operationType   : String,
+        idempotencyKey  : String,
+        requestBodyJson : String?,
+        endpoint        : String,
+        localResourceId : String? = null,
+        operationUserId : String  = "",
     ): Boolean {
         pendingOperationRepository.markSyncing(operationId)
         pendingOperationRepository.incrementRetry(operationId)
@@ -114,6 +117,7 @@ class SyncWorker @AssistedInject constructor(
                     idempotencyKey  = idempotencyKey,
                     requestBodyJson = requestBodyJson,
                     localResourceId = localResourceId,
+                    operationUserId = operationUserId,
                 )
 
                 OperationType.UPDATE_EXPENSE -> syncUpdateExpense(
@@ -121,18 +125,21 @@ class SyncWorker @AssistedInject constructor(
                     idempotencyKey  = idempotencyKey,
                     requestBodyJson = requestBodyJson,
                     endpoint        = endpoint,
+                    operationUserId = operationUserId,
                 )
 
                 OperationType.DELETE_EXPENSE -> syncDeleteExpense(
-                    operationId    = operationId,
-                    idempotencyKey = idempotencyKey,
-                    endpoint       = endpoint,
+                    operationId     = operationId,
+                    idempotencyKey  = idempotencyKey,
+                    endpoint        = endpoint,
+                    operationUserId = operationUserId,
                 )
 
                 OperationType.RESTORE_EXPENSE -> syncRestoreExpense(
-                    operationId    = operationId,
-                    idempotencyKey = idempotencyKey,
-                    endpoint       = endpoint,
+                    operationId     = operationId,
+                    idempotencyKey  = idempotencyKey,
+                    endpoint        = endpoint,
+                    operationUserId = operationUserId,
                 )
 
                 OperationType.CREATE_SETTLEMENT,
@@ -168,10 +175,11 @@ class SyncWorker @AssistedInject constructor(
      * if this runs multiple times.
      */
     private suspend fun syncCreateExpense(
-        operationId    : String,
-        idempotencyKey : String,
-        requestBodyJson: String?,
-        localResourceId: String? = null,
+        operationId     : String,
+        idempotencyKey  : String,
+        requestBodyJson : String?,
+        localResourceId : String? = null,
+        operationUserId : String = "",
     ): Boolean {
         if (requestBodyJson == null) {
             pendingOperationRepository.markFailed(
@@ -221,6 +229,18 @@ class SyncWorker @AssistedInject constructor(
                     expenseRepository.deleteLocalPendingPayersAndSplits(it)
                     expenseRepository.deleteLocalExpense(it)
                 }
+                // Cascade cache refresh so FRIEND_NET/FRIEND_BREAKDOWN/GROUP_BALANCE
+                // are current after offline-created expense syncs.
+                val exp    = result.data
+                val splits = request.splitData?.keys ?: emptySet()
+                val payers = request.payerData?.keys ?: emptySet()
+                mutationCacheRefresher.refreshAfterCreateSuccess(
+                    expense       = exp,
+                    groupId       = request.groupId,
+                    currentUserId = operationUserId,
+                    payerIds      = payers,
+                    splitIds      = splits,
+                )
                 true
             }
 
@@ -274,10 +294,11 @@ class SyncWorker @AssistedInject constructor(
      * idempotency_keys table prevents a double balance reversal/re-application.
      */
     private suspend fun syncUpdateExpense(
-        operationId    : String,
-        idempotencyKey : String,
-        requestBodyJson: String?,
-        endpoint       : String,
+        operationId     : String,
+        idempotencyKey  : String,
+        requestBodyJson : String?,
+        endpoint        : String,
+        operationUserId : String = "",
     ): Boolean {
         if (requestBodyJson == null) {
             pendingOperationRepository.markFailed(
@@ -304,6 +325,13 @@ class SyncWorker @AssistedInject constructor(
             return true
         }
 
+        // Read stored old participants from PendingBalanceImpactEntity (saved at offline-edit time
+        // before Room was overwritten). Fall back to live Room context if not persisted.
+        val storedImpact = pendingOperationRepository.getAllImpacts()
+            .firstOrNull { it.operationId == operationId }
+        val storedOldParticipants: Set<String> = storedImpact?.getOldParticipants() ?: emptySet()
+        val oldContext = expenseRepository.getCachedExpenseMutationContext(expenseId)
+
         val result = expenseRepository.updateExpense(
             expenseId      = expenseId,
             description    = request.description,
@@ -324,6 +352,24 @@ class SyncWorker @AssistedInject constructor(
             is com.prathik.fairshare.domain.model.ApiResult.Success -> {
                 // markSynced centrally deletes the impact row via PendingOperationRepository.
                 pendingOperationRepository.markSynced(operationId, expenseId)
+                // Resolve new participants: prefer server response (authoritative),
+                // then request body, then cached old context (for metadata-only updates).
+                val responseParticipants = ((result.data.payers?.map { it.userId } ?: emptyList()) +
+                        (result.data.splits?.map { it.userId } ?: emptyList())).toSet()
+                val requestParticipants = ((request.payerData?.keys ?: emptySet()) +
+                        (request.splitData?.keys ?: emptySet()))
+                val newParticipants = responseParticipants.ifEmpty {
+                    requestParticipants.ifEmpty { oldContext?.participantIds ?: emptySet() }
+                }
+                mutationCacheRefresher.refreshAfterUpdateSuccess(
+                    expense            = result.data,
+                    groupId            = result.data.groupId,
+                    currentUserId      = operationUserId,
+                    oldParticipantIds  = storedOldParticipants.ifEmpty {
+                        oldContext?.participantIds ?: emptySet()
+                    },
+                    newParticipantIds  = newParticipants,
+                )
                 true
             }
 
@@ -379,9 +425,10 @@ class SyncWorker @AssistedInject constructor(
      * cannot reverse balances twice even if this runs multiple times.
      */
     private suspend fun syncDeleteExpense(
-        operationId   : String,
-        idempotencyKey: String,
-        endpoint      : String,
+        operationId     : String,
+        idempotencyKey  : String,
+        endpoint        : String,
+        operationUserId : String = "",
     ): Boolean {
         val expenseId = endpoint.removePrefix("/api/expenses/").trim()
         if (expenseId.isBlank()) {
@@ -391,11 +438,20 @@ class SyncWorker @AssistedInject constructor(
             return true
         }
 
+        // Capture participant context before delete — expense may be gone from server after.
+        val deleteContext = expenseRepository.getCachedExpenseMutationContext(expenseId)
+
         val result = expenseRepository.deleteExpense(expenseId, idempotencyKey)
 
         return when (result) {
             is com.prathik.fairshare.domain.model.ApiResult.Success -> {
                 pendingOperationRepository.markSynced(operationId, expenseId)
+                mutationCacheRefresher.refreshAfterDeleteSuccess(
+                    expenseId      = expenseId,
+                    groupId        = deleteContext?.groupId,
+                    currentUserId  = operationUserId,
+                    participantIds = deleteContext?.participantIds ?: emptySet(),
+                )
                 true
             }
             is com.prathik.fairshare.domain.model.ApiResult.NetworkError -> {
@@ -404,9 +460,15 @@ class SyncWorker @AssistedInject constructor(
                 )
                 false
             }
-            // 404 — already deleted. Treat as success so the queue clears.
+            // 404 — already deleted. Still refresh caches so group/friend are consistent.
             is com.prathik.fairshare.domain.model.ApiResult.NotFound -> {
                 pendingOperationRepository.markSynced(operationId, expenseId)
+                mutationCacheRefresher.refreshAfterDeleteSuccess(
+                    expenseId      = expenseId,
+                    groupId        = deleteContext?.groupId,
+                    currentUserId  = operationUserId,
+                    participantIds = deleteContext?.participantIds ?: emptySet(),
+                )
                 true
             }
             is com.prathik.fairshare.domain.model.ApiResult.Forbidden,
@@ -436,9 +498,10 @@ class SyncWorker @AssistedInject constructor(
      * Same idempotency guarantee as delete — prevents a double balance re-application.
      */
     private suspend fun syncRestoreExpense(
-        operationId   : String,
-        idempotencyKey: String,
-        endpoint      : String,
+        operationId     : String,
+        idempotencyKey  : String,
+        endpoint        : String,
+        operationUserId : String = "",
     ): Boolean {
         // Strip prefix and suffix to isolate the expenseId
         val expenseId = endpoint
@@ -452,11 +515,28 @@ class SyncWorker @AssistedInject constructor(
             return true
         }
 
+        // Capture context BEFORE restore call — the deleted expense's payer/split
+        // rows are still in Room now. After backend restore, Room may update.
+        val restoreContext = expenseRepository.getCachedExpenseMutationContext(expenseId)
+
         val result = expenseRepository.restoreExpense(expenseId, idempotencyKey)
 
         return when (result) {
             is com.prathik.fairshare.domain.model.ApiResult.Success -> {
                 pendingOperationRepository.markSynced(operationId, expenseId)
+                val restored = result.data
+                // restoreContext was captured above, before the API call.
+                val responseParticipants = ((restored.payers?.map { it.userId } ?: emptyList()) +
+                        (restored.splits?.map { it.userId } ?: emptyList())).toSet()
+                val participants = responseParticipants.ifEmpty {
+                    restoreContext?.participantIds ?: emptySet()
+                }
+                mutationCacheRefresher.refreshAfterRestoreSuccess(
+                    expense        = restored,
+                    groupId        = restored.groupId,
+                    currentUserId  = operationUserId,
+                    participantIds = participants,
+                )
                 true
             }
             is com.prathik.fairshare.domain.model.ApiResult.NetworkError -> {

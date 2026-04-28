@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.model.request.UpdateExpenseRequest
 import com.prathik.fairshare.data.sync.OperationType
+import com.prathik.fairshare.data.sync.ExpenseMutationCacheRefresher
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.sync.SyncWorker
 import com.prathik.fairshare.domain.model.ApiResult
@@ -51,6 +52,7 @@ class EditExpenseViewModel @Inject constructor(
     private val tokenStore: EncryptedTokenStore,
     private val pendingOperationRepository : PendingOperationRepository,
     private val expenseRepository           : ExpenseRepository,
+    private val mutationCacheRefresher     : ExpenseMutationCacheRefresher,
     private val json: Json,
     @ApplicationContext private val appContext: Context,
     savedStateHandle: SavedStateHandle,
@@ -135,6 +137,10 @@ class EditExpenseViewModel @Inject constructor(
     private val _isFromCache = MutableStateFlow(false)
     val isFromCache: StateFlow<Boolean> = _isFromCache.asStateFlow()
 
+    /** Participant IDs from the expense as originally loaded — used as oldParticipantIds
+     * on update so removed participants' caches are also refreshed. */
+    private var originalParticipantIds: Set<String> = emptySet()
+
     init {
         loadExpense()
     }
@@ -147,10 +153,11 @@ class EditExpenseViewModel @Inject constructor(
             when (val result = getExpenseUseCase(expenseId)) {
                 is ApiResult.Success -> {
                     val expense = result.data
-                    // Detect a cache-only load: payers and splits are always empty
-                    // in ExpenseEntity.toDomain() because the entity stores only
-                    // the lightweight summary fields.
                     _isFromCache.value = expense.payers.isEmpty() && expense.splits.isEmpty()
+                    // Capture original participants before any edit so removed participants
+                    // get their caches refreshed after an online or offline-synced update.
+                    originalParticipantIds = (expense.payers.map { it.userId } +
+                            expense.splits.map { it.userId }).toSet()
                     populateForm(expense)
                     loadMembers(expense)
                     _loadState.value = EditLoadState.Success
@@ -566,12 +573,26 @@ class EditExpenseViewModel @Inject constructor(
             when (result) {
                 is ApiResult.Success -> {
                     pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
+                    // Await cache cascade with real old+new participants.
+                    val splits = effectiveSplitData?.keys ?: emptySet()
+                    val payers = _payerData.value.keys
+                    mutationCacheRefresher.refreshAfterUpdateSuccess(
+                        expense           = result.data,
+                        groupId           = _groupId.value,
+                        currentUserId     = userId,
+                        oldParticipantIds = originalParticipantIds,
+                        newParticipantIds = splits + payers,
+                    )
                     _saveState.value = EditSaveState.Success
                 }
 
                 is ApiResult.NetworkError -> {
                     // 1. Apply Room update FIRST so ExpenseDetail shows new values
                     //    and the impact row exists before pending-ops observers fire.
+                    // Capture old participants BEFORE edit overwrites Room — SyncWorker
+                    // needs them to refresh removed participants after sync.
+                    val oldContextBeforeEdit =
+                        expenseRepository.getCachedExpenseMutationContext(expenseId)
                     if (!fromCache) {
                         val memberNames = _members.value.associate { it.userId to it.fullName }
                             .toMutableMap()
@@ -602,13 +623,16 @@ class EditExpenseViewModel @Inject constructor(
                             else null
                             pendingOperationRepository.saveBalanceImpact(
                                 PendingBalanceImpactEntity(
-                                    operationId    = enqueued.operationId,
-                                    expenseId      = expenseId,
-                                    groupId        = cachedGroupId,
-                                    otherUserId    = cachedOtherId,
-                                    currency       = effectiveCurrency ?: _currency.value,
-                                    oldYourBalance = oldBal,
-                                    newYourBalance = newBal,
+                                    operationId       = enqueued.operationId,
+                                    expenseId         = expenseId,
+                                    groupId           = cachedGroupId,
+                                    otherUserId       = cachedOtherId,
+                                    currency          = effectiveCurrency ?: _currency.value,
+                                    oldYourBalance    = oldBal,
+                                    newYourBalance    = newBal,
+                                    // Stored so SyncWorker can refresh removed participants
+                                    // after sync (Room is already overwritten by then).
+                                    oldParticipantIds = originalParticipantIds.joinToString(","),
                                 )
                             )
                         }

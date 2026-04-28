@@ -20,6 +20,7 @@ import com.prathik.fairshare.domain.model.ExpenseCategory
 import com.prathik.fairshare.domain.model.ExpenseComment
 import com.prathik.fairshare.domain.model.ExpenseItem
 import com.prathik.fairshare.domain.model.SplitType
+import com.prathik.fairshare.domain.repository.ExpenseMutationContext
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -136,11 +137,22 @@ class ExpenseRepositoryImpl @Inject constructor(
                 )
             )
         }
-        // Cache the server-confirmed expense immediately so the real row exists in
-        // Room before SyncWorker deletes the local placeholder. Without this the
-        // list would briefly be empty between placeholder removal and next refresh.
+        // Cache the server-confirmed expense so the real row exists in Room before
+        // SyncWorker deletes the local placeholder, and full detail is available offline.
         if (result is ApiResult.Success) {
-            expenseDao.insert(result.data.toEntity())
+            val response = result.data
+            val expenseId = response.id
+            expenseDao.insert(response.toEntity())
+            // Cache payer/split rows so ExpenseDetail renders offline without a
+            // separate getExpense() fetch after create.
+            if (!response.payers.isNullOrEmpty()) {
+                expensePayerDao.deleteByExpenseId(expenseId)
+                expensePayerDao.insertAll(response.payers!!.map { it.toPayerEntity(expenseId) })
+            }
+            if (!response.splits.isNullOrEmpty()) {
+                expenseSplitDao.deleteByExpenseId(expenseId)
+                expenseSplitDao.insertAll(response.splits!!.map { it.toSplitEntity(expenseId) })
+            }
         }
         return result.mapSuccess { it.toDomain() }
     }
@@ -414,6 +426,22 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun getCachedDirectOtherUserId(expenseId: String): String? {
         val entity = expenseDao.getById(expenseId) ?: return null
         return if (entity.groupId.isNullOrEmpty()) entity.otherUserId else null
+    }
+
+    override suspend fun getCachedExpenseMutationContext(expenseId: String): ExpenseMutationContext? {
+        val entity = expenseDao.getById(expenseId) ?: return null
+        val payerIds = expensePayerDao.getByExpenseId(expenseId).map { it.userId }.toSet()
+        val splitIds = expenseSplitDao.getByExpenseId(expenseId).map { it.userId }.toSet()
+        // Fallback: if no cached payer/split rows, use otherUserId for direct expenses.
+        val fallbackParticipants = if (payerIds.isEmpty() && splitIds.isEmpty()) {
+            setOfNotNull(entity.otherUserId)
+        } else emptySet()
+        return ExpenseMutationContext(
+            expenseId      = expenseId,
+            groupId        = entity.groupId,
+            otherUserId    = entity.otherUserId,
+            participantIds = payerIds + splitIds + fallbackParticipants,
+        )
     }
 
     // ── Local cache operations for offline optimistic UI (Wave 2D-Final) ───────

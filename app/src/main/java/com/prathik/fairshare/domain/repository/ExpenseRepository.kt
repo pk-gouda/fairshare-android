@@ -179,6 +179,12 @@ interface ExpenseRepository {
      */
     suspend fun getCachedExpense(expenseId: String): com.prathik.fairshare.domain.model.Expense?
 
+    /**
+     * Capture pre-mutation context from Room for SyncWorker so delete/restore/update
+     * can refresh the correct group/friend cache scopes after backend success.
+     */
+    suspend fun getCachedExpenseMutationContext(expenseId: String): ExpenseMutationContext?
+
     /** Returns the [otherUserId] of a cached direct expense, or null if not cached / not a direct expense. */
     suspend fun getCachedDirectOtherUserId(expenseId: String): String?
 
@@ -188,3 +194,11 @@ interface ExpenseRepository {
      */
     suspend fun propagateOtherUserId(fromId: String, toId: String)
 }
+
+/** Lightweight snapshot of cached expense context for SyncWorker refresh. */
+data class ExpenseMutationContext(
+    val expenseId     : String,
+    val groupId       : String?,
+    val otherUserId   : String?,
+    val participantIds: Set<String>,  // union of payer + split userIds
+)

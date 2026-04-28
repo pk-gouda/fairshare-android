@@ -10,6 +10,8 @@ import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
+import com.prathik.fairshare.data.sync.FairShareSyncManager
+import com.prathik.fairshare.data.sync.SyncReason
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.repository.ImportRepository
@@ -38,6 +40,7 @@ class FriendDetailViewModel @Inject constructor(
     private val tokenStore: EncryptedTokenStore,
     private val importRepository: ImportRepository,
     private val pendingOperationRepository: PendingOperationRepository,
+    private val syncManager               : FairShareSyncManager,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
@@ -162,7 +165,12 @@ class FriendDetailViewModel @Inject constructor(
 
             // Only direct (non-group) expenses in the timeline
             val directExpenses =
-                (directDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
+                when (val directResult = directDeferred.await()) {
+                    is ApiResult.Success -> directResult.data
+                    // Network failed — preserve existing loaded expenses rather than
+                    // wiping the list. Cached data from Room fallback or prior load stays.
+                    else -> (_expensesState.value as? FriendExpensesState.Success)?.expenses ?: emptyList()
+                }
 
             // Settlement history with this friend
             when (val result = settlementsDeferred.await()) {
@@ -185,6 +193,8 @@ class FriendDetailViewModel @Inject constructor(
 
     fun refreshExpenses() {
         viewModelScope.launch {
+            // Sync all friend scopes first.
+            syncManager.syncFriendDetail(friendId, SyncReason.MANUAL_REFRESH)
             // Refresh net balance — always fresh from network (no cache)
             when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
                 is ApiResult.Success -> {

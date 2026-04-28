@@ -11,6 +11,8 @@ import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
 import com.prathik.fairshare.data.local.PendingOperationEntity
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.domain.model.Expense
+import com.prathik.fairshare.data.sync.FairShareSyncManager
+import com.prathik.fairshare.data.sync.SyncReason
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.usecase.balance.EffectiveBalanceCalculator
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +31,7 @@ class FriendsViewModel @Inject constructor(
     private val pendingOperationRepository: PendingOperationRepository,
     private val expenseRepository         : ExpenseRepository,
     private val effectiveCalculator       : EffectiveBalanceCalculator,
+    private val syncManager               : FairShareSyncManager,
 ) : ViewModel() {
 
     // ── Latest state for reactive recompute ───────────────────────────────
@@ -87,6 +90,14 @@ class FriendsViewModel @Inject constructor(
                 val msg = if (event.addedCount == 1) "1 friend added" else "${event.addedCount} friends added"
                 _actionState.value = FriendsActionState.Success(msg)
             }
+        }
+    }
+
+    /** Pull-to-refresh: sync all friend scopes then reload ViewModel state. */
+    fun refresh() {
+        viewModelScope.launch {
+            syncManager.syncFriendsHome(SyncReason.MANUAL_REFRESH)
+            loadData()
         }
     }
 
@@ -209,13 +220,19 @@ class FriendsViewModel @Inject constructor(
             expenseCache             = cache,
             impacts                  = impacts,
             otherUserIdForExpense    = { resourceId -> otherUserIdMap[resourceId] },
+            // Known limitation (Wave 2F): group expense pending impacts are NOT
+            // projected into friend rows here because that requires per-expense
+            // split/payer data to compute exact friend-level contributions.
+            // Group expense ops DO update the global top-bar effectiveSummary
+            // via FairShareSyncManager.mutationRefresh → getAllBalances.
         )
         _friendsWithPendingSync.value = effectiveFriends.keys
         _optimisticFriendBalanceMap.value = effectiveFriends
 
         // ── Global top-bar effective summary (same formula as GroupsViewModel) ─
+        // Always call even when confirmedEntries is empty — calculator handles
+        // pending-only currencies. Return early would leave stale effectiveSummary.
         val confirmedEntries = _balanceEntries.value
-        if (confirmedEntries.isEmpty()) return
         val globalResult = effectiveCalculator.globalEffectiveSummary(
             confirmedEntries = confirmedEntries,
             ops              = ops,

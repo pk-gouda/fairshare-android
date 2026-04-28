@@ -31,7 +31,16 @@ data class PendingBalanceImpactEntity(
     val oldYourBalance          : Double,   // snapshot BEFORE the local edit
     val newYourBalance          : Double,   // snapshot AFTER the local edit
     val createdAt               : Long = System.currentTimeMillis(),
+    /** JSON-serialised Set<String> of participant IDs BEFORE the edit. */
+    /** Comma-separated original participant IDs captured before offline edit.
+     * Used by SyncWorker to refresh removed participants' caches after sync. */
+    val oldParticipantIds       : String = "",
 ) {
     /** The net change this UPDATE brings to the user's balance in this context. */
     val delta: Double get() = newYourBalance - oldYourBalance
+
+    /** Deserialize [oldParticipantIds] back to a Set. */
+    fun getOldParticipants(): Set<String> =
+        if (oldParticipantIds.isBlank()) emptySet()
+        else oldParticipantIds.split(',').filter { it.isNotBlank() }.toSet()
 }

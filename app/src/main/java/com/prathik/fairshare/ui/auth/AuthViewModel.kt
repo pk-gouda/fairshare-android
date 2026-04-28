@@ -2,8 +2,9 @@ package com.prathik.fairshare.ui.auth
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
-import com.prathik.fairshare.data.sync.CacheWarmupCoordinator
 import com.prathik.fairshare.data.sync.CacheWarmupWorker
+import com.prathik.fairshare.data.sync.FairShareSyncManager
+import com.prathik.fairshare.data.sync.SyncReason
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.usecase.auth.ForgotPasswordUseCase
@@ -33,7 +34,7 @@ import javax.inject.Inject
 class AuthViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext
     private val appContext             : Context,
-    private val cacheWarmupCoordinator : CacheWarmupCoordinator,
+    private val syncManager            : FairShareSyncManager,
     private val loginUseCase           : LoginUseCase,
     private val registerUseCase      : RegisterUseCase,
     private val logoutUseCase        : LogoutUseCase,
@@ -114,9 +115,9 @@ class AuthViewModel @Inject constructor(
             _uiState.value = AuthUiState.Loading
             when (val result = loginUseCase(_email.value, _password.value)) {
                 is ApiResult.Success -> {
-                    // Foreground warmup — starts immediately in-process.
-                    cacheWarmupCoordinator.warmupIfNeeded()
-                    // WorkManager one-off — runs if app is killed before warmup finishes.
+                    // Immediate in-process account sync after login.
+                    syncManager.syncAccountInBackground(SyncReason.LOGIN)
+                    // WorkManager one-off fallback if app is killed mid-sync.
                     CacheWarmupWorker.triggerNow(appContext)
                     _uiState.value = AuthUiState.LoginSuccess(result.data)
                 }

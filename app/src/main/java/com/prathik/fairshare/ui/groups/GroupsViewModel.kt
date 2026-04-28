@@ -9,6 +9,8 @@ import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupBalancesUseCase
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
+import com.prathik.fairshare.data.sync.FairShareSyncManager
+import com.prathik.fairshare.data.sync.SyncReason
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.data.local.PendingOperationEntity
@@ -43,6 +45,7 @@ class GroupsViewModel @Inject constructor(
     private val expenseRepository           : ExpenseRepository,
     private val balanceRepository           : BalanceRepository,
     private val effectiveCalculator         : EffectiveBalanceCalculator,
+    private val syncManager                 : FairShareSyncManager,
 ) : ViewModel() {
 
     // ── Latest state for reactive recompute ───────────────────────────────
@@ -254,7 +257,9 @@ class GroupsViewModel @Inject constructor(
             .mapValues { (_, pair) -> listOf(pair) }
 
         // ── Global top-bar effective summary ──────────────────────────────────
-        val confirmedEntries = _balanceSummary.value?.entries ?: return
+        // Use emptyList() instead of returning early — calculator supports pending-only
+        // balances by creating new currency entries, so we must always call it.
+        val confirmedEntries = _balanceSummary.value?.entries ?: emptyList()
         val globalResult = effectiveCalculator.globalEffectiveSummary(
             confirmedEntries = confirmedEntries,
             ops              = ops,
@@ -263,6 +268,14 @@ class GroupsViewModel @Inject constructor(
         )
         _effectiveSummary.value = globalResult?.let {
             BalanceSummary(owedToMe = it.owedToMe, youOwe = it.youOwe, entries = it.entries)
+        }
+    }
+
+    /** Pull-to-refresh: sync all group scopes then reload ViewModel state. */
+    fun refresh() {
+        viewModelScope.launch {
+            syncManager.syncGroupsHome(SyncReason.MANUAL_REFRESH)
+            loadData()
         }
     }
 }
