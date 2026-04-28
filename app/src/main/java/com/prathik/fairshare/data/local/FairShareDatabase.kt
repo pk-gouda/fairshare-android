@@ -4,6 +4,8 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.prathik.fairshare.data.local.PendingBalanceImpactDao
+import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
 
 /**
  * FairShare Room database.
@@ -34,8 +36,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         GroupMemberEntity::class,
         NotificationEntity::class,
         PendingOperationEntity::class,
+        PendingBalanceImpactEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -51,6 +54,7 @@ abstract class FairShareDatabase : RoomDatabase() {
     abstract fun expensePayerDao(): ExpensePayerDao
     abstract fun expenseSplitDao(): ExpenseSplitDao
     abstract fun pendingOperationDao(): PendingOperationDao
+    abstract fun pendingBalanceImpactDao(): PendingBalanceImpactDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -254,6 +258,27 @@ abstract class FairShareDatabase : RoomDatabase() {
          * CacheWarmupCoordinator and repositories will refill scoped rows on next
          * network access. A brief empty-cache state is safer than wrong financial data.
          */
+        /**
+         * 14 → 15: Create pending_balance_impact table for durable UPDATE_EXPENSE
+         * balance overlay (Option A). Separate table avoids polluting pending_operations.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS pending_balance_impact (
+                        operationId    TEXT    NOT NULL PRIMARY KEY,
+                        expenseId      TEXT    NOT NULL,
+                        groupId        TEXT,
+                        otherUserId    TEXT,
+                        currency       TEXT    NOT NULL,
+                        oldYourBalance REAL    NOT NULL,
+                        newYourBalance REAL    NOT NULL,
+                        createdAt      INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Drop old mixed-scope table and recreate clean with cacheScope in PK.

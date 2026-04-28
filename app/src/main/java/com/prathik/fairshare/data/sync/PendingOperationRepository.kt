@@ -1,5 +1,7 @@
 package com.prathik.fairshare.data.sync
 
+import com.prathik.fairshare.data.local.PendingBalanceImpactDao
+import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
 import com.prathik.fairshare.data.local.PendingOperationDao
 import com.prathik.fairshare.data.local.PendingOperationEntity
 import kotlinx.coroutines.flow.Flow
@@ -28,7 +30,8 @@ data class EnqueueResult(
  */
 @Singleton
 class PendingOperationRepository @Inject constructor(
-    private val dao: PendingOperationDao,
+    private val dao       : PendingOperationDao,
+    private val impactDao : PendingBalanceImpactDao,
 ) {
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -101,20 +104,31 @@ class PendingOperationRepository @Inject constructor(
         dao.markStatus(operationId, SyncStatus.SYNCING.name)
 
     /** Mark an operation as successfully synced and store the server ID. */
-    suspend fun markSynced(operationId: String, serverResourceId: String) =
+    suspend fun markSynced(operationId: String, serverResourceId: String) {
         dao.markSynced(operationId, serverResourceId)
+        // Impact row no longer needed once backend confirms — clean up Option A table.
+        impactDao.deleteByOperationId(operationId)
+    }
 
     /** Mark as retryable (network/5xx failures). */
     suspend fun markRetryable(operationId: String, error: String) =
         dao.markStatus(operationId, SyncStatus.FAILED_RETRYABLE.name, lastError = error)
 
     /** Mark as permanently failed (4xx errors — user action needed). */
-    suspend fun markFailed(operationId: String, error: String) =
+    suspend fun markFailed(operationId: String, error: String) {
         dao.markStatus(operationId, SyncStatus.FAILED_PERMANENT.name, lastError = error)
+        // FAILED_PERMANENT is terminal — remove impact row so UI shows
+        // the confirmed cached balance + failed-needs-attention state, not a
+        // silently-applied stale delta.
+        impactDao.deleteByOperationId(operationId)
+    }
 
     /** Cancel a pending operation (e.g. a CREATE that was locally deleted before sync). */
-    suspend fun markCancelled(operationId: String) =
+    suspend fun markCancelled(operationId: String) {
         dao.markStatus(operationId, SyncStatus.CANCELLED.name)
+        // Cancelled ops no longer affect balance overlay — remove impact row.
+        impactDao.deleteByOperationId(operationId)
+    }
 
     /** Record a retry attempt (increments counter, updates lastAttemptAt). */
     suspend fun incrementRetry(operationId: String) =
@@ -130,6 +144,7 @@ class PendingOperationRepository @Inject constructor(
     fun observeForExpense(expenseId: String): Flow<PendingOperationEntity?> =
         dao.observeForResource(expenseId)
 
+    /** Persist old/new balance impact on an UPDATE_EXPENSE op for overlay calculations. */
     /**
      * Live set of expense IDs that have at least one active pending operation.
      * Consumed by GroupDetailViewModel so the expense list can show a sync dot
@@ -172,4 +187,21 @@ class PendingOperationRepository @Inject constructor(
         val cutoff = System.currentTimeMillis() - olderThanMillis
         dao.cleanupCompleted(cutoff)
     }
+
+    // ── Balance impact (Option A) ─────────────────────────────────────────
+
+    suspend fun saveBalanceImpact(impact: PendingBalanceImpactEntity) =
+        impactDao.insert(impact)
+
+    suspend fun deleteBalanceImpact(operationId: String) =
+        impactDao.deleteByOperationId(operationId)
+
+    suspend fun getImpactsForGroup(groupId: String): List<PendingBalanceImpactEntity> =
+        impactDao.getByGroupId(groupId)
+
+    suspend fun getImpactsForFriend(friendId: String): List<PendingBalanceImpactEntity> =
+        impactDao.getByFriendId(friendId)
+
+    suspend fun getAllImpacts(): List<PendingBalanceImpactEntity> =
+        impactDao.getAll()
 }

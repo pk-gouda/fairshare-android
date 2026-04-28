@@ -499,8 +499,10 @@ private fun ExpenseDetailContent(
         )
         Spacer(modifier = Modifier.height(Spacing.sm))
 
-        // When the expense is loaded from the lightweight Room cache (no payer/split
-        // rows cached yet), show a clear message instead of empty sections.
+        // Payer/split rows missing: show contextual message.
+        // - Local-pending-create: rows should have been stored at create time;
+        //   if still missing, say 'will be available after sync' (not 'open online').
+        // - Normal cached server expense: user needs to open it online once.
         if (expense.payers.isEmpty() && expense.splits.isEmpty()) {
             Row(
                 modifier = Modifier
@@ -516,7 +518,10 @@ private fun ExpenseDetailContent(
                     modifier = Modifier.size(14.dp),
                 )
                 Text(
-                    text = "Split details unavailable offline. Open this expense online once to cache them.",
+                    text = if (isLocalPendingCreate)
+                        "Split breakdown will be available after this expense syncs."
+                    else
+                        "Split breakdown unavailable offline. Reconnect to refresh this expense.",
                     fontSize = 12.sp,
                     color = TextSecondary,
                 )

@@ -13,6 +13,7 @@ import com.prathik.fairshare.data.local.GroupDao
 import com.prathik.fairshare.data.local.FriendDao
 import com.prathik.fairshare.data.local.InvitedFriendDao
 import com.prathik.fairshare.data.local.PendingActionDao
+import com.prathik.fairshare.data.local.PendingBalanceImpactDao
 import com.prathik.fairshare.data.local.PendingOperationDao
 import com.prathik.fairshare.data.local.UserDao
 import dagger.Module
@@ -57,6 +58,7 @@ object DatabaseModule {
                 FairShareDatabase.MIGRATION_11_12,
                 FairShareDatabase.MIGRATION_12_13,
                 FairShareDatabase.MIGRATION_13_14,
+                FairShareDatabase.MIGRATION_14_15,
             )
             .build()
 
@@ -99,6 +101,11 @@ object DatabaseModule {
     @Singleton
     fun providePendingOperationDao(database: FairShareDatabase): PendingOperationDao =
         database.pendingOperationDao()
+
+    @Provides
+    @Singleton
+    fun providePendingBalanceImpactDao(database: FairShareDatabase): PendingBalanceImpactDao =
+        database.pendingBalanceImpactDao()
 
     @Provides
     @Singleton

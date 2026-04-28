@@ -18,6 +18,8 @@ import com.prathik.fairshare.domain.usecase.expense.GetExpenseUseCase
 import com.prathik.fairshare.domain.usecase.expense.UpdateExpenseUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
+import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
+import com.prathik.fairshare.domain.repository.ExpenseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,7 +49,8 @@ class EditExpenseViewModel @Inject constructor(
     private val getGroupMembersUseCase: GetGroupMembersUseCase,
     private val getGroupUseCase: GetGroupUseCase,
     private val tokenStore: EncryptedTokenStore,
-    private val pendingOperationRepository: PendingOperationRepository,
+    private val pendingOperationRepository : PendingOperationRepository,
+    private val expenseRepository           : ExpenseRepository,
     private val json: Json,
     @ApplicationContext private val appContext: Context,
     savedStateHandle: SavedStateHandle,
@@ -567,14 +570,55 @@ class EditExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.NetworkError -> {
+                    // 1. Apply Room update FIRST so ExpenseDetail shows new values
+                    //    and the impact row exists before pending-ops observers fire.
+                    if (!fromCache) {
+                        val memberNames = _members.value.associate { it.userId to it.fullName }
+                            .toMutableMap()
+                            .also { it[userId] = tokenStore.getFullName() ?: "You" }
+                        val impact = expenseRepository.applyLocalPendingExpenseUpdate(
+                            expenseId     = expenseId,
+                            description   = desc,
+                            totalAmount   = effectiveTotalAmount,
+                            currency      = effectiveCurrency,
+                            splitType     = effectiveSplitType,
+                            category      = finalCategory,
+                            notes         = _notes.value.ifBlank { null },
+                            expenseDate   = _expenseDate.value,
+                            payerData     = effectivePayerData,
+                            splitData     = effectiveSplitData,
+                            currentUserId = userId,
+                            memberNames   = memberNames,
+                        )
+                        // 2. Persist impact row BEFORE markRetryable so observers
+                        //    never see a pending UPDATE op without a matching delta row.
+                        if (impact != null) {
+                            val (oldBal, newBal) = impact
+                            // Resolve groupId/otherUserId from cached expense so direct
+                            // friend expense updates also appear on FriendDetail/FriendsHome.
+                            val cachedGroupId   = _groupId.value
+                            val cachedOtherId   = if (cachedGroupId == null)
+                                expenseRepository.getCachedDirectOtherUserId(expenseId)
+                            else null
+                            pendingOperationRepository.saveBalanceImpact(
+                                PendingBalanceImpactEntity(
+                                    operationId    = enqueued.operationId,
+                                    expenseId      = expenseId,
+                                    groupId        = cachedGroupId,
+                                    otherUserId    = cachedOtherId,
+                                    currency       = effectiveCurrency ?: _currency.value,
+                                    oldYourBalance = oldBal,
+                                    newYourBalance = newBal,
+                                )
+                            )
+                        }
+                    }
+                    // 3. markRetryable AFTER impact is written — triggers observers safely.
                     pendingOperationRepository.markRetryable(
                         enqueued.operationId, result.exception.message ?: "Network error"
                     )
                     SyncWorker.triggerImmediateSync(appContext)
-                    android.util.Log.w(
-                        "EditExpenseVM",
-                        "Offline edit queued: ${enqueued.operationId}"
-                    )
+                    android.util.Log.w("EditExpenseVM", "Offline edit queued: ${enqueued.operationId}")
                     _saveState.value = EditSaveState.SavedOffline
                 }
 

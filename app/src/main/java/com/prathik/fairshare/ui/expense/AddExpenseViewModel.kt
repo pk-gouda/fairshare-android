@@ -652,6 +652,12 @@ class AddExpenseViewModel @Inject constructor(
                     // immediately with the pending-sync dot. Deleted by SyncWorker on success.
                     val yourPaid  = _payerData.value[userId] ?: 0.0
                     val yourShare = effectiveSplitData?.get(userId) ?: 0.0
+                    // Build userId→name map so payer/split entities show real names offline.
+                    val memberNames = _members.value.associate { it.userId to it.fullName }
+                        .toMutableMap().also {
+                            // Ensure current user maps to their full name.
+                            it[userId] = tokenStore.getFullName() ?: "You"
+                        }
                     expenseRepository.insertLocalPendingExpense(
                         localId     = localExpenseId,
                         groupId     = groupId,
@@ -666,6 +672,9 @@ class AddExpenseViewModel @Inject constructor(
                         yourPaid    = yourPaid,
                         yourShare   = yourShare,
                         otherUserId = preselectedFriendId,
+                        payerData   = _payerData.value,
+                        splitData   = effectiveSplitData ?: emptyMap(),
+                        memberNames = memberNames,
                     )
                     SyncWorker.triggerImmediateSync(appContext)
                     _uiState.value = AddExpenseUiState.SavedOffline
@@ -790,6 +799,8 @@ class AddExpenseViewModel @Inject constructor(
                     // consistent with normal offline expense create behavior.
                     val yourPaid  = if (fromId == userId) amount else 0.0
                     val yourShare = if (toId  == userId) amount else 0.0
+                    val memberNamesDirect = _members.value.associate { it.userId to it.fullName }
+                        .toMutableMap().also { it[userId] = tokenStore.getFullName() ?: "You" }
                     expenseRepository.insertLocalPendingExpense(
                         localId     = localExpenseId,
                         groupId     = groupId,
@@ -804,6 +815,9 @@ class AddExpenseViewModel @Inject constructor(
                         yourPaid    = yourPaid,
                         yourShare   = yourShare,
                         otherUserId = preselectedFriendId,
+                        payerData   = mapOf(fromId to amount),
+                        splitData   = mapOf(toId to amount),
+                        memberNames = memberNamesDirect,
                     )
                     SyncWorker.triggerImmediateSync(appContext)
                     _uiState.value = AddExpenseUiState.SavedOffline

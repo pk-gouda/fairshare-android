@@ -216,7 +216,11 @@ class SyncWorker @AssistedInject constructor(
                 localResourceId?.let {
                     expenseRepository.propagateOtherUserId(fromId = it, toId = result.data.id)
                 }
-                localResourceId?.let { expenseRepository.deleteLocalExpense(it) }
+                localResourceId?.let {
+                    // Clean up placeholder payer/split rows before deleting the entity.
+                    expenseRepository.deleteLocalPendingPayersAndSplits(it)
+                    expenseRepository.deleteLocalExpense(it)
+                }
                 true
             }
 
@@ -318,6 +322,7 @@ class SyncWorker @AssistedInject constructor(
 
         return when (result) {
             is com.prathik.fairshare.domain.model.ApiResult.Success -> {
+                // markSynced centrally deletes the impact row via PendingOperationRepository.
                 pendingOperationRepository.markSynced(operationId, expenseId)
                 true
             }
@@ -331,6 +336,7 @@ class SyncWorker @AssistedInject constructor(
 
             // 404 — expense was deleted while we were offline. Permanent.
             is com.prathik.fairshare.domain.model.ApiResult.NotFound -> {
+                // markFailed centrally deletes the impact row.
                 pendingOperationRepository.markFailed(operationId, "Expense no longer exists")
                 true
             }

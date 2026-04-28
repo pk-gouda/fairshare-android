@@ -125,6 +125,11 @@ interface ExpenseRepository {
         yourPaid    : Double,
         yourShare   : Double,
         otherUserId : String? = null,
+        // Payer/split rows — passed at offline-create time so ExpenseDetail renders
+        // Who Paid and Split Breakdown without requiring an online fetch first.
+        payerData   : Map<String, Double> = emptyMap(),  // userId → amount paid
+        splitData   : Map<String, Double> = emptyMap(),  // userId → amount owed
+        memberNames : Map<String, String> = emptyMap(),  // userId → displayName
     )
 
     /**
@@ -132,6 +137,33 @@ interface ExpenseRepository {
      * Called from SyncWorker after the backend confirms the CREATE_EXPENSE.
      */
     suspend fun deleteLocalExpense(localId: String)
+
+    /**
+     * Delete cached payer/split rows for a local placeholder expense.
+     * Called from SyncWorker after CREATE_EXPENSE succeeds so orphan rows
+     * from the placeholder don't persist alongside the server expense rows.
+     */
+    suspend fun deleteLocalPendingPayersAndSplits(localId: String)
+
+    /**
+     * Apply an offline UPDATE_EXPENSE optimistically to local Room cache.
+     * Preserves all server-only fields. Returns (oldYourBalance, newYourBalance)
+     * for the pending op impact snapshot, or null if not cached.
+     */
+    suspend fun applyLocalPendingExpenseUpdate(
+        expenseId    : String,
+        description  : String?,
+        totalAmount  : Double?,
+        currency     : String?,
+        splitType    : com.prathik.fairshare.domain.model.SplitType?,
+        category     : com.prathik.fairshare.domain.model.ExpenseCategory?,
+        notes        : String?,
+        expenseDate  : String?,
+        payerData    : Map<String, Double>?,
+        splitData    : Map<String, Double>?,
+        currentUserId: String,
+        memberNames  : Map<String, String>,
+    ): Pair<Double, Double>?  // (oldYourBalance, newYourBalance) or null
 
     /**
      * Update the [isDeleted] flag on a cached expense immediately when an

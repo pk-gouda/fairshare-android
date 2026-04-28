@@ -92,7 +92,18 @@ class ExpenseDetailViewModel @Inject constructor(
      */
     val isLocalPendingCreate: StateFlow<Boolean> =
         pendingOperationRepository.observeForExpense(expenseId)
-            .map { op -> op?.operationType == "CREATE_EXPENSE" }
+            .map { op ->
+                // Strict check — only true for a still-unsynced local placeholder:
+                // 1. operationType is CREATE_EXPENSE
+                // 2. localResourceId == expenseId (this IS the placeholder)
+                // 3. serverResourceId == null (backend hasn't confirmed it yet)
+                // 4. status is active (PENDING/SYNCING/FAILED_RETRYABLE)
+                // The DAO already excludes SYNCED/CANCELLED, so check (1)-(3) only.
+                op != null
+                        && op.operationType == "CREATE_EXPENSE"
+                        && op.localResourceId == expenseId
+                        && op.serverResourceId == null
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**

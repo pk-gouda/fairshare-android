@@ -8,6 +8,7 @@ import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.group.GetGroupBalancesUseCase
 import com.prathik.fairshare.data.sync.PendingOperationRepository
+import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.usecase.group.GetGroupsUseCase
@@ -32,12 +33,12 @@ import com.prathik.fairshare.domain.model.BalanceCurrencyEntry
  */
 @HiltViewModel
 class GroupsViewModel @Inject constructor(
-    private val getGroupsUseCase: GetGroupsUseCase,
-    private val getAllBalancesUseCase: GetAllBalancesUseCase,
-    private val getGroupBalancesUseCase: GetGroupBalancesUseCase,
-    private val pendingOperationRepository: PendingOperationRepository,
-    private val expenseRepository: ExpenseRepository,
-    private val balanceRepository: BalanceRepository,
+    private val getGroupsUseCase            : GetGroupsUseCase,
+    private val getAllBalancesUseCase        : GetAllBalancesUseCase,
+    private val getGroupBalancesUseCase     : GetGroupBalancesUseCase,
+    private val pendingOperationRepository  : PendingOperationRepository,
+    private val expenseRepository           : ExpenseRepository,
+    private val balanceRepository           : BalanceRepository,
 ) : ViewModel() {
 
     // ── Groups state ──────────────────────────────────────────────────────────
@@ -60,10 +61,8 @@ class GroupsViewModel @Inject constructor(
     // Positive = others owe you in this group, Negative = you owe in this group
     // null key not present = no expenses yet
     // Map<groupId, List<Pair<amount, currency>>> — one entry per currency
-    private val _groupBalanceMap =
-        MutableStateFlow<Map<String, List<Pair<Double, String>>>>(emptyMap())
-    val groupBalanceMap: StateFlow<Map<String, List<Pair<Double, String>>>> =
-        _groupBalanceMap.asStateFlow()
+    private val _groupBalanceMap = MutableStateFlow<Map<String, List<Pair<Double, String>>>>(emptyMap())
+    val groupBalanceMap: StateFlow<Map<String, List<Pair<Double, String>>>> = _groupBalanceMap.asStateFlow()
 
     /**
      * Per-group optimistic balance — groupId → effective balance including pending delta.
@@ -108,15 +107,9 @@ class GroupsViewModel @Inject constructor(
                                     is ApiResult.Success -> {
                                         // One entry per currency — never sum across currencies
                                         r.data.groupBy { it.currency }
-                                            .map { (cur, list) ->
-                                                Pair(
-                                                    list.sumOf { it.amount },
-                                                    cur
-                                                )
-                                            }
+                                            .map { (cur, list) -> Pair(list.sumOf { it.amount }, cur) }
                                             .filter { it.first != 0.0 }
                                     }
-
                                     else -> null
                                 }
                             }
@@ -128,14 +121,11 @@ class GroupsViewModel @Inject constructor(
 
                     launch {
                         when (val result = getAllBalancesUseCase()) {
-                            is ApiResult.Success -> _balanceSummary.value =
-                                calculateSummary(result.data)
-
+                            is ApiResult.Success -> _balanceSummary.value = calculateSummary(result.data)
                             else -> Unit
                         }
                     }
                 }
-
                 is ApiResult.NetworkError -> {
                     if (_groupsState.value !is GroupsUiState.Success) {
                         _groupsState.value = GroupsUiState.Error(
@@ -144,7 +134,6 @@ class GroupsViewModel @Inject constructor(
                         )
                     }
                 }
-
                 else -> {
                     if (_groupsState.value !is GroupsUiState.Success) {
                         _groupsState.value = GroupsUiState.Error(
@@ -168,16 +157,16 @@ class GroupsViewModel @Inject constructor(
         val byCurrency = balances.groupBy { it.currency }
         val entries = byCurrency.map { (currency, list) ->
             val owedToMe = list.filter { it.amount > 0 }.sumOf { it.amount }
-            val youOwe = list.filter { it.amount < 0 }.sumOf { -it.amount }
+            val youOwe   = list.filter { it.amount < 0 }.sumOf { -it.amount }
             BalanceCurrencyEntry(currency, owedToMe, youOwe, owedToMe - youOwe)
         }.filter { it.owedToMe > 0.0 || it.youOwe > 0.0 }
 
         val totalOwedToMe = entries.sumOf { it.owedToMe }
-        val totalYouOwe = entries.sumOf { it.youOwe }
+        val totalYouOwe   = entries.sumOf { it.youOwe }
         return BalanceSummary(
             owedToMe = totalOwedToMe,
-            youOwe = totalYouOwe,
-            entries = entries,
+            youOwe   = totalYouOwe,
+            entries  = entries,
         )
     }
 
@@ -199,8 +188,7 @@ class GroupsViewModel @Inject constructor(
                     }
 
                     // Group relevant ops by groupId.
-                    val opsByGroup =
-                        mutableMapOf<String, MutableList<com.prathik.fairshare.data.local.PendingOperationEntity>>()
+                    val opsByGroup = mutableMapOf<String, MutableList<com.prathik.fairshare.data.local.PendingOperationEntity>>()
                     for (op in ops) {
                         val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
                         val expense = expenseRepository.getCachedExpense(resourceId) ?: continue
@@ -215,8 +203,7 @@ class GroupsViewModel @Inject constructor(
                         val confirmedBase = balanceRepository.getCachedGroupBalance(gId) ?: continue
 
                         val deltaExpenses = groupOps.mapNotNull { op ->
-                            val resourceId =
-                                op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
+                            val resourceId = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
                             expenseRepository.getCachedExpense(resourceId)
                         }
                         val pendingCurrencies = deltaExpenses.map { it.currency }.toSet()
@@ -224,15 +211,24 @@ class GroupsViewModel @Inject constructor(
 
                         if (pendingCurrencies.size != 1) continue   // mixed currencies — skip
 
+                        val updateImpacts: Map<String, PendingBalanceImpactEntity> =
+                            pendingOperationRepository.getImpactsForGroup(gId)
+                                .filter { it.currency == displayCurrency }
+                                .associateBy { it.operationId }
+
                         var delta = 0.0
                         for (op in groupOps) {
                             val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
                             val expense = expenseRepository.getCachedExpense(resourceId) ?: continue
                             if (expense.currency != displayCurrency) continue
                             when (op.operationType) {
-                                "CREATE_EXPENSE" -> delta += expense.yourBalance
-                                "DELETE_EXPENSE" -> delta -= expense.yourBalance
+                                "CREATE_EXPENSE"  -> delta += expense.yourBalance
+                                "DELETE_EXPENSE"  -> delta -= expense.yourBalance
                                 "RESTORE_EXPENSE" -> delta += expense.yourBalance
+                                "UPDATE_EXPENSE"  -> {
+                                    val impact = updateImpacts[op.operationId]
+                                    if (impact != null) delta += impact.delta
+                                }
                             }
                         }
                         val effective = confirmedBase + delta
@@ -265,7 +261,6 @@ data class BalanceSummary(
 ) {
     /** True if there is any non-zero balance. */
     val hasBalance: Boolean get() = owedToMe > 0.0 || youOwe > 0.0
-
     /** Net across all currencies — only valid for single-currency display. */
     val netBalance: Double get() = owedToMe - youOwe
 }

@@ -18,6 +18,7 @@ import com.prathik.fairshare.domain.usecase.group.GetGroupUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import com.prathik.fairshare.data.sync.PendingOperationRepository
+import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.ExpenseRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -300,6 +301,11 @@ class GroupDetailViewModel @Inject constructor(
                         _optimisticYourBalance.value = null
                         _optimisticBalanceCurrency.value = null
                     } else {
+                        // Load UPDATE impacts from Option A table for accurate delta.
+                        val updateImpacts: Map<String, PendingBalanceImpactEntity> =
+                            pendingOperationRepository.getImpactsForGroup(groupId)
+                                .associateBy { it.operationId }
+
                         var delta = 0.0
                         for (op in relevantOps) {
                             val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
@@ -308,7 +314,11 @@ class GroupDetailViewModel @Inject constructor(
                                 "CREATE_EXPENSE"  -> delta += expense.yourBalance
                                 "DELETE_EXPENSE"  -> delta -= expense.yourBalance
                                 "RESTORE_EXPENSE" -> delta += expense.yourBalance
-                                // UPDATE: show Pending sync but skip delta (unsafe)
+                                "UPDATE_EXPENSE"  -> {
+                                    // Use persisted impact row — survives navigation + restart.
+                                    val impact = updateImpacts[op.operationId]
+                                    if (impact != null) delta += impact.delta
+                                }
                             }
                         }
                         _optimisticYourBalance.value = confirmedBalance + delta

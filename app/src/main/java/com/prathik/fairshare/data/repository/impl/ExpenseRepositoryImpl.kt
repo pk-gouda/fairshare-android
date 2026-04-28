@@ -47,20 +47,9 @@ class ExpenseRepositoryImpl @Inject constructor(
             return ApiResult.Success(result.data.map { it.toDomain() })
         }
         // Network failed — fall back to cache so the screen isn't empty
-        val cached = expenseDao.getByGroupId(groupId)   // non-deleted only
+        val cached = expenseDao.getByGroupId(groupId)
         if (cached.isNotEmpty()) {
             return ApiResult.Success(cached.map { it.toDomain() })
-        }
-        // Network failed and visible cache is empty. Check whether ANY expense
-        // (including soft-deleted) exists for this group. If so, the empty list
-        // is valid — all expenses were deleted offline. Do NOT return NetworkError
-        // in that case or GroupDetail will show 'No internet connection'.
-        val anyExpenses = expenseDao.getByGroupIdIncludingDeleted(groupId)
-        if (anyExpenses.isNotEmpty()) {
-            android.util.Log.d("ExpenseCache",
-                "getGroupExpenses offline: ${anyExpenses.size} total rows, "
-                        + "${cached.size} visible — returning empty list (all soft-deleted)")
-            return ApiResult.Success(emptyList())
         }
         return result.mapSuccess { list -> list.map { it.toDomain() } }
     }
@@ -411,8 +400,10 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun getCachedExpense(expenseId: String): com.prathik.fairshare.domain.model.Expense? =
         expenseDao.getById(expenseId)?.toDomain()
 
-    override suspend fun getCachedDirectOtherUserId(expenseId: String): String? =
-        expenseDao.getById(expenseId)?.otherUserId
+    override suspend fun getCachedDirectOtherUserId(expenseId: String): String? {
+        val entity = expenseDao.getById(expenseId) ?: return null
+        return if (entity.groupId.isNullOrEmpty()) entity.otherUserId else null
+    }
 
     // ── Local cache operations for offline optimistic UI (Wave 2D-Final) ───────
 
@@ -430,6 +421,9 @@ class ExpenseRepositoryImpl @Inject constructor(
         yourPaid    : Double,
         yourShare   : Double,
         otherUserId : String?,
+        payerData   : Map<String, Double>,
+        splitData   : Map<String, Double>,
+        memberNames : Map<String, String>,
     ) {
         val now = java.time.LocalDateTime.now().toString()
         expenseDao.insert(
@@ -457,10 +451,129 @@ class ExpenseRepositoryImpl @Inject constructor(
                 otherUserId  = otherUserId,
             )
         )
+        // Cache payer rows so ExpenseDetail renders 'Who Paid' offline without
+        // requiring a network fetch. Uses the same payerData the request carries.
+        if (payerData.isNotEmpty()) {
+            expensePayerDao.deleteByExpenseId(localId)
+            expensePayerDao.insertAll(payerData.map { (uid, amt) ->
+                ExpensePayerEntity(
+                    id         = "${localId}_${uid}",
+                    expenseId  = localId,
+                    userId     = uid,
+                    fullName   = memberNames[uid] ?: uid,
+                    amountPaid = amt,
+                )
+            })
+        }
+        // Cache split rows so ExpenseDetail renders 'Split Breakdown' offline.
+        if (splitData.isNotEmpty()) {
+            expenseSplitDao.deleteByExpenseId(localId)
+            expenseSplitDao.insertAll(splitData.map { (uid, amt) ->
+                ExpenseSplitEntity(
+                    id         = "${localId}_${uid}",
+                    expenseId  = localId,
+                    userId     = uid,
+                    fullName   = memberNames[uid] ?: uid,
+                    amountOwed = amt,
+                    percentage = null,
+                    shares     = null,
+                    isSettled  = false,
+                )
+            })
+        }
     }
 
     override suspend fun deleteLocalExpense(localId: String) {
         expenseDao.deleteById(localId)
+    }
+
+    override suspend fun deleteLocalPendingPayersAndSplits(localId: String) {
+        expensePayerDao.deleteByExpenseId(localId)
+        expenseSplitDao.deleteByExpenseId(localId)
+    }
+
+    override suspend fun applyLocalPendingExpenseUpdate(
+        expenseId    : String,
+        description  : String?,
+        totalAmount  : Double?,
+        currency     : String?,
+        splitType    : com.prathik.fairshare.domain.model.SplitType?,
+        category     : com.prathik.fairshare.domain.model.ExpenseCategory?,
+        notes        : String?,
+        expenseDate  : String?,
+        payerData    : Map<String, Double>?,
+        splitData    : Map<String, Double>?,
+        currentUserId: String,
+        memberNames  : Map<String, String>,
+    ): Pair<Double, Double>? {
+        val existing = expenseDao.getById(expenseId) ?: return null
+        val oldYourBalance = existing.yourBalance
+
+        // Compute new financial values — only override fields present in the request.
+        val newTotal    = totalAmount ?: existing.totalAmount
+        val newCurrency = currency   ?: existing.currency
+        val newSplitType = splitType?.name ?: existing.splitType
+        val newCategory  = category?.name  ?: existing.category
+
+        val newYourPaid  = payerData?.get(currentUserId) ?: run {
+            // No payerData change — scale proportionally if amount changed.
+            if (totalAmount != null && existing.totalAmount != 0.0)
+                existing.yourPaid * (newTotal / existing.totalAmount)
+            else existing.yourPaid
+        }
+        val newYourShare = splitData?.get(currentUserId) ?: run {
+            if (totalAmount != null && existing.totalAmount != 0.0)
+                existing.yourShare * (newTotal / existing.totalAmount)
+            else existing.yourShare
+        }
+        val newYourBalance = newYourPaid - newYourShare
+
+        val now = java.time.LocalDateTime.now().toString()
+        expenseDao.insert(existing.copy(
+            description  = description  ?: existing.description,
+            totalAmount  = newTotal,
+            currency     = newCurrency,
+            splitType    = newSplitType,
+            category     = newCategory,
+            notes        = notes        ?: existing.notes,
+            expenseDate  = expenseDate  ?: existing.expenseDate,
+            yourPaid     = newYourPaid,
+            yourShare    = newYourShare,
+            yourBalance  = newYourBalance,
+            updatedAt    = now,
+        ))
+
+        // Replace payer/split cache rows if new data provided.
+        if (payerData != null) {
+            expensePayerDao.deleteByExpenseId(expenseId)
+            expensePayerDao.insertAll(payerData.map { (uid, amt) ->
+                ExpensePayerEntity(
+                    id         = "${expenseId}_${uid}",
+                    expenseId  = expenseId,
+                    userId     = uid,
+                    fullName   = memberNames[uid] ?: uid,
+                    amountPaid = amt,
+                )
+            })
+        }
+        if (splitData != null) {
+            expenseSplitDao.deleteByExpenseId(expenseId)
+            expenseSplitDao.insertAll(splitData.map { (uid, amt) ->
+                ExpenseSplitEntity(
+                    id         = "${expenseId}_${uid}",
+                    expenseId  = expenseId,
+                    userId     = uid,
+                    fullName   = memberNames[uid] ?: uid,
+                    amountOwed = amt,
+                    percentage = null,
+                    shares     = null,
+                    isSettled  = false,
+                )
+            })
+        }
+        android.util.Log.d("ExpenseCache",
+            "applyLocalPendingExpenseUpdate: $expenseId old=$oldYourBalance new=$newYourBalance")
+        return Pair(oldYourBalance, newYourBalance)
     }
 
     override suspend fun propagateOtherUserId(fromId: String, toId: String) {
