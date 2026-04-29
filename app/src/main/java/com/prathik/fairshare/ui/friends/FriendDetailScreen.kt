@@ -160,8 +160,12 @@ fun FriendDetailScreen(
     val netBalance by viewModel.netBalance.collectAsState()
     val currency by viewModel.currency.collectAsState()
     val userBalances by viewModel.userBalances.collectAsState()
-    val groupBalances by viewModel.groupBalances.collectAsState()
-    val expensesState by viewModel.expensesState.collectAsState()
+    val groupBalances          by viewModel.groupBalances.collectAsState()
+    val effectiveGroupBalances by viewModel.effectiveGroupBalances.collectAsState()
+    val pendingGroupIds        by viewModel.pendingGroupIds.collectAsState()
+    // Show effective (pending-overlay) group balances when active, else confirmed
+    val displayedGroupBalances = effectiveGroupBalances ?: groupBalances
+    val expensesState          by viewModel.expensesState.collectAsState()
     val settlements by viewModel.settlements.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     val friendStatus by viewModel.friendStatus.collectAsState()
@@ -203,7 +207,7 @@ fun FriendDetailScreen(
 
 
     // Per-currency group totals
-    val groupByCurrency = groupBalances.filter { it.groupId != null }
+    val groupByCurrency = displayedGroupBalances.filter { it.groupId != null }
         .groupBy { it.currency }
         .mapValues { (_, list) -> list.sumOf { it.amount } }
     // Per-currency total balances
@@ -229,7 +233,8 @@ fun FriendDetailScreen(
         // Build list of non-zero settleable contexts.
         val contexts = mutableListOf<SettleContext>()
 
-        // One GROUP entry per non-zero group balance
+        // Use confirmed groupBalances for settle — do not settle on pending-only amounts.
+        // Pending balances are optimistic; the backend has not confirmed them yet.
         groupBalances
             .filter { it.groupId != null && Math.abs(it.amount) > 0.01 }
             .forEach { contexts.add(SettleContext(it.groupId, it.currency, it.amount)) }
@@ -273,7 +278,7 @@ fun FriendDetailScreen(
 
     val friendName = friend?.fullName ?: ""
     val friendId = friend?.id ?: viewModel.friendId
-    val groupCount = groupBalances.count { it.groupId != null }
+    val groupCount = displayedGroupBalances.count { it.groupId != null }
 
 
 
@@ -323,8 +328,8 @@ fun FriendDetailScreen(
     // Use optimistic balance when available (pending expense changes in flight).
     val effectiveNetBalance = optimisticNetBalance ?: netBalance
     val effectiveCurrency   = optimisticBalanceCurrency ?: currency
-    val hasAnyActivity = netBalance != 0.0 ||
-            groupBalances.isNotEmpty() ||
+    val hasAnyActivity = effectiveNetBalance != 0.0 ||
+            displayedGroupBalances.isNotEmpty() ||
             settlements.isNotEmpty() ||
             (expensesState is FriendExpensesState.Success &&
                     (expensesState as FriendExpensesState.Success).expenses.isNotEmpty())
@@ -622,7 +627,7 @@ fun FriendDetailScreen(
             .padding(innerPadding)) {
             PullToRefreshBox(
                 isRefreshing = isLoading,
-                onRefresh = { viewModel.loadData() },
+                onRefresh = { viewModel.refreshExpenses() },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 if (isLoading && friend == null) {
@@ -679,7 +684,42 @@ fun FriendDetailScreen(
                             )
                         }
 
-                        // ── Unified Timeline ──────────────────────────────────
+                        // ── In groups ─────────────────────────────────────────
+                        // Rendered as a fixed section above the expense timeline.
+                        // Uses displayedGroupBalances (effectiveGroupBalances ?: groupBalances).
+                        if (displayedGroupBalances.filter { it.groupId != null }.isNotEmpty()) {
+                            item {
+                                androidx.compose.material3.HorizontalDivider(
+                                    modifier = androidx.compose.ui.Modifier.padding(
+                                        start = Spacing.lg, end = Spacing.lg, top = Spacing.md,
+                                    ),
+                                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.06f),
+                                )
+                                androidx.compose.material3.Text(
+                                    text = "In groups",
+                                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                                    color = TextTertiary,
+                                    modifier = androidx.compose.ui.Modifier.padding(
+                                        start = Spacing.lg, end = Spacing.lg,
+                                        top = Spacing.md, bottom = Spacing.xs,
+                                    ),
+                                )
+                            }
+                            displayedGroupBalances
+                                .filter { it.groupId != null }
+                                .forEach { balance ->
+                                    item(key = "ingroup_${balance.groupId}_${balance.currency}") {
+                                        GroupBalanceRow(
+                                            balance     = balance,
+                                            showDateRail = false,
+                                            isPending   = balance.groupId in pendingGroupIds,
+                                            onClick     = { onNavigateToGroup(balance.groupId!!) },
+                                        )
+                                    }
+                                }
+                        }
+
+                        // ── Expense Timeline ──────────────────────────────────
                         when (val state = expensesState) {
                             is FriendExpensesState.Loading -> {
                                 item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
@@ -696,14 +736,9 @@ fun FriendDetailScreen(
                             }
 
                             is FriendExpensesState.Success -> {
+                                // Fix: group balance rows rendered in dedicated section above,
+                                // NOT inserted into the date-sorted expense timeline.
                                 val allItems = buildList<FriendTimelineItem> {
-                                    groupBalances.forEach {
-                                        add(
-                                            FriendTimelineItem.GroupBalanceItem(
-                                                it
-                                            )
-                                        )
-                                    }
                                     state.expenses
                                         .filter { !it.isDeleted }
                                         .forEach { add(FriendTimelineItem.DirectExpenseItem(it)) }
@@ -777,6 +812,7 @@ fun FriendDetailScreen(
                                                         GroupBalanceRow(
                                                             balance = item.balance,
                                                             showDateRail = showDateRail,
+                                                            isPending = false,
                                                             onClick = { gId ->
                                                                 if (gId != null) onNavigateToGroup(
                                                                     gId
@@ -2050,6 +2086,7 @@ private fun FriendFullySettledRow(
 private fun GroupBalanceRow(
     balance: Balance,
     showDateRail: Boolean,
+    isPending: Boolean = false,
     onClick: (String?) -> Unit,
 ) {
     val isOwed = balance.amount > 0
@@ -2060,6 +2097,7 @@ private fun GroupBalanceRow(
     val balanceLabel = when {
         isSettled -> "settled up"; isOwed -> "you lent"; else -> "you owe"
     }
+    val pendingLabel = if (isPending) "Pending sync" else null
     val displayAmount =
         if (isSettled) "" else MoneyUtils.format(Math.abs(balance.amount), balance.currency)
 
@@ -2143,7 +2181,16 @@ private fun GroupBalanceRow(
                 )
                 Text("in group", fontSize = 12.sp, color = Color(0xFF9AA3AF))
             }
-            if (isSettled) {
+            if (isPending && isSettled) {
+                // Pending zero — show $0.00 Pending sync instead of 'settled up'
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        MoneyUtils.format(0.0, balance.currency),
+                        fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextTertiary
+                    )
+                    Text("Pending sync", fontSize = 8.sp, color = Color(0xFF9AA3AF))
+                }
+            } else if (isSettled) {
                 Text("settled up", fontSize = 12.sp, color = TextTertiary)
             } else {
                 Column(horizontalAlignment = Alignment.End) {
@@ -2154,6 +2201,9 @@ private fun GroupBalanceRow(
                         fontWeight = FontWeight.Bold,
                         color = balanceColor
                     )
+                    if (isPending) {
+                        Text("Pending sync", fontSize = 8.sp, color = Color(0xFF9AA3AF))
+                    }
                 }
             }
         }

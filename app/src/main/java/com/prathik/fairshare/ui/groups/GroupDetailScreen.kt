@@ -274,7 +274,7 @@ fun GroupDetailScreen(
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             PullToRefreshBox(
                 isRefreshing = isLoading,
-                onRefresh    = { viewModel.loadData() },
+                onRefresh    = { viewModel.refreshExpenses() },
                 modifier     = Modifier.fillMaxSize(),
             ) {
                 when (val state = groupState) {

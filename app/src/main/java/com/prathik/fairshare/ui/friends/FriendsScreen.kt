@@ -290,7 +290,7 @@ fun FriendsScreen(
     ) { innerPadding ->
         PullToRefreshBox(
             isRefreshing = isLoading,
-            onRefresh    = { viewModel.loadData() },
+            onRefresh    = { viewModel.refresh() },
             modifier     = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
@@ -334,10 +334,11 @@ fun FriendsScreen(
                             else       -> (-netAmt / totalOwed).toFloat().coerceIn(0f, 1f)
                         }
                         FriendCard(
-                            friend   = friend,
-                            entries  = entries,
-                            fraction = fraction,
-                            onClick  = { onNavigateToFriend(friend.id) },
+                            friend    = friend,
+                            entries   = entries,
+                            fraction  = fraction,
+                            isPending = isPendingFriend,
+                            onClick   = { onNavigateToFriend(friend.id) },
                         )
                     }
 
@@ -345,18 +346,20 @@ fun FriendsScreen(
                     items(nonActiveFriends, key = { "pending_${it.id}" }) { friend ->
                         // Use optimistic entries first so pending Placeholder balances
                         // show immediately without requiring a refresh.
-                        // Note: optimisticFriendBalanceMap only reflects DIRECT friend
-                        // expense ops. Group expense impacts on friend rows require
-                        // payer/split data and will be addressed in a future patch.
+                        // optimisticFriendBalanceMap now includes both DIRECT and GROUP
+                        // pending expense impacts (group UPDATE excluded until old/new
+                        // payer/split context is stored — see Wave2F TODO in FriendsViewModel).
+                        val isPendingFriend = friend.id in friendsWithPendingSync
                         val pendingEntries =
                             optimisticFriendBalanceMap[friend.id] ?: balanceMap[friend.id] ?: emptyList()
                         val pendingAmt = pendingEntries.sumOf { it.first }
                         val pendingCur = pendingEntries.maxByOrNull { Math.abs(it.first) }?.second ?: "USD"
                         PendingFriendCard(
-                            friend   = friend,
-                            balance  = if (pendingEntries.isEmpty()) null else pendingAmt,
-                            currency = pendingCur,
-                            onClick  = { onNavigateToFriend(friend.id) },
+                            friend    = friend,
+                            balance   = if (pendingEntries.isEmpty()) null else pendingAmt,
+                            currency  = pendingCur,
+                            isPending = isPendingFriend,
+                            onClick   = { onNavigateToFriend(friend.id) },
                         )
                     }
 
@@ -443,10 +446,11 @@ private fun FriendsNetBalanceBar(
 
 @Composable
 private fun FriendCard(
-    friend  : Friend,
-    entries : List<Pair<Double, String>>, // per-currency (amount, currency) — never mixed
-    fraction: Float,     // 0..1 ring fill fraction
-    onClick : () -> Unit,
+    friend    : Friend,
+    entries   : List<Pair<Double, String>>,
+    fraction  : Float,
+    isPending : Boolean = false,
+    onClick   : () -> Unit,
 ) {
     val positives = entries.filter { it.first > 0 }
     val negatives = entries.filter { it.first < 0 }
@@ -479,7 +483,7 @@ private fun FriendCard(
             fraction  = fraction,
             arcColor  = arcColor,
             isSettled = isSettled,
-            isPending = false,
+            isPending = isPending,
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -508,6 +512,10 @@ private fun FriendCard(
         // Balance label — Splitwise pattern
         when {
             !hasEntries -> Text("no expenses", fontSize = 12.sp, color = TextTertiary)
+            isSettled && isPending -> Column(horizontalAlignment = Alignment.End) {
+                Text("settled up", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Green400)
+                Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
+            }
             isSettled   -> Text("settled up", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Green400)
             else -> Column(horizontalAlignment = Alignment.End) {
                 when {
@@ -537,6 +545,9 @@ private fun FriendCard(
                             fontWeight = FontWeight.Bold, color = Green400, maxLines = 1)
                     }
                 }
+                if (isPending) {
+                    Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
+                }
             }
         }
     }
@@ -545,7 +556,7 @@ private fun FriendCard(
 // ── Pending / Placeholder Card ────────────────────────────────────────────────
 
 @Composable
-private fun PendingFriendCard(friend: Friend, balance: Double?, currency: String = "USD", onClick: () -> Unit) {
+private fun PendingFriendCard(friend: Friend, balance: Double?, currency: String = "USD", isPending: Boolean = false, onClick: () -> Unit) {
     val statusText = when {
         friend.isPlaceholder -> "Placeholder • Claim to link"
         friend.isInvited     -> "Invited • Waiting to accept"
@@ -574,7 +585,7 @@ private fun PendingFriendCard(friend: Friend, balance: Double?, currency: String
             fraction  = 0f,       // no arc fill — status badge is the signal
             arcColor  = arcColor,
             isSettled = false,
-            isPending = friend.isInvited,   // placeholders don't get the PENDING badge
+            isPending = isPending || friend.isInvited,
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -599,15 +610,21 @@ private fun PendingFriendCard(friend: Friend, balance: Double?, currency: String
         Spacer(modifier = Modifier.width(8.dp))
 
         when {
+            isPending && (balance == null || balance == 0.0) -> Column(horizontalAlignment = Alignment.End) {
+                Text("no expenses", fontSize = 12.sp, color = TextTertiary)
+                Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
+            }
             balance == null || balance == 0.0 ->
                 Text("no expenses", fontSize = 12.sp, color = TextTertiary)
             balance > 0 -> Column(horizontalAlignment = Alignment.End) {
                 Text("owes you",                         fontSize = 10.sp, color = TextTertiary)
                 Text(MoneyUtils.format(balance, currency),  fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Green400)
+                if (isPending) Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
             }
             else -> Column(horizontalAlignment = Alignment.End) {
                 Text("you owe",                          fontSize = 10.sp, color = TextTertiary)
                 Text(MoneyUtils.format(-balance, currency), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Negative)
+                if (isPending) Text("Pending sync", fontSize = 9.sp, color = Color(0xFF9AA3AF))
             }
         }
     }

@@ -423,6 +423,15 @@ class ExpenseRepositoryImpl @Inject constructor(
     override suspend fun getCachedExpense(expenseId: String): com.prathik.fairshare.domain.model.Expense? =
         expenseDao.getById(expenseId)?.toDomain()
 
+    override suspend fun getCachedExpenseWithDetail(
+        expenseId: String,
+    ): com.prathik.fairshare.domain.model.Expense? {
+        val entity = expenseDao.getById(expenseId) ?: return null
+        val payers = expensePayerDao.getByExpenseId(expenseId)
+        val splits = expenseSplitDao.getByExpenseId(expenseId)
+        return entity.toDomain(payers, splits)
+    }
+
     override suspend fun getCachedDirectOtherUserId(expenseId: String): String? {
         val entity = expenseDao.getById(expenseId) ?: return null
         return if (entity.groupId.isNullOrEmpty()) entity.otherUserId else null

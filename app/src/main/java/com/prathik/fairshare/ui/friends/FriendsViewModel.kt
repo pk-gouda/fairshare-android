@@ -14,7 +14,9 @@ import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.data.sync.FairShareSyncManager
 import com.prathik.fairshare.data.sync.SyncReason
 import com.prathik.fairshare.domain.repository.ExpenseRepository
+import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.domain.usecase.balance.EffectiveBalanceCalculator
+import com.prathik.fairshare.domain.usecase.balance.PendingFriendImpactCalculator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +33,8 @@ class FriendsViewModel @Inject constructor(
     private val pendingOperationRepository: PendingOperationRepository,
     private val expenseRepository         : ExpenseRepository,
     private val effectiveCalculator       : EffectiveBalanceCalculator,
+    private val friendImpactCalculator    : PendingFriendImpactCalculator,
+    private val tokenStore                : EncryptedTokenStore,
     private val syncManager               : FairShareSyncManager,
 ) : ViewModel() {
 
@@ -208,26 +212,82 @@ class FriendsViewModel @Inject constructor(
             return
         }
 
-        // ── Per-friend row effective balances ─────────────────────────────────
-        // Pre-build otherUserId map via suspend call — can't call suspend inside the lambda.
+        // ── Per-friend row effective balances (Wave 2F: includes group expenses) ─
+        val currentUserId = tokenStore.getUserId() ?: ""
+
+        // Step 1: direct-expense friend map (existing logic via EffectiveBalanceCalculator)
         val otherUserIdMap: Map<String, String?> = ops.mapNotNull { op ->
             val r = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
             r to expenseRepository.getCachedDirectOtherUserId(r)
         }.toMap()
-        val effectiveFriends = effectiveCalculator.effectiveFriendBalances(
+        val directFriends = effectiveCalculator.effectiveFriendBalances(
             confirmedFriendBase      = _balanceMap.value,
             ops                      = ops,
             expenseCache             = cache,
             impacts                  = impacts,
             otherUserIdForExpense    = { resourceId -> otherUserIdMap[resourceId] },
-            // Known limitation (Wave 2F): group expense pending impacts are NOT
-            // projected into friend rows here because that requires per-expense
-            // split/payer data to compute exact friend-level contributions.
-            // Group expense ops DO update the global top-bar effectiveSummary
-            // via FairShareSyncManager.mutationRefresh → getAllBalances.
         )
-        _friendsWithPendingSync.value = effectiveFriends.keys
-        _optimisticFriendBalanceMap.value = effectiveFriends
+
+        // Step 2: project GROUP expense pending impacts into per-friend deltas.
+        // For each group op, calculate which friends are affected and by how much.
+        val groupFriendDeltas = mutableMapOf<String, Double>()  // friendId → accumulated delta
+        val groupFriendCurrency = mutableMapOf<String, String>()
+        for (op in ops) {
+            val r       = op.localResourceId ?: op.serverResourceId ?: continue
+            val expense = cache[r] ?: continue
+            if (expense.groupId == null) continue  // direct expenses handled above
+            // Load payer/split detail for this group expense
+            val detail = expenseRepository.getCachedExpenseWithDetail(r) ?: continue
+            if (detail.payers.isEmpty() || detail.splits.isEmpty()) continue
+            val friendDeltas = friendImpactCalculator.calculate(
+                payers        = detail.payers,
+                splits        = detail.splits,
+                currentUserId = currentUserId,
+            )
+            val sign = when (op.operationType) {
+                "CREATE_EXPENSE", "RESTORE_EXPENSE" -> 1.0
+                "DELETE_EXPENSE"                    -> -1.0
+                // UPDATE group friend projection requires old AND new payer/split data.
+                // Without stored old split context the delta would be wrong.
+                // TODO(Wave2F): add PendingExpenseMutationContextEntity with oldPayerData/oldSplitData
+                "UPDATE_EXPENSE"                    -> 0.0
+                else                                -> 0.0
+            }
+            if (sign == 0.0) continue
+            for ((friendId, d) in friendDeltas) {
+                groupFriendDeltas[friendId] = (groupFriendDeltas[friendId] ?: 0.0) + d * sign
+                groupFriendCurrency[friendId] = expense.currency
+            }
+        }
+
+        // Step 3: merge direct + group into final optimistic map
+        val mergedFriends = directFriends.toMutableMap()
+        for ((friendId, groupDelta) in groupFriendDeltas) {
+            val currency = groupFriendCurrency[friendId] ?: continue
+            val existing = mergedFriends[friendId]
+            if (existing != null) {
+                val hasCurrency = existing.any { it.second == currency }
+                mergedFriends[friendId] = if (hasCurrency) {
+                    // Update the matching currency entry
+                    existing.map { (amt, cur) ->
+                        if (cur == currency) Pair(amt + groupDelta, cur) else Pair(amt, cur)
+                    }
+                } else {
+                    // Pending currency not in confirmed entries — append rather than drop
+                    existing + Pair(groupDelta, currency)
+                }
+            } else {
+                // Friend has no direct effective balance yet; start from currency-specific base.
+                val confirmedBase = _balanceMap.value[friendId]
+                    ?.firstOrNull { it.second == currency }?.first ?: 0.0
+                mergedFriends[friendId] = listOf(Pair(confirmedBase + groupDelta, currency))
+            }
+        }
+
+        // Track all friends with any pending sync (direct or group)
+        val pendingSyncFriends = (directFriends.keys + groupFriendDeltas.keys).toSet()
+        _friendsWithPendingSync.value = pendingSyncFriends
+        _optimisticFriendBalanceMap.value = mergedFriends
 
         // ── Global top-bar effective summary (same formula as GroupsViewModel) ─
         // Always call even when confirmedEntries is empty — calculator handles

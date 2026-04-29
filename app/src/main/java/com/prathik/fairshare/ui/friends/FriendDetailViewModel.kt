@@ -16,6 +16,7 @@ import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.repository.FriendRepository
 import com.prathik.fairshare.domain.repository.ImportRepository
 import com.prathik.fairshare.domain.repository.SettlementRepository
+import com.prathik.fairshare.domain.usecase.balance.PendingFriendImpactCalculator
 import com.prathik.fairshare.domain.usecase.settlement.GetSettlementHistoryUseCase
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.sync.PendingOperationRepository
@@ -41,6 +42,7 @@ class FriendDetailViewModel @Inject constructor(
     private val importRepository: ImportRepository,
     private val pendingOperationRepository: PendingOperationRepository,
     private val syncManager               : FairShareSyncManager,
+    private val friendImpactCalculator    : PendingFriendImpactCalculator,
 ) : ViewModel() {
 
     val friendId: String = checkNotNull(savedStateHandle["friendId"])
@@ -89,6 +91,14 @@ class FriendDetailViewModel @Inject constructor(
     // Per-group balance breakdown — shown in the balance card, not as expense rows
     private val _groupBalances = MutableStateFlow<List<Balance>>(emptyList())
     val groupBalances: StateFlow<List<Balance>> = _groupBalances.asStateFlow()
+
+    /** Confirmed group balances + pending group impact overlaid. Null = no pending ops active. */
+    private val _effectiveGroupBalances = MutableStateFlow<List<Balance>?>(null)
+    val effectiveGroupBalances: StateFlow<List<Balance>?> = _effectiveGroupBalances.asStateFlow()
+
+    /** GroupIds whose balance includes at least one active pending local impact. */
+    private val _pendingGroupIds = MutableStateFlow<Set<String>>(emptySet())
+    val pendingGroupIds: StateFlow<Set<String>> = _pendingGroupIds.asStateFlow()
 
     // Settlement history with this friend — shown in the timeline
     private val _settlements = MutableStateFlow<List<Settlement>>(emptyList())
@@ -374,40 +384,62 @@ class FriendDetailViewModel @Inject constructor(
         viewModelScope.launch {
             pendingOperationRepository.observeActivePendingExpenseOps()
                 .collect { ops ->
-                    val confirmedBalance = _netBalance.value
-
-                    // Filter to ops whose cached expense belongs to THIS friend.
-                    // groupId == null scopes to direct expenses; otherUserId == friendId
-                    // scopes to this specific friend. UPDATE is included for Pending sync
-                    // label but its delta is not applied (unsafe without parsing JSON).
-                    val relevantOps = ops.filter { op ->
-                        val resourceId =
-                            op.localResourceId ?: op.serverResourceId ?: return@filter false
-                        val expense =
-                            expenseRepository.getCachedExpense(resourceId) ?: return@filter false
-                        if (expense.groupId != null) return@filter false
-                        expenseRepository.getCachedDirectOtherUserId(resourceId) == friendId
-                    }
-
-                    if (relevantOps.isEmpty()) {
+                    if (ops.isEmpty()) {
                         val wasSync = _hasPendingBalanceSync.value
                         _optimisticNetBalance.value = null
                         _optimisticBalanceCurrency.value = null
+                        _effectiveGroupBalances.value = null
+                        _pendingGroupIds.value = emptySet()
                         _hasPendingBalanceSync.value = false
-                        // Pending ops cleared → refresh so confirmed balance fills
-                        // the gap immediately rather than waiting for next load.
                         if (wasSync) refreshExpenses()
                         return@collect
                     }
-                    _hasPendingBalanceSync.value = true   // scoped: only this friend's ops
 
-                    // Currency safety: only apply optimistic delta when all relevant
-                    // expenses share one currency that matches what we display.
-                    val deltaExpenses = relevantOps.mapNotNull { op ->
-                        val resourceId = op.localResourceId ?: op.serverResourceId ?: return@mapNotNull null
-                        expenseRepository.getCachedExpense(resourceId)
+                    // Separate ops into direct (groupId==null, otherUserId==friendId)
+                    // and group (groupId!=null, friendId is a participant).
+                    data class OpWithExpense(
+                        val op: com.prathik.fairshare.data.local.PendingOperationEntity,
+                        val expense: com.prathik.fairshare.domain.model.Expense,
+                        val isGroup: Boolean,
+                    )
+
+                    val relevant = mutableListOf<OpWithExpense>()
+                    for (op in ops) {
+                        val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
+                        val expense = expenseRepository.getCachedExpense(resourceId) ?: continue
+                        when {
+                            // Direct expense with this friend
+                            expense.groupId == null &&
+                                    expenseRepository.getCachedDirectOtherUserId(resourceId) == friendId -> {
+                                relevant.add(OpWithExpense(op, expense, false))
+                            }
+                            // Group expense — include if friendId appears in payer/split rows
+                            expense.groupId != null -> {
+                                val detail = expenseRepository.getCachedExpenseWithDetail(resourceId)
+                                    ?: continue
+                                val participants = (detail.payers.map { it.userId } +
+                                        detail.splits.map { it.userId }).toSet()
+                                if (friendId in participants) {
+                                    relevant.add(OpWithExpense(op, detail, true))
+                                }
+                            }
+                        }
                     }
-                    val pendingCurrencies = deltaExpenses.map { it.currency }.toSet()
+
+                    if (relevant.isEmpty()) {
+                        val wasSync = _hasPendingBalanceSync.value
+                        _optimisticNetBalance.value = null
+                        _optimisticBalanceCurrency.value = null
+                        _effectiveGroupBalances.value = null
+                        _pendingGroupIds.value = emptySet()
+                        _hasPendingBalanceSync.value = false
+                        if (wasSync) refreshExpenses()
+                        return@collect
+                    }
+                    _hasPendingBalanceSync.value = true
+
+                    // Currency safety
+                    val pendingCurrencies = relevant.map { it.expense.currency }.toSet()
                     val confirmedCurrencies = _userBalances.value.map { it.currency }.toSet()
                     val displayCurrency = when {
                         confirmedCurrencies.size == 1 -> confirmedCurrencies.single()
@@ -415,22 +447,26 @@ class FriendDetailViewModel @Inject constructor(
                             pendingCurrencies.single()
                         else -> _currency.value
                     }
-                    val currencySafe = pendingCurrencies.size == 1 &&
-                            pendingCurrencies.single() == displayCurrency
-
-                    if (!currencySafe) {
+                    if (pendingCurrencies.size != 1 || pendingCurrencies.single() != displayCurrency) {
                         _optimisticNetBalance.value = null
                         _optimisticBalanceCurrency.value = null
-                    } else {
-                        // Load UPDATE impact rows from Option A table.
-                        val updateImpacts: Map<String, PendingBalanceImpactEntity> =
-                            pendingOperationRepository.getImpactsForFriend(friendId)
-                                .associateBy { it.operationId }
+                        _effectiveGroupBalances.value = null
+                        _pendingGroupIds.value = emptySet()
+                        return@collect
+                    }
 
-                        var delta = 0.0
-                        for (op in relevantOps) {
-                            val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
-                            val expense = expenseRepository.getCachedExpense(resourceId) ?: continue
+                    val updateImpacts = pendingOperationRepository.getImpactsForFriend(friendId)
+                        .associateBy { it.operationId }
+
+                    val confirmedBalance = _netBalance.value
+                    var delta = 0.0
+
+                    for ((op, expense, isGroup) in relevant) {
+                        val resourceId = op.localResourceId ?: op.serverResourceId ?: continue
+                        if (expense.currency != displayCurrency) continue
+
+                        if (!isGroup) {
+                            // Direct expense — use yourBalance as before
                             when (op.operationType) {
                                 "CREATE_EXPENSE"  -> delta += expense.yourBalance
                                 "DELETE_EXPENSE"  -> delta -= expense.yourBalance
@@ -440,13 +476,87 @@ class FriendDetailViewModel @Inject constructor(
                                     if (impact != null) delta += impact.delta
                                 }
                             }
+                        } else {
+                            // Group expense — calculate friend-level delta from payer/split data
+                            val currentUserId = tokenStore.getUserId() ?: continue
+                            val friendDeltas = friendImpactCalculator.calculate(
+                                payers        = expense.payers,
+                                splits        = expense.splits,
+                                currentUserId = currentUserId,
+                            )
+                            val friendDelta = friendDeltas[friendId] ?: 0.0
+                            when (op.operationType) {
+                                "CREATE_EXPENSE"  -> delta += friendDelta
+                                "DELETE_EXPENSE"  -> delta -= friendDelta
+                                "RESTORE_EXPENSE" -> delta += friendDelta
+                                "UPDATE_EXPENSE"  -> {
+                                    // Group UPDATE friend projection requires old AND new payer/split
+                                    // context to compute (newFriendImpact - oldFriendImpact) correctly.
+                                    // TODO(Wave2F): add PendingExpenseMutationContextEntity to store
+                                    // oldPayerData/oldSplitData before offline edit overwrites Room.
+                                    // Skipping to avoid showing a wrong number.
+                                }
+                            }
                         }
-                        _optimisticNetBalance.value = confirmedBalance + delta
-                        _optimisticBalanceCurrency.value = displayCurrency
                     }
+
+                    _optimisticNetBalance.value = confirmedBalance + delta
+                    _optimisticBalanceCurrency.value = displayCurrency
+
+                    // ── Effective group breakdown tiles ──────────────────────────────
+                    // Apply pending group deltas to per-group Balance rows so the
+                    // group tile in FriendDetail reflects the pending state.
+                    val pendingIds = mutableSetOf<String>()
+                    val confirmedGroupMap = _groupBalances.value
+                        .associateBy { it.groupId }.toMutableMap()
+
+                    for ((op, expense, isGroup) in relevant) {
+                        if (!isGroup) continue
+                        if (expense.currency != displayCurrency) continue
+                        val currentUserId = tokenStore.getUserId() ?: continue
+                        val gId = expense.groupId ?: continue
+                        val friendDeltas = friendImpactCalculator.calculate(
+                            payers        = expense.payers,
+                            splits        = expense.splits,
+                            currentUserId = currentUserId,
+                        )
+                        val friendDelta = friendDeltas[friendId] ?: 0.0
+                        val signedDelta = when (op.operationType) {
+                            "CREATE_EXPENSE", "RESTORE_EXPENSE" -> friendDelta
+                            "DELETE_EXPENSE"                    -> -friendDelta
+                            // UPDATE: skip group tile projection (needs old/new split data)
+                            // TODO(Wave2F): store oldPayerData/oldSplitData for exact delta
+                            else -> 0.0
+                        }
+                        if (signedDelta == 0.0) continue
+                        pendingIds.add(gId)
+                        val existing = confirmedGroupMap[gId]
+                        if (existing != null) {
+                            confirmedGroupMap[gId] = existing.copy(
+                                amount = existing.amount + signedDelta
+                            )
+                        } else {
+                            // No confirmed row yet — create a temporary pending row
+                            confirmedGroupMap[gId] = Balance(
+                                userId            = currentUserId ?: "",
+                                otherUserId       = friendId,
+                                otherUserName     = "",
+                                amount            = signedDelta,
+                                currency          = displayCurrency,
+                                groupId           = gId,
+                                groupName         = expense.groupName,
+                                groupLastActivity = null,
+                            )
+                        }
+                    }
+                    _pendingGroupIds.value = pendingIds
+                    _effectiveGroupBalances.value =
+                        if (pendingIds.isEmpty()) null
+                        else confirmedGroupMap.values.toList()
                 }
         }
     }
+
 }
 
 sealed class FriendExpensesState {

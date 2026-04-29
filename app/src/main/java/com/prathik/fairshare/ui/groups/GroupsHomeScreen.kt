@@ -263,7 +263,7 @@ fun GroupsHomeScreen(
     ) { innerPadding ->
         PullToRefreshBox(
             isRefreshing = isLoading,
-            onRefresh = { viewModel.loadData() },
+            onRefresh = { viewModel.refresh() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),

@@ -180,6 +180,13 @@ interface ExpenseRepository {
     suspend fun getCachedExpense(expenseId: String): com.prathik.fairshare.domain.model.Expense?
 
     /**
+     * Like [getCachedExpense] but also reads cached ExpensePayerEntity + ExpenseSplitEntity rows,
+     * so the returned Expense has populated payers/splits for friend impact calculation.
+     * Returns null if the expense entity is not cached.
+     */
+    suspend fun getCachedExpenseWithDetail(expenseId: String): com.prathik.fairshare.domain.model.Expense?
+
+    /**
      * Capture pre-mutation context from Room for SyncWorker so delete/restore/update
      * can refresh the correct group/friend cache scopes after backend success.
      */
