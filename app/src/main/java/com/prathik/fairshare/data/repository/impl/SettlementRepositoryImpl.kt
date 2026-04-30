@@ -3,6 +3,9 @@ package com.prathik.fairshare.data.repository.impl
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.SettleRequest
 import com.prathik.fairshare.data.model.request.UpdateSettlementRequest
+import com.prathik.fairshare.data.local.SettlementDao
+import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.local.toEntity
 import com.prathik.fairshare.data.network.api.SettlementApiService
 import com.prathik.fairshare.data.network.mapSuccess
 import com.prathik.fairshare.data.network.safeApiCall
@@ -16,6 +19,8 @@ import javax.inject.Singleton
 @Singleton
 class SettlementRepositoryImpl @Inject constructor(
     private val settlementService: SettlementApiService,
+    private val settlementDao    : SettlementDao,
+    private val tokenStore       : EncryptedTokenStore,
 ) : SettlementRepository {
 
     override suspend fun settle(
@@ -27,8 +32,8 @@ class SettlementRepositoryImpl @Inject constructor(
         paymentMethod: String?,
         notes: String?,
         payerId: String?,
-    ): ApiResult<List<Settlement>> =
-        safeApiCall {
+    ): ApiResult<List<Settlement>> {
+        val result = safeApiCall {
             settlementService.settle(
                 SettleRequest(
                     otherUserId   = otherUserId,
@@ -42,10 +47,33 @@ class SettlementRepositoryImpl @Inject constructor(
                 )
             )
         }.mapSuccess { list -> list.map { it.toDomain() } }
+        if (result is ApiResult.Success) {
+            settlementDao.insertAll(result.data.map { it.toEntity() })
+        }
+        return result
+    }
 
-    override suspend fun getHistory(otherUserId: String): ApiResult<List<Settlement>> =
-        safeApiCall { settlementService.getHistory(otherUserId) }
-            .mapSuccess { list -> list.map { it.toDomain() } }
+    override suspend fun getHistory(otherUserId: String): ApiResult<List<Settlement>> {
+        val currentUserId = tokenStore.getUserId()
+        val networkResult = safeApiCall { settlementService.getHistory(otherUserId) }
+        val result = networkResult.mapSuccess { list -> list.map { it.toDomain() } }
+        if (result is ApiResult.Success && currentUserId != null) {
+            // Scoped replace: only wipe settlements between this exact pair.
+            // Preserves other friends' cached settlement history.
+            settlementDao.deleteDirectBetween(currentUserId, otherUserId)
+            settlementDao.insertAll(
+                result.data.filter { it.groupId == null }.map { it.toEntity() }
+            )
+        }
+        if (result !is ApiResult.Success && currentUserId != null) {
+            val cached = settlementDao.getDirectBetween(currentUserId, otherUserId)
+            if (cached.isNotEmpty()) {
+                android.util.Log.d("SettlementCache", "getHistory offline: ${cached.size} rows")
+                return ApiResult.Success(cached.map { it.toDomain() })
+            }
+        }
+        return result
+    }
 
     override suspend fun getPending(): ApiResult<List<Settlement>> =
         safeApiCall { settlementService.getPending() }
@@ -55,16 +83,23 @@ class SettlementRepositoryImpl @Inject constructor(
         safeApiCall { settlementService.getInitiated() }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
-    override suspend fun cancelSettlement(settlementId: String): ApiResult<Settlement> =
-        safeApiCall { settlementService.cancelSettlement(settlementId) }
+    override suspend fun cancelSettlement(settlementId: String): ApiResult<Settlement> {
+        val result = safeApiCall { settlementService.cancelSettlement(settlementId) }
             .mapSuccess { it.toDomain() }
+        if (result is ApiResult.Success) settlementDao.insertAll(listOf(result.data.toEntity()))
+        return result
+    }
 
-    override suspend fun restoreSettlement(settlementId: String): ApiResult<Settlement> =
-        safeApiCall { settlementService.restoreSettlement(settlementId) }
+    override suspend fun restoreSettlement(settlementId: String): ApiResult<Settlement> {
+        val result = safeApiCall { settlementService.restoreSettlement(settlementId) }
             .mapSuccess { it.toDomain() }
+        if (result is ApiResult.Success) settlementDao.insertAll(listOf(result.data.toEntity()))
+        return result
+    }
 
     override suspend fun deleteSettlement(settlementId: String): ApiResult<Unit> {
         val result = safeApiCall { settlementService.deleteSettlement(settlementId) }
+        if (result is ApiResult.Success) settlementDao.deleteById(settlementId)
         return when (result) {
             is ApiResult.Success -> ApiResult.Success(Unit)
             is ApiResult.NetworkError    -> result
@@ -77,17 +112,26 @@ class SettlementRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getSettlementById(settlementId: String): ApiResult<Settlement> =
-        safeApiCall { settlementService.getSettlementById(settlementId) }
+    override suspend fun getSettlementById(settlementId: String): ApiResult<Settlement> {
+        val result = safeApiCall { settlementService.getSettlementById(settlementId) }
             .mapSuccess { it.toDomain() }
+        if (result !is ApiResult.Success) {
+            val cached = settlementDao.getById(settlementId)
+            if (cached != null) {
+                android.util.Log.d("SettlementCache", "getSettlementById offline: $settlementId")
+                return ApiResult.Success(cached.toDomain())
+            }
+        }
+        return result
+    }
 
     override suspend fun updateSettlement(
         settlementId: String,
         amount: Double?,
         notes: String?,
         paymentMethod: String?,
-    ): ApiResult<Settlement> =
-        safeApiCall {
+    ): ApiResult<Settlement> {
+        val result = safeApiCall {
             settlementService.updateSettlement(
                 settlementId,
                 UpdateSettlementRequest(
@@ -97,4 +141,7 @@ class SettlementRepositoryImpl @Inject constructor(
                 )
             )
         }.mapSuccess { it.toDomain() }
+        if (result is ApiResult.Success) settlementDao.insertAll(listOf(result.data.toEntity()))
+        return result
+    }
 }

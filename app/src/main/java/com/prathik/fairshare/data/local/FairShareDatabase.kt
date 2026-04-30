@@ -37,8 +37,9 @@ import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
         NotificationEntity::class,
         PendingOperationEntity::class,
         PendingBalanceImpactEntity::class,
+        SettlementEntity::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -55,6 +56,7 @@ abstract class FairShareDatabase : RoomDatabase() {
     abstract fun expenseSplitDao(): ExpenseSplitDao
     abstract fun pendingOperationDao(): PendingOperationDao
     abstract fun pendingBalanceImpactDao(): PendingBalanceImpactDao
+    abstract fun settlementDao(): SettlementDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -262,6 +264,45 @@ abstract class FairShareDatabase : RoomDatabase() {
          * 14 → 15: Create pending_balance_impact table for durable UPDATE_EXPENSE
          * balance overlay (Option A). Separate table avoids polluting pending_operations.
          */
+        /**
+         * 16 → 17: Add settlements table for offline-first settlement timeline.
+         * Replaces pure-network settlement loading with Room-backed fallback.
+         */
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS settlements (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        payerId TEXT NOT NULL,
+                        payerName TEXT NOT NULL,
+                        receiverId TEXT NOT NULL,
+                        receiverName TEXT NOT NULL,
+                        amount REAL NOT NULL,
+                        currency TEXT NOT NULL,
+                        groupId TEXT,
+                        groupName TEXT,
+                        status TEXT NOT NULL,
+                        notes TEXT,
+                        paymentMethod TEXT,
+                        recordedById TEXT NOT NULL,
+                        recordedByName TEXT NOT NULL,
+                        settlementDate TEXT NOT NULL,
+                        completedAt TEXT,
+                        createdAt TEXT NOT NULL,
+                        settleType TEXT,
+                        isFullSettle INTEGER NOT NULL DEFAULT 0,
+                        groupBalanceSnapshot TEXT,
+                        cancelledAt TEXT,
+                        cancelledByName TEXT,
+                        cancelledById TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_settlements_groupId ON settlements (groupId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_settlements_payerId ON settlements (payerId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_settlements_receiverId ON settlements (receiverId)")
+            }
+        }
+
         /**
          * 15 → 16: Add oldParticipantIds column to pending_balance_impact.
          * Stores comma-separated original participant IDs (captured before offline edit)

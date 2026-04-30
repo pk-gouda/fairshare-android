@@ -534,6 +534,7 @@ class AddExpenseViewModel @Inject constructor(
     }
 
     fun submit() {
+        if (_uiState.value is AddExpenseUiState.Loading) return
         if (_activeTab.value == ExpenseTab.TRANSFER) submitTransfer() else submitExpense()
     }
 
@@ -706,10 +707,11 @@ class AddExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.Conflict -> {
-                    // 409 from backend means the idempotency key was already used with a
-                    // different body — treat as permanent (user must retry from scratch).
+                    // Preserve the backend actual 409 reason. A conflict can be an
+                    // idempotency/body conflict, an in-flight duplicate, or a domain conflict;
+                    // mapping every 409 to "Expense already exists" hides the real issue.
                     pendingOperationRepository.markFailed(enqueued.operationId, result.message)
-                    _uiState.value = AddExpenseUiState.Error("Expense already exists. Please try again.")
+                    _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
                 else -> {

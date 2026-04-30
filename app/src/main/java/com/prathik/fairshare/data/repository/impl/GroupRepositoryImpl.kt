@@ -6,6 +6,8 @@ import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.local.GroupDao
 import com.prathik.fairshare.data.local.GroupMemberDao
 import com.prathik.fairshare.data.local.GroupMemberEntity
+import com.prathik.fairshare.data.local.SettlementDao
+import com.prathik.fairshare.data.local.toEntity
 import com.prathik.fairshare.data.local.GroupEntity
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.AddMemberRequest
@@ -34,6 +36,7 @@ class GroupRepositoryImpl @Inject constructor(
     private val groupService   : GroupApiService,
     private val groupDao       : GroupDao,
     private val groupMemberDao : GroupMemberDao,
+    private val settlementDao  : SettlementDao,
     private val balanceDao     : BalanceDao,
     private val tokenStore     : EncryptedTokenStore,
 ) : GroupRepository {
@@ -216,9 +219,25 @@ class GroupRepositoryImpl @Inject constructor(
         safeApiCall { groupService.getAllGroupBalances(groupId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
-    override suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>> =
-        safeApiCall { groupService.getGroupSettlements(groupId) }
-            .mapSuccess { list -> list.map { it.toDomain() } }
+    override suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>> {
+        // Network call returns ApiResult<List<SettlementResponse>> — map to domain first.
+        val networkResult = safeApiCall { groupService.getGroupSettlements(groupId) }
+        val result = networkResult.mapSuccess { list -> list.map { it.toDomain() } }
+        if (result is ApiResult.Success) {
+            // Replace-then-insert: wipe stale group rows, persist fresh list.
+            settlementDao.deleteByGroupId(groupId)
+            settlementDao.insertAll(result.data.map { s -> s.toEntity() })
+        }
+        // Offline fallback: return cached rows if network unavailable.
+        if (result !is ApiResult.Success) {
+            val cached = settlementDao.getByGroupId(groupId)
+            if (cached.isNotEmpty()) {
+                android.util.Log.d("SettlementCache", "getGroupSettlements offline: ${cached.size} cached rows")
+                return ApiResult.Success(cached.map { it.toDomain() })
+            }
+        }
+        return result
+    }
 
     override suspend fun previewGroup(inviteCode: String): ApiResult<GroupPreviewResponse> =
         safeApiCall { groupService.previewGroup(inviteCode) }
