@@ -100,6 +100,18 @@ fun ImportSplitwiseScreen(
     val csvMemberNames      by viewModel.csvMemberNames.collectAsState()
     var csvMismatch         by remember { mutableStateOf<CsvMismatch?>(null) }
 
+    // Resets all group import draft state. Call on any cancel/dismiss in the import flow.
+    val resetGroupImportDraft = {
+        pendingCsv = null
+        groupName = ""
+        selectedGroupType = "OTHER"
+        showGroupNameDialog = false
+        showGroupTypeDialog = false
+        showWhoAreYouDialog = false
+        csvMismatch = null
+        viewModel.clearCsvNames()
+    }
+
     // Assign sheet
     var showAssignSheet by remember { mutableStateOf(false) }
     var selectedMember  by remember { mutableStateOf<GroupMember?>(null) }
@@ -177,7 +189,12 @@ fun ImportSplitwiseScreen(
     // ── CSV type mismatch dialog ──────────────────────────────────────────────
     csvMismatch?.let { mismatch ->
         AlertDialog(
-            onDismissRequest = { csvMismatch = null },
+            onDismissRequest = {
+                csvMismatch = null
+                pendingCsv = null
+                pendingFriendCsv = null
+                viewModel.clearCsvNames()
+            },
             title = { Text(mismatch.title) },
             text  = { Text(mismatch.message, fontSize = 14.sp, color = TextSecondary) },
             confirmButton = {
@@ -213,7 +230,7 @@ fun ImportSplitwiseScreen(
     // Group name dialog
     if (showGroupNameDialog) {
         AlertDialog(
-            onDismissRequest = { showGroupNameDialog = false },
+            onDismissRequest = { resetGroupImportDraft() },
             title   = { Text("Name your group") },
             text    = {
                 FsTextField(
@@ -232,7 +249,7 @@ fun ImportSplitwiseScreen(
                 }) { Text("Next →", color = Green400) }
             },
             dismissButton = {
-                TextButton(onClick = { showGroupNameDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { resetGroupImportDraft() }) { Text("Cancel") }
             },
         )
     }
@@ -240,7 +257,7 @@ fun ImportSplitwiseScreen(
     // ── Group type picker ─────────────────────────────────────────────────────
     if (showGroupTypeDialog) {
         AlertDialog(
-            onDismissRequest = { showGroupTypeDialog = false },
+            onDismissRequest = { resetGroupImportDraft() },
             containerColor   = Surface2,
             title = { Text("What type of group is this?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
             text  = {
@@ -300,7 +317,10 @@ fun ImportSplitwiseScreen(
                 }) { Text("Next →", color = Green400) }
             },
             dismissButton = {
-                TextButton(onClick = { showGroupTypeDialog = false }) { Text("Back", color = TextSecondary) }
+                TextButton(onClick = {
+                    showGroupTypeDialog = false
+                    showGroupNameDialog = true
+                }) { Text("Back", color = TextSecondary) }
             },
         )
     }
@@ -309,10 +329,7 @@ fun ImportSplitwiseScreen(
     if (showWhoAreYouDialog) {
         ModalBottomSheet(
             onDismissRequest = {
-                showWhoAreYouDialog = false
-                // User skipped — import without importer mapping (old behaviour)
-                pendingCsv?.let { viewModel.importGroup(it, groupName, selectedGroupType, null) }
-                viewModel.clearCsvNames()
+                resetGroupImportDraft()
             },
             sheetState     = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = com.prathik.fairshare.ui.theme.Surface2,
@@ -365,9 +382,11 @@ fun ImportSplitwiseScreen(
                         modifier          = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                showWhoAreYouDialog = false
-                                viewModel.clearCsvNames()
-                                pendingCsv?.let { viewModel.importGroup(it, groupName, selectedGroupType, name) }
+                                val csv = pendingCsv
+                                val gName = groupName
+                                val gType = selectedGroupType
+                                resetGroupImportDraft()
+                                csv?.let { viewModel.importGroup(it, gName, gType, name) }
                             }
                             .padding(horizontal = Spacing.lg, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -403,9 +422,11 @@ fun ImportSplitwiseScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            showWhoAreYouDialog = false
-                            viewModel.clearCsvNames()
-                            pendingCsv?.let { viewModel.importGroup(it, groupName, selectedGroupType, null) }
+                            val csv = pendingCsv
+                            val gName = groupName
+                            val gType = selectedGroupType
+                            resetGroupImportDraft()
+                            csv?.let { viewModel.importGroup(it, gName, gType, null) }
                         }
                         .padding(horizontal = Spacing.lg, vertical = 16.dp),
                 ) {
