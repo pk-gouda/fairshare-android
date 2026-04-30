@@ -3,9 +3,12 @@ package com.prathik.fairshare.data.repository.impl
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.local.BalanceDao
 import com.prathik.fairshare.data.local.ExpenseDao
+import com.prathik.fairshare.data.local.FriendDao
 import com.prathik.fairshare.data.local.GroupDao
 import com.prathik.fairshare.data.local.InvitedFriendDao
+import com.prathik.fairshare.data.local.NotificationDao
 import com.prathik.fairshare.data.local.PendingActionDao
+import com.prathik.fairshare.data.local.SettlementDao
 import com.prathik.fairshare.data.local.UserDao
 import com.prathik.fairshare.data.local.UserEntity
 import com.prathik.fairshare.data.model.mapper.toDomain
@@ -26,14 +29,17 @@ import javax.inject.Singleton
 
 @Singleton
 class AuthRepositoryImpl @Inject constructor(
-    private val authService     : AuthApiService,
-    private val tokenStore      : EncryptedTokenStore,
-    private val userDao         : UserDao,
-    private val groupDao        : GroupDao,
-    private val expenseDao      : ExpenseDao,
-    private val balanceDao      : BalanceDao,
-    private val invitedFriendDao: InvitedFriendDao,
-    private val pendingActionDao: PendingActionDao,
+    private val authService      : AuthApiService,
+    private val tokenStore       : EncryptedTokenStore,
+    private val userDao          : UserDao,
+    private val groupDao         : GroupDao,
+    private val expenseDao       : ExpenseDao,
+    private val balanceDao       : BalanceDao,
+    private val friendDao        : FriendDao,
+    private val settlementDao    : SettlementDao,
+    private val notificationDao  : NotificationDao,
+    private val invitedFriendDao : InvitedFriendDao,
+    private val pendingActionDao : PendingActionDao,
 ) : AuthRepository {
 
     override suspend fun login(email: String, password: String): ApiResult<User> {
@@ -128,13 +134,20 @@ class AuthRepositoryImpl @Inject constructor(
         return try {
             safeApiCall { authService.logout(mapOf("refreshToken" to refreshToken)) }
         } finally {
-            // Always clear ALL local caches on logout so a subsequent user
-            // on the same device never sees the previous user's data.
+            // Clear ALL local caches so a subsequent user on the same device
+            // never sees the previous user's data.
+            //
+            // Order matters: clear tokens first so any in-flight background
+            // refresh (UserRepositoryImpl) sees a null userId and skips its
+            // Room write before the DAOs are wiped.
             tokenStore.clearTokens()
             userDao.deleteAll()
             groupDao.deleteAll()
             expenseDao.deleteAll()
             balanceDao.deleteAll()
+            friendDao.deleteAll()        // Bug fix: was missing — FriendsScreen showed stale friends
+            settlementDao.deleteAll()    // Bug fix: was missing — timelines showed stale settlements
+            notificationDao.deleteAll() // Bug fix: was missing — ActivityScreen showed stale notifications
             invitedFriendDao.deleteAll()
             pendingActionDao.deleteAll()
         }

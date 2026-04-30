@@ -8,6 +8,7 @@ import com.prathik.fairshare.data.model.request.UpdateProfileRequest
 import com.prathik.fairshare.data.network.api.UserApiService
 import com.prathik.fairshare.data.network.mapSuccess
 import com.prathik.fairshare.data.network.safeApiCall
+import com.prathik.fairshare.di.ApplicationScope
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.User
 import com.prathik.fairshare.domain.repository.UserRepository
@@ -19,20 +20,40 @@ import javax.inject.Singleton
 
 @Singleton
 class UserRepositoryImpl @Inject constructor(
-    private val userService: UserApiService,
-    private val userDao: UserDao,
-    private val tokenStore: EncryptedTokenStore,
+    private val userService : UserApiService,
+    private val userDao     : UserDao,
+    private val tokenStore  : EncryptedTokenStore,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : UserRepository {
 
     override suspend fun getMyProfile(): ApiResult<User> {
         // Return cached profile immediately if available
         val cached = userDao.getCurrentUser()
         if (cached != null) {
-            // Refresh in background
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            // Refresh in background so the UI stays snappy.
+            //
+            // Uses the managed application-level scope (not a raw CoroutineScope)
+            // so the job is tracked and can be reasoned about across the app lifetime.
+            //
+            // Stale-write guard: capture the session userId before launching.
+            // After the network call completes, re-read the current session userId.
+            // If logout fired (userId = null) or a different user logged in
+            // (userId changed), skip the Room insert entirely.
+            val sessionUserIdAtLaunch = tokenStore.getUserId()
+            appScope.launch(Dispatchers.IO) {
                 val result = safeApiCall { userService.getMyProfile() }
                 if (result is ApiResult.Success) {
-                    userDao.insert(result.data.toDomain().toEntity())
+                    val currentSessionUserId = tokenStore.getUserId()
+                    // Only cache if:
+                    //   1. A session still exists (not logged out), AND
+                    //   2. The session still belongs to the same user who
+                    //      triggered this refresh (not a different login), AND
+                    //   3. The response itself matches that user.
+                    if (currentSessionUserId != null
+                        && currentSessionUserId == sessionUserIdAtLaunch
+                        && currentSessionUserId == result.data.id) {
+                        userDao.insert(result.data.toDomain().toEntity())
+                    }
                 }
             }
             return ApiResult.Success(cached.toDomain())
@@ -60,12 +81,12 @@ class UserRepositoryImpl @Inject constructor(
         val result = safeApiCall {
             userService.updateProfile(
                 UpdateProfileRequest(
-                    fullName = fullName,
-                    phoneNumber = phoneNumber,
-                    preferredCurrency = preferredCurrency,
-                    language = language,
+                    fullName            = fullName,
+                    phoneNumber         = phoneNumber,
+                    preferredCurrency   = preferredCurrency,
+                    language            = language,
                     notificationEnabled = notificationEnabled,
-                    timezone = timezone,
+                    timezone            = timezone,
                 )
             )
         }
@@ -94,7 +115,6 @@ class UserRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getFriendCode(): ApiResult<String> {
-        // Friend code is part of the user profile
         return when (val result = getMyProfile()) {
             is ApiResult.Success -> ApiResult.Success(result.data.friendCode ?: "")
             else -> ApiResult.HttpError(500, "Failed to load friend code")
@@ -121,29 +141,29 @@ class UserRepositoryImpl @Inject constructor(
         safeApiCall { userService.verifyEmailChange(token) }.mapSuccess { }
 
     private fun User.toEntity() = UserEntity(
-        id = id,
-        email = email,
-        fullName = fullName,
-        phoneNumber = phoneNumber,
-        profilePictureUrl = profilePictureUrl,
-        preferredCurrency = preferredCurrency,
-        language = language,
+        id                  = id,
+        email               = email,
+        fullName            = fullName,
+        phoneNumber         = phoneNumber,
+        profilePictureUrl   = profilePictureUrl,
+        preferredCurrency   = preferredCurrency,
+        language            = language,
         notificationEnabled = notificationEnabled,
-        isActive = isActive,
-        friendCode = friendCode,
-        timezone = timezone,
+        isActive            = isActive,
+        friendCode          = friendCode,
+        timezone            = timezone,
     )
 
     private fun UserEntity.toDomain() = User(
-        id = id,
-        email = email,
-        fullName = fullName,
-        phoneNumber = phoneNumber,
-        profilePictureUrl = profilePictureUrl,
-        preferredCurrency = preferredCurrency,
-        language = language,
+        id                  = id,
+        email               = email,
+        fullName            = fullName,
+        phoneNumber         = phoneNumber,
+        profilePictureUrl   = profilePictureUrl,
+        preferredCurrency   = preferredCurrency,
+        language            = language,
         notificationEnabled = notificationEnabled,
-        isActive = isActive,
-        friendCode = friendCode,
+        isActive            = isActive,
+        friendCode          = friendCode,
     )
 }
