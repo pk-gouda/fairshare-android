@@ -1,4 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+
+    <!--
+        Block all cleartext (HTTP) traffic in all build variants.
+        The app only communicates with https://api.fairshareapp.app — no HTTP needed.
+    -->
+    <base-config cleartextTrafficPermitted="false" />
+
+    <!--
+        Debug-only: trust user-installed CA certificates so Proxyman / Charles Proxy
+        can inspect HTTPS traffic during local development. Has no effect in release
+        builds — debug-overrides is stripped by the build system for release APKs.
+    -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+
 </network-security-config>

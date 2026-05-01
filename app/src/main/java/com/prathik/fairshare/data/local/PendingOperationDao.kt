@@ -130,6 +130,13 @@ interface PendingOperationDao {
     suspend fun cleanupCompleted(cutoffMillis: Long)
 
     /**
+     * Delete all pending operations — called on logout to prevent
+     * a previous user's queued sync operations from leaking to the next user.
+     */
+    @Query("DELETE FROM pending_operations")
+    suspend fun deleteAll()
+
+    /**
      * Live-watches the latest non-terminal pending operation for a given resource
      * (expense), matched on [localResourceId] or [serverResourceId].
      *

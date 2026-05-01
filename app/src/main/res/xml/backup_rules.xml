@@ -1,13 +1,17 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Auto-backup rules for API 30 and below (API 31+ uses data_extraction_rules.xml).
+
+    Exclusions:
+    - fairshare_db: Room database contains financial data (expenses, balances,
+      friends, settlements). Must not be backed up — it is a cache of server
+      state and will be rebuilt on next login.
+    - fairshare_secure_prefs.xml: EncryptedSharedPreferences file that stores
+      auth tokens. The AES key lives in Android Keystore and is NOT backed up,
+      so restoring this file on another device produces an unreadable file that
+      triggers a crash on first access. Excluding it forces a clean re-login.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="database" path="fairshare_db" />
+    <exclude domain="sharedpref" path="fairshare_secure_prefs.xml" />
 </full-backup-content>

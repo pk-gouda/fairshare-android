@@ -23,15 +23,48 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Load local.properties once — shared by both signingConfigs and buildTypes below.
+    val localProps = Properties()
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.inputStream().use { localProps.load(it) }
+    }
+
+    signingConfigs {
+        create("release") {
+            // Priority: local.properties → environment variable.
+            // Never hardcode keystore credentials in source control.
+            //
+            // Add these to local.properties for local release builds:
+            //   RELEASE_STORE_FILE=/path/to/fairshare-release.keystore
+            //   RELEASE_STORE_PASSWORD=your_store_password
+            //   RELEASE_KEY_ALIAS=your_key_alias
+            //   RELEASE_KEY_PASSWORD=your_key_password
+            //
+            // In CI (GitHub Actions / Bitrise), set the same four names
+            // as environment variables and the build will pick them up
+            // automatically without touching local.properties.
+            val storeFilePath = localProps.getProperty("RELEASE_STORE_FILE")
+                ?: System.getenv("RELEASE_STORE_FILE")
+            val storePass = localProps.getProperty("RELEASE_STORE_PASSWORD")
+                ?: System.getenv("RELEASE_STORE_PASSWORD")
+            val keyAliasVal = localProps.getProperty("RELEASE_KEY_ALIAS")
+                ?: System.getenv("RELEASE_KEY_ALIAS")
+            val keyPass = localProps.getProperty("RELEASE_KEY_PASSWORD")
+                ?: System.getenv("RELEASE_KEY_PASSWORD")
+
+            if (storeFilePath != null) {
+                storeFile = file(storeFilePath)
+            }
+            storePassword = storePass ?: ""
+            keyAlias = keyAliasVal ?: ""
+            keyPassword = keyPass ?: ""
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true
-
-            val localProps = Properties()
-            val localPropsFile = rootProject.file("local.properties")
-            if (localPropsFile.exists()) {
-                localPropsFile.inputStream().use { localProps.load(it) }
-            }
 
             val baseUrl = localProps.getProperty("BASE_URL")
                 ?: "https://api.fairshareapp.app/"
@@ -42,6 +75,8 @@ android {
         release {
             isMinifyEnabled = true
             isDebuggable = false
+
+            signingConfig = signingConfigs.getByName("release")
 
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

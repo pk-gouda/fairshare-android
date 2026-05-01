@@ -8,6 +8,8 @@ import com.prathik.fairshare.data.local.GroupDao
 import com.prathik.fairshare.data.local.InvitedFriendDao
 import com.prathik.fairshare.data.local.NotificationDao
 import com.prathik.fairshare.data.local.PendingActionDao
+import com.prathik.fairshare.data.local.PendingBalanceImpactDao
+import com.prathik.fairshare.data.local.PendingOperationDao
 import com.prathik.fairshare.data.local.SettlementDao
 import com.prathik.fairshare.data.local.UserDao
 import com.prathik.fairshare.data.local.UserEntity
@@ -39,7 +41,9 @@ class AuthRepositoryImpl @Inject constructor(
     private val settlementDao    : SettlementDao,
     private val notificationDao  : NotificationDao,
     private val invitedFriendDao : InvitedFriendDao,
-    private val pendingActionDao : PendingActionDao,
+    private val pendingActionDao         : PendingActionDao,
+    private val pendingOperationDao      : PendingOperationDao,
+    private val pendingBalanceImpactDao  : PendingBalanceImpactDao,
 ) : AuthRepository {
 
     override suspend fun login(email: String, password: String): ApiResult<User> {
@@ -150,6 +154,8 @@ class AuthRepositoryImpl @Inject constructor(
             notificationDao.deleteAll() // Bug fix: was missing — ActivityScreen showed stale notifications
             invitedFriendDao.deleteAll()
             pendingActionDao.deleteAll()
+            pendingOperationDao.deleteAll()     // Bug fix: was missing — sync queue could leak between users
+            pendingBalanceImpactDao.deleteAll() // Bug fix: was missing — optimistic balance projections could leak
         }
     }
 

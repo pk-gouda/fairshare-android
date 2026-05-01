@@ -30,4 +30,11 @@ interface PendingBalanceImpactDao {
     /** All impact rows — used by GroupsHome to compute optimistic deltas across all groups. */
     @Query("SELECT * FROM pending_balance_impact")
     suspend fun getAll(): List<PendingBalanceImpactEntity>
+
+    /**
+     * Delete all impact rows — called on logout to prevent a previous user's
+     * optimistic balance projections from leaking to the next user.
+     */
+    @Query("DELETE FROM pending_balance_impact")
+    suspend fun deleteAll()
 }
