@@ -26,21 +26,29 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
+
             val localProps = Properties()
             val localPropsFile = rootProject.file("local.properties")
             if (localPropsFile.exists()) {
                 localPropsFile.inputStream().use { localProps.load(it) }
             }
-            val baseUrl = localProps.getProperty("BASE_URL") ?: "http://10.0.2.2:8080/"
+
+            val baseUrl = localProps.getProperty("BASE_URL")
+                ?: "https://api.fairshareapp.app/"
+
             buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
         }
+
         release {
             isMinifyEnabled = true
+            isDebuggable = false
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "BASE_URL", "\"https://api.fairshare.app/\"")
+
+            buildConfigField("String", "BASE_URL", "\"https://api.fairshareapp.app/\"")
         }
     }
 
@@ -60,7 +68,6 @@ android {
 }
 
 dependencies {
-    // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -68,7 +75,6 @@ dependencies {
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.material3)
 
-    // Compose BOM
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -79,11 +85,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.material.icons.extended)
 
-    // Navigation
     implementation(libs.androidx.navigation.compose)
     implementation(libs.hilt.navigation.compose)
 
-    // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
@@ -91,46 +95,35 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    // Network
     implementation(libs.retrofit)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.retrofit.kotlinx.serialization)
     implementation(libs.kotlinx.serialization.json)
 
-    // QR code generation
     implementation("com.google.zxing:core:3.5.2")
 
-    // CameraX + ML Kit barcode — for QR scanner
     implementation("androidx.camera:camera-core:1.3.4")
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
-    // Coroutines
     implementation(libs.kotlinx.coroutines.android)
-
     implementation("androidx.compose.material:material-icons-extended")
 
-    // DataStore
     implementation(libs.androidx.datastore.preferences)
-
-    // Coil
     implementation(libs.coil.compose)
 
-    // ML Kit document scanner — for receipt scanning
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
 
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.biometric)
 
-    // WorkManager + Hilt WorkManager (Wave 2C: pending operation sync queue)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
 
-    // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

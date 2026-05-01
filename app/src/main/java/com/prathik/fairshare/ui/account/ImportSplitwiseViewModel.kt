@@ -104,6 +104,8 @@ class ImportSplitwiseViewModel @Inject constructor(
                     ImportUiState.Error("Invalid CSV format. Please export directly from Splitwise.")
                 is ApiResult.NetworkError -> _uiState.value =
                     ImportUiState.Error("No internet connection. Please try again.")
+                is ApiResult.Conflict -> _uiState.value =
+                    ImportUiState.Error(importErrorMessage(result))
                 else -> _uiState.value =
                     ImportUiState.Error("Import failed. Please check the CSV and try again.")
             }
@@ -132,6 +134,8 @@ class ImportSplitwiseViewModel @Inject constructor(
                     ImportUiState.Error("Invalid CSV format. Please export directly from Splitwise.")
                 is ApiResult.NetworkError -> _uiState.value =
                     ImportUiState.Error("No internet connection. Please try again.")
+                is ApiResult.Conflict -> _uiState.value =
+                    ImportUiState.Error(importErrorMessage(result))
                 else -> _uiState.value =
                     ImportUiState.Error("Import failed. Please check the CSV and try again.")
             }
@@ -179,6 +183,28 @@ class ImportSplitwiseViewModel @Inject constructor(
     fun resetClaimState() { _claimState.value = ClaimState.Idle }
     fun reset() { _uiState.value = ImportUiState.Idle }
     fun setError(message: String) { _uiState.value = ImportUiState.Error(message) }
+
+    /**
+     * Maps an ApiResult failure to a user-facing message for import errors.
+     *
+     * Prefers the backend message from ApiResult.Conflict (which carries the
+     * exact server-side reason, e.g. "This Splitwise CSV has already been imported.")
+     * over generic fallbacks.
+     *
+     * For duplicate import specifically, appends a second line so the user knows
+     * no data was accidentally created.
+     */
+    private fun importErrorMessage(result: ApiResult<*>): String {
+        val backend = (result as? ApiResult.Conflict)?.message
+        return when {
+            backend?.contains("already been imported", ignoreCase = true) == true ->
+                "$backend\nNo duplicate data was created."
+            !backend.isNullOrBlank() ->
+                backend
+            else ->
+                "Import failed. Please check the CSV and try again."
+        }
+    }
 
 }
 
