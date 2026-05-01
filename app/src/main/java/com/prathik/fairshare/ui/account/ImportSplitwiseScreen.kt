@@ -100,6 +100,16 @@ fun ImportSplitwiseScreen(
     val csvMemberNames      by viewModel.csvMemberNames.collectAsState()
     var csvMismatch         by remember { mutableStateOf<CsvMismatch?>(null) }
 
+    // ── Confirmation dialog state ─────────────────────────────────────────────
+    // Set to the selected CSV name (or "" for "none of these") when the user
+    // taps a name in "Which one is you?". The confirm dialog appears on top of
+    // the still-open bottom sheet. Cancelling only closes the dialog — the sheet
+    // stays visible so the user can choose a different name.
+    var pendingGroupImporterNameForConfirm  by remember { mutableStateOf<String?>(null) }
+    var showGroupConfirmDialog              by remember { mutableStateOf(false) }
+    var pendingFriendImporterNameForConfirm by remember { mutableStateOf<String?>(null) }
+    var showFriendConfirmDialog             by remember { mutableStateOf(false) }
+
     // Resets all group import draft state. Call on any cancel/dismiss in the import flow.
     val resetGroupImportDraft = {
         pendingCsv = null
@@ -214,6 +224,138 @@ fun ImportSplitwiseScreen(
                         text  = if (mismatch.isHardBlock) "Cancel" else "Continue anyway",
                         color = TextSecondary,
                     )
+                }
+            },
+        )
+    }
+
+    // ── Group import confirmation dialog ─────────────────────────────────────────
+    // Shown after user taps a name in "Which one is you?" — sits on top of the
+    // still-open bottom sheet. Cancel returns user to the sheet; Confirm fires import.
+    if (showGroupConfirmDialog) {
+        val selectedName = pendingGroupImporterNameForConfirm
+        val displayName = if (selectedName.isNullOrBlank()) {
+            "without claiming a name"
+        } else {
+            "as \"$selectedName\""
+        }
+        AlertDialog(
+            onDismissRequest = {
+                // Close dialog only — sheet stays open for re-selection
+                showGroupConfirmDialog = false
+                pendingGroupImporterNameForConfirm = null
+            },
+            containerColor = Surface2,
+            title = {
+                Text(
+                    "Confirm Splitwise Import",
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text(
+                        "This will import your Splitwise history into FairShare $displayName.",
+                        fontSize = 14.sp,
+                        color = TextPrimary,
+                    )
+                    if (groupName.isNotBlank()) {
+                        Text(
+                            "Group: $groupName",
+                            fontSize = 13.sp,
+                            color = TextSecondary,
+                        )
+                    }
+                    Text(
+                        "Expenses, payments, and members will be created. This cannot be undone.",
+                        fontSize = 13.sp,
+                        color = TextSecondary,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showGroupConfirmDialog = false
+                    val csv        = pendingCsv
+                    val gName      = groupName
+                    val gType      = selectedGroupType
+                    val importerName = pendingGroupImporterNameForConfirm?.ifBlank { null }
+                    pendingGroupImporterNameForConfirm = null
+                    resetGroupImportDraft()
+                    csv?.let { viewModel.importGroup(it, gName, gType, importerName) }
+                }) {
+                    Text("Import", color = Green400, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showGroupConfirmDialog = false
+                    pendingGroupImporterNameForConfirm = null
+                    // Bottom sheet remains visible — user can pick a different name
+                }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+        )
+    }
+
+    // ── Friend import confirmation dialog ─────────────────────────────────────
+    if (showFriendConfirmDialog) {
+        val selectedName = pendingFriendImporterNameForConfirm
+        val displayName = if (selectedName.isNullOrBlank()) {
+            "without claiming a name"
+        } else {
+            "as \"$selectedName\""
+        }
+        AlertDialog(
+            onDismissRequest = {
+                showFriendConfirmDialog = false
+                pendingFriendImporterNameForConfirm = null
+            },
+            containerColor = Surface2,
+            title = {
+                Text(
+                    "Confirm Friend Import",
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text(
+                        "This will import your direct Splitwise expenses and payments $displayName.",
+                        fontSize = 14.sp,
+                        color = TextPrimary,
+                    )
+                    Text(
+                        "Expenses and payments will be created between you and the other person. This cannot be undone.",
+                        fontSize = 13.sp,
+                        color = TextSecondary,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showFriendConfirmDialog = false
+                    val csv          = pendingFriendCsv
+                    val importerName = pendingFriendImporterNameForConfirm?.ifBlank { null }
+                    pendingFriendImporterNameForConfirm = null
+                    showFriendWhoAreYouDialog = false
+                    viewModel.clearCsvNames()
+                    pendingFriendCsv = null
+                    csv?.let { viewModel.importFriend(it, importerName) }
+                }) {
+                    Text("Import", color = Green400, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showFriendConfirmDialog = false
+                    pendingFriendImporterNameForConfirm = null
+                    // Bottom sheet remains visible — user can pick a different name
+                }) {
+                    Text("Cancel", color = TextSecondary)
                 }
             },
         )
@@ -382,11 +524,11 @@ fun ImportSplitwiseScreen(
                         modifier          = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                val csv = pendingCsv
-                                val gName = groupName
-                                val gType = selectedGroupType
-                                resetGroupImportDraft()
-                                csv?.let { viewModel.importGroup(it, gName, gType, name) }
+                                // Store selected name and show confirmation dialog.
+                                // Do NOT reset draft or call import yet — the sheet stays
+                                // visible so cancel returns the user to their choice.
+                                pendingGroupImporterNameForConfirm = name
+                                showGroupConfirmDialog = true
                             }
                             .padding(horizontal = Spacing.lg, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -422,11 +564,10 @@ fun ImportSplitwiseScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            val csv = pendingCsv
-                            val gName = groupName
-                            val gType = selectedGroupType
-                            resetGroupImportDraft()
-                            csv?.let { viewModel.importGroup(it, gName, gType, null) }
+                            // Empty string = "none of these" sentinel.
+                            // importerCsvName will be null after ifBlank{null} in confirm.
+                            pendingGroupImporterNameForConfirm = ""
+                            showGroupConfirmDialog = true
                         }
                         .padding(horizontal = Spacing.lg, vertical = 16.dp),
                 ) {
@@ -487,10 +628,10 @@ fun ImportSplitwiseScreen(
                         modifier          = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                showFriendWhoAreYouDialog = false
-                                viewModel.clearCsvNames()
-                                pendingFriendCsv?.let { viewModel.importFriend(it, name) }
-                                pendingFriendCsv = null
+                                // Store selected name and show confirmation dialog.
+                                // Sheet stays visible underneath so cancel returns user here.
+                                pendingFriendImporterNameForConfirm = name
+                                showFriendConfirmDialog = true
                             }
                             .padding(horizontal = Spacing.lg, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -521,10 +662,8 @@ fun ImportSplitwiseScreen(
                     modifier          = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            showFriendWhoAreYouDialog = false
-                            viewModel.clearCsvNames()
-                            pendingFriendCsv?.let { viewModel.importFriend(it, null) }
-                            pendingFriendCsv = null
+                            pendingFriendImporterNameForConfirm = ""
+                            showFriendConfirmDialog = true
                         }
                         .padding(horizontal = Spacing.lg, vertical = 16.dp),
                 ) {
