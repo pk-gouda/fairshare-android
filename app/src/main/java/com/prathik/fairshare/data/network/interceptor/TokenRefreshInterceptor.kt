@@ -131,9 +131,16 @@ class TokenRefreshInterceptor @Inject constructor(
                 if (body != null) {
                     val json = JSONObject(body)
                     val data = json.optJSONObject("data")
-                    val newAccessToken = data?.optString("accessToken")
+                    val newAccessToken  = data?.optString("accessToken")
+                    val newRefreshToken = data?.optString("refreshToken")
                     if (!newAccessToken.isNullOrBlank()) {
                         tokenStore.updateAccessToken(newAccessToken)
+                        // Backend rotates refresh tokens on every use — save the new one.
+                        // If the field is missing (old backend), the old refresh token
+                        // stays in place and the next refresh will fail, prompting re-login.
+                        if (!newRefreshToken.isNullOrBlank()) {
+                            tokenStore.updateRefreshToken(newRefreshToken)
+                        }
                         true
                     } else {
                         false

@@ -101,6 +101,17 @@ class EncryptedTokenStore @Inject constructor(
     }
 
     /**
+     * Updates only the refresh token — called by TokenRefreshInterceptor
+     * when the backend rotates the refresh token on each use.
+     * Uses commit() for the same reason as updateAccessToken.
+     */
+    fun updateRefreshToken(refreshToken: String) {
+        prefs.edit()
+            .putString(KEY_REFRESH_TOKEN, refreshToken)
+            .commit()
+    }
+
+    /**
      * Returns the stored access token, or null if not logged in.
      */
     fun getAccessToken(): String? = prefs.getString(KEY_ACCESS_TOKEN, null)
