@@ -32,18 +32,6 @@ android {
 
     signingConfigs {
         create("release") {
-            // Priority: local.properties → environment variable.
-            // Never hardcode keystore credentials in source control.
-            //
-            // Add these to local.properties for local release builds:
-            //   RELEASE_STORE_FILE=/path/to/fairshare-release.keystore
-            //   RELEASE_STORE_PASSWORD=your_store_password
-            //   RELEASE_KEY_ALIAS=your_key_alias
-            //   RELEASE_KEY_PASSWORD=your_key_password
-            //
-            // In CI (GitHub Actions / Bitrise), set the same four names
-            // as environment variables and the build will pick them up
-            // automatically without touching local.properties.
             val storeFilePath = localProps.getProperty("RELEASE_STORE_FILE")
                 ?: System.getenv("RELEASE_STORE_FILE")
             val storePass = localProps.getProperty("RELEASE_STORE_PASSWORD")
@@ -138,11 +126,17 @@ dependencies {
 
     implementation("com.google.zxing:core:3.5.2")
 
-    implementation("androidx.camera:camera-core:1.3.4")
-    implementation("androidx.camera:camera-camera2:1.3.4")
-    implementation("androidx.camera:camera-lifecycle:1.3.4")
-    implementation("androidx.camera:camera-view:1.3.4")
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // CameraX 1.4+ fixed libimage_processing_util_jni.so 16 KB ELF alignment (broken in 1.3.4).
+    implementation("androidx.camera:camera-core:1.5.0")
+    implementation("androidx.camera:camera-camera2:1.5.0")
+    implementation("androidx.camera:camera-lifecycle:1.5.0")
+    implementation("androidx.camera:camera-view:1.5.0")
+
+    // Switched from bundled mlkit:barcode-scanning to the GMS (unbundled) variant.
+    // The bundled variant ships libbarhopper_v3.so with 4 KB ELF alignment, which
+    // fails the Play Store 16 KB page-size check on API 35+ devices.
+    // The GMS variant delegates to Google Play Services — no .so in the APK.
+    implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
 
     implementation(libs.kotlinx.coroutines.android)
     implementation("androidx.compose.material:material-icons-extended")
@@ -150,7 +144,9 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.coil.compose)
 
-    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+    // Upgraded from 16.0.0-beta1 (4 KB ELF alignment) to stable 16.0.0 release.
+    // libimage_processing_util_jni.so in beta1 had 4 KB alignment; stable is 16 KB-compatible.
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
 
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.biometric)
