@@ -105,6 +105,9 @@ import com.prathik.fairshare.ui.settlement.SettleUpScreen
 import com.prathik.fairshare.ui.groups.GroupInviteScreen
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.ApiResult
+import android.content.Intent
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.rememberCoroutineScope
@@ -145,6 +148,10 @@ fun MainShell(
     // Bare friend code from https://fairshareapp.app/friend/{FAIR-XXXX}
     // Non-null → look up the user and show the add-friend confirmation dialog.
     friendDeepLink    : String? = null,
+    // Raw Intent from MainActivity — a new object on every onNewIntent call.
+    // Used as a secondary LaunchedEffect key so foreground/background link taps
+    // always re-trigger navigation even when the extracted code hasn't changed.
+    sourceIntent      : Intent? = null,
     viewModel         : MainShellViewModel = hiltViewModel(),
 ) {
     val unreadCount by viewModel.unreadCount.collectAsState()
@@ -202,16 +209,19 @@ fun MainShell(
     // Arrives from https://fairshareapp.app/join/{code} (or fairshare://join/{code}).
     // MainActivity extracts the bare invite code and threads it here.
     // Navigate to JoinGroupScreen with the code pre-filled so the user just taps Join.
-    LaunchedEffect(joinDeepLink) {
-        android.util.Log.d("FSDeepLink", "=== LaunchedEffect joinDeepLink=$joinDeepLink ===")
+    // Key on BOTH joinDeepLink and sourceIntent.
+    // joinDeepLink alone is insufficient: if the user taps the same group invite
+    // link twice while the app is running, the extracted code string doesn't change,
+    // so LaunchedEffect(joinDeepLink) would not re-fire.
+    // sourceIntent is the raw Intent object from onNewIntent — Android creates a new
+    // Intent instance on every tap, so it changes on every foreground/background link
+    // tap and guarantees this effect re-fires even for repeated identical links.
+    LaunchedEffect(joinDeepLink, sourceIntent) {
         if (!joinDeepLink.isNullOrBlank()) {
-            android.util.Log.d("FSDeepLink", "before withFrameNanos: backStack=${shellNavController.currentBackStackEntry?.destination?.route}")
             withFrameNanos { }
-            android.util.Log.d("FSDeepLink", "after  withFrameNanos: backStack=${shellNavController.currentBackStackEntry?.destination?.route}")
             shellNavController.navigate(Screen.JoinGroup.route(joinDeepLink)) {
                 launchSingleTop = true
             }
-            android.util.Log.d("FSDeepLink", "navigate(JoinGroup) called — current: ${shellNavController.currentBackStackEntry?.destination?.route}")
         }
     }
 
@@ -219,13 +229,29 @@ fun MainShell(
     // Arrives from https://fairshareapp.app/friend/{FAIR-XXXX} (or fairshare://friend/{code}).
     // Look up the user by friend code and, if found, show the same confirmation
     // dialog that QR scan uses — no separate screen needed.
-    LaunchedEffect(friendDeepLink) {
-        android.util.Log.d("FSDeepLink", "=== LaunchedEffect friendDeepLink=$friendDeepLink ===")
+    // Same dual-key rationale as joinDeepLink above — sourceIntent ensures
+    // re-firing on every foreground tap even when the friend code is unchanged.
+    LaunchedEffect(friendDeepLink, sourceIntent) {
         if (!friendDeepLink.isNullOrBlank()) {
-            android.util.Log.d("FSDeepLink", "before withFrameNanos: backStack=${shellNavController.currentBackStackEntry?.destination?.route}")
-            withFrameNanos { }
-            android.util.Log.d("FSDeepLink", "after  withFrameNanos: backStack=${shellNavController.currentBackStackEntry?.destination?.route}")
-            when (val result = viewModel.lookupByFriendCode(friendDeepLink)) {
+            // Navigate to the Friends tab BEFORE making the API call and showing the
+            // dialog. Without this, the dialog appears over whatever screen the user
+            // happened to be on when the link was tapped (e.g. Search, GroupDetail).
+            // We also skip saveState/restoreState here so any modal screens (e.g. Search)
+            // that were on top of Friends are cleared rather than restored, ensuring
+            // the dialog renders over a clean Friends tab.
+            shellNavController.navigate(Screen.Friends.route) {
+                popUpTo(shellNavController.graph.findStartDestination().id) {
+                    saveState = false
+                }
+                launchSingleTop = true
+                restoreState = false
+            }
+            // Wait for the navigation animation to complete before showing the dialog.
+            // async starts the API call immediately while delay(350) covers the ~300ms
+            // tab-switch animation — whichever finishes last triggers the dialog.
+            val resultDeferred = async { viewModel.lookupByFriendCode(friendDeepLink) }
+            delay(350L)
+            when (val result = resultDeferred.await()) {
                 is ApiResult.Success  -> { pendingFriendCode = friendDeepLink; pendingFriend = result.data }
                 is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
                 else                  -> snackbarHostState.showSnackbar("Could not look up this code")
@@ -285,12 +311,17 @@ fun MainShell(
                             val result = viewModel.addByFriendCode(capturedFriendCode)
                             when (result) {
                                 is ApiResult.Success  -> {
+                                    // Navigate to Friends tab without saveState/restoreState.
+                                    // Using saveState=true here would restore any modal screens
+                                    // (e.g. Search) that were on top of Friends when the dialog
+                                    // appeared, causing the snackbar to show on the wrong screen.
+                                    // Clearing state ensures we land on a clean Friends tab.
                                     shellNavController.navigate(Screen.Friends.route) {
                                         popUpTo(shellNavController.graph.findStartDestination().id) {
-                                            saveState = true
+                                            saveState = false
                                         }
                                         launchSingleTop = true
-                                        restoreState = true
+                                        restoreState = false
                                     }
                                     snackbarHostState.showSnackbar("1 friend added!")
                                 }
@@ -334,12 +365,16 @@ fun MainShell(
                         coroutineScope.launch {
                             when (viewModel.joinGroup(capturedGroupCode)) {
                                 is ApiResult.Success  -> {
+                                    // Same reasoning as the friend-add path above —
+                                    // saveState=false prevents restoring a stale modal
+                                    // stack (e.g. Search) on top of the Groups tab,
+                                    // so the snackbar appears on the clean Groups tab.
                                     shellNavController.navigate(Screen.Groups.route) {
                                         popUpTo(shellNavController.graph.findStartDestination().id) {
-                                            saveState = true
+                                            saveState = false
                                         }
                                         launchSingleTop = true
-                                        restoreState = true
+                                        restoreState = false
                                     }
                                     snackbarHostState.showSnackbar("Joined $capturedGroupName!")
                                 }
@@ -1348,9 +1383,20 @@ fun MainShell(
                     onCodeScanned = { code ->
                         shellNavController.popBackStack()
                         if (code.startsWith("FAIR-", ignoreCase = true)) {
-                            // Friend code — lookup name then show confirm dialog
+                            // Friend code — lookup name then show confirm dialog.
                             coroutineScope.launch {
-                                when (val result = viewModel.lookupByFriendCode(code)) {
+                                // Fire the API call and the animation timer concurrently.
+                                // The pop animation takes ~300ms. If lookupByFriendCode
+                                // returns faster than that (e.g. from cache), setting
+                                // pendingFriend immediately would render the dialog over
+                                // a still-animating black background instead of the
+                                // Friends screen. async lets the call run in parallel
+                                // while delay(350) ensures we wait for the animation
+                                // to finish before the dialog appears — whichever
+                                // takes longer wins, so slow API calls add no extra wait.
+                                val resultDeferred = async { viewModel.lookupByFriendCode(code) }
+                                delay(350L)
+                                when (val result = resultDeferred.await()) {
                                     is ApiResult.Success  -> { pendingFriendCode = code; pendingFriend = result.data }
                                     is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
                                     else                  -> snackbarHostState.showSnackbar("Could not look up this code")
@@ -1365,7 +1411,10 @@ fun MainShell(
                                 .substringAfterLast("?code=")
                                 .trim()
                             coroutineScope.launch {
-                                when (val result = viewModel.previewGroup(inviteCode)) {
+                                // Same animation-wait pattern as the friend code branch above.
+                                val resultDeferred = async { viewModel.previewGroup(inviteCode) }
+                                delay(350L)
+                                when (val result = resultDeferred.await()) {
                                     is ApiResult.Success  -> { pendingGroupCode = inviteCode; pendingGroupName = result.data.name }
                                     is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid invite code")
                                     else                  -> snackbarHostState.showSnackbar("Could not look up this group")

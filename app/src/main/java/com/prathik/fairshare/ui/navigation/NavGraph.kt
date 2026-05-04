@@ -8,6 +8,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import android.content.Intent
 import com.prathik.fairshare.MainActivity.Companion.extractVerifyDeepLink
 import com.prathik.fairshare.MainActivity.Companion.extractEmailChangeToken
 import com.prathik.fairshare.VerifyDeepLink
@@ -39,6 +40,10 @@ fun NavGraph(
     // Friend code deep link — bare friend code extracted from
     // https://fairshareapp.app/friend/{FAIR-XXXX}  or  fairshare://friend/{FAIR-XXXX}
     friendDeepLink   : String? = null,
+    // The raw Intent object from MainActivity — a new instance on every onNewIntent
+    // call. Threaded to MainShell so its LaunchedEffects can key on it and re-fire
+    // on every foreground link tap, not just when the extracted code changes.
+    sourceIntent     : Intent? = null,
 ) {
     NavHost(
         navController    = navController,
@@ -166,6 +171,7 @@ fun NavGraph(
                 emailChangeToken  = emailChangeToken,
                 joinDeepLink      = joinDeepLink,
                 friendDeepLink    = friendDeepLink,
+                sourceIntent      = sourceIntent,
             )
         }
     }

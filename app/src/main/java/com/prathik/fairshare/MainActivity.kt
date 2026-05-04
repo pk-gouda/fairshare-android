@@ -68,6 +68,13 @@ class MainActivity : ComponentActivity() {
                         emailChangeToken   = startEmailChangeToken,
                         joinDeepLink       = startJoinDeepLink,
                         friendDeepLink     = startFriendDeepLink,
+                        // Pass the raw intent object so MainShell can key its
+                        // LaunchedEffects on it. A new Intent object arrives on
+                        // every onNewIntent call — even for the same link — so
+                        // using it as a secondary key guarantees the effect re-fires
+                        // on every foreground/background tap, not just when the
+                        // extracted code string changes.
+                        sourceIntent       = currentIntent,
                     )
                 }
             }
