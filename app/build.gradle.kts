@@ -53,6 +53,7 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
+            signingConfig = signingConfigs.getByName("release")
 
             val baseUrl = localProps.getProperty("BASE_URL")
                 ?: "https://api.fairshareapp.app/"

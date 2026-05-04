@@ -145,13 +145,20 @@ class ExpenseRepositoryImpl @Inject constructor(
             expenseDao.insert(response.toEntity())
             // Cache payer/split rows so ExpenseDetail renders offline without a
             // separate getExpense() fetch after create.
-            if (!response.payers.isNullOrEmpty()) {
+            //
+            // Capture to local vals before the isNullOrEmpty() checks. Kotlin's smart
+            // cast cannot track nullness through a property access inside a lambda or
+            // a conditional block when the property is mutable — a local val gives the
+            // compiler direct flow evidence, eliminating the need for !! entirely.
+            val createPayers = response.payers
+            if (!createPayers.isNullOrEmpty()) {
                 expensePayerDao.deleteByExpenseId(expenseId)
-                expensePayerDao.insertAll(response.payers!!.map { it.toPayerEntity(expenseId) })
+                expensePayerDao.insertAll(createPayers.map { it.toPayerEntity(expenseId) })
             }
-            if (!response.splits.isNullOrEmpty()) {
+            val createSplits = response.splits
+            if (!createSplits.isNullOrEmpty()) {
                 expenseSplitDao.deleteByExpenseId(expenseId)
-                expenseSplitDao.insertAll(response.splits!!.map { it.toSplitEntity(expenseId) })
+                expenseSplitDao.insertAll(createSplits.map { it.toSplitEntity(expenseId) })
             }
         }
         return result.mapSuccess { it.toDomain() }
@@ -198,21 +205,31 @@ class ExpenseRepositoryImpl @Inject constructor(
             val existingOtherUserId = expenseDao.getById(expenseId)?.otherUserId
             expenseDao.insert(response.toEntity(otherUserId = existingOtherUserId))
 
-            val hasPayers = !response.payers.isNullOrEmpty()
-            val hasSplits = !response.splits.isNullOrEmpty()
+            // Capture to local vals before the isNullOrEmpty() checks.
+            // hasPayers / hasSplits are Boolean flags, not smart-cast proofs —
+            // the compiler cannot see through them to conclude non-nullness inside
+            // the when-branch. Using local vals gives the compiler direct flow
+            // evidence and removes the need for !!.
+            val updatedPayers = response.payers
+            val updatedSplits = response.splits
+            val hasPayers = !updatedPayers.isNullOrEmpty()
+            val hasSplits = !updatedSplits.isNullOrEmpty()
             val isFinancialUpdate = totalAmount != null || currency != null ||
                     splitType != null || payerData != null || splitData != null
 
             when {
                 hasPayers && hasSplits -> {
                     // Replace payer/split cache with server-confirmed data.
+                    // orEmpty() is null-safe and returns the list itself when non-null
+                    // (which is guaranteed by hasPayers/hasSplits) — cleaner than !!
+                    // because the compiler cannot smart-cast through a Boolean variable.
                     expensePayerDao.deleteByExpenseId(expenseId)
                     expensePayerDao.insertAll(
-                        response.payers!!.map { it.toPayerEntity(expenseId) }
+                        updatedPayers.orEmpty().map { it.toPayerEntity(expenseId) }
                     )
                     expenseSplitDao.deleteByExpenseId(expenseId)
                     expenseSplitDao.insertAll(
-                        response.splits!!.map { it.toSplitEntity(expenseId) }
+                        updatedSplits.orEmpty().map { it.toSplitEntity(expenseId) }
                     )
                 }
                 isFinancialUpdate -> {
@@ -257,11 +274,14 @@ class ExpenseRepositoryImpl @Inject constructor(
             val existingOtherUserId = expenseDao.getById(expenseId)?.otherUserId
             expenseDao.insert(response.toEntity(otherUserId = existingOtherUserId))
             // Cache payer/split rows if the restore response includes them.
-            if (!response.payers.isNullOrEmpty() && !response.splits.isNullOrEmpty()) {
+            // Local vals for the same smart-cast reason as createExpense / updateExpense.
+            val restoredPayers = response.payers
+            val restoredSplits = response.splits
+            if (!restoredPayers.isNullOrEmpty() && !restoredSplits.isNullOrEmpty()) {
                 expensePayerDao.deleteByExpenseId(expenseId)
-                expensePayerDao.insertAll(response.payers!!.map { it.toPayerEntity(expenseId) })
+                expensePayerDao.insertAll(restoredPayers.map { it.toPayerEntity(expenseId) })
                 expenseSplitDao.deleteByExpenseId(expenseId)
-                expenseSplitDao.insertAll(response.splits!!.map { it.toSplitEntity(expenseId) })
+                expenseSplitDao.insertAll(restoredSplits.map { it.toSplitEntity(expenseId) })
             }
         }
         return result.mapSuccess { it.toDomain() }

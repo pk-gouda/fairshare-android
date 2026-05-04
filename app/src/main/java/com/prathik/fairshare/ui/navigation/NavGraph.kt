@@ -33,6 +33,12 @@ fun NavGraph(
     verifyDeepLink   : VerifyDeepLink? = null,
     loginDeepLink    : Boolean = false,
     emailChangeToken : String? = null,
+    // Group invite deep link — bare invite code extracted from
+    // https://fairshareapp.app/join/{code}  or  fairshare://join/{code}
+    joinDeepLink     : String? = null,
+    // Friend code deep link — bare friend code extracted from
+    // https://fairshareapp.app/friend/{FAIR-XXXX}  or  fairshare://friend/{FAIR-XXXX}
+    friendDeepLink   : String? = null,
 ) {
     NavHost(
         navController    = navController,
@@ -147,8 +153,20 @@ fun NavGraph(
         }
 
         // ── Main shell (handles all in-app navigation internally) ─────────────
+        //
+        // joinDeepLink and friendDeepLink are threaded into MainShell so it can
+        // navigate to the correct screen once the shell NavHost is ready.
+        // We do NOT register navDeepLink {} here because the target screens
+        // (JoinGroup, add-friend-by-code) live inside MainShell's nested NavHost
+        // and cannot be directly addressed by the top-level NavController. Instead,
+        // MainActivity extracts the data and passes it as plain parameters.
         composable(Screen.Groups.route) {
-            MainShell(rootNavController = navController, emailChangeToken = emailChangeToken)
+            MainShell(
+                rootNavController = navController,
+                emailChangeToken  = emailChangeToken,
+                joinDeepLink      = joinDeepLink,
+                friendDeepLink    = friendDeepLink,
+            )
         }
     }
 }

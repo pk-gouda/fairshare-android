@@ -106,6 +106,7 @@ import com.prathik.fairshare.ui.groups.GroupInviteScreen
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.ApiResult
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.TextButton
@@ -138,6 +139,12 @@ data class BottomNavItem(
 fun MainShell(
     rootNavController : NavController,
     emailChangeToken  : String? = null,
+    // Bare invite code from https://fairshareapp.app/join/{code}
+    // Non-null → navigate to JoinGroupScreen with code pre-filled.
+    joinDeepLink      : String? = null,
+    // Bare friend code from https://fairshareapp.app/friend/{FAIR-XXXX}
+    // Non-null → look up the user and show the add-friend confirmation dialog.
+    friendDeepLink    : String? = null,
     viewModel         : MainShellViewModel = hiltViewModel(),
 ) {
     val unreadCount by viewModel.unreadCount.collectAsState()
@@ -187,6 +194,41 @@ fun MainShell(
         if (!emailChangeToken.isNullOrBlank()) {
             shellNavController.navigate(Screen.ConfirmEmailChange.route(emailChangeToken)) {
                 launchSingleTop = true
+            }
+        }
+    }
+
+    // ── Handle group invite deep link ─────────────────────────────────────────
+    // Arrives from https://fairshareapp.app/join/{code} (or fairshare://join/{code}).
+    // MainActivity extracts the bare invite code and threads it here.
+    // Navigate to JoinGroupScreen with the code pre-filled so the user just taps Join.
+    LaunchedEffect(joinDeepLink) {
+        android.util.Log.d("FSDeepLink", "=== LaunchedEffect joinDeepLink=$joinDeepLink ===")
+        if (!joinDeepLink.isNullOrBlank()) {
+            android.util.Log.d("FSDeepLink", "before withFrameNanos: backStack=${shellNavController.currentBackStackEntry?.destination?.route}")
+            withFrameNanos { }
+            android.util.Log.d("FSDeepLink", "after  withFrameNanos: backStack=${shellNavController.currentBackStackEntry?.destination?.route}")
+            shellNavController.navigate(Screen.JoinGroup.route(joinDeepLink)) {
+                launchSingleTop = true
+            }
+            android.util.Log.d("FSDeepLink", "navigate(JoinGroup) called — current: ${shellNavController.currentBackStackEntry?.destination?.route}")
+        }
+    }
+
+    // ── Handle friend code deep link ──────────────────────────────────────────
+    // Arrives from https://fairshareapp.app/friend/{FAIR-XXXX} (or fairshare://friend/{code}).
+    // Look up the user by friend code and, if found, show the same confirmation
+    // dialog that QR scan uses — no separate screen needed.
+    LaunchedEffect(friendDeepLink) {
+        android.util.Log.d("FSDeepLink", "=== LaunchedEffect friendDeepLink=$friendDeepLink ===")
+        if (!friendDeepLink.isNullOrBlank()) {
+            android.util.Log.d("FSDeepLink", "before withFrameNanos: backStack=${shellNavController.currentBackStackEntry?.destination?.route}")
+            withFrameNanos { }
+            android.util.Log.d("FSDeepLink", "after  withFrameNanos: backStack=${shellNavController.currentBackStackEntry?.destination?.route}")
+            when (val result = viewModel.lookupByFriendCode(friendDeepLink)) {
+                is ApiResult.Success  -> { pendingFriendCode = friendDeepLink; pendingFriend = result.data }
+                is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
+                else                  -> snackbarHostState.showSnackbar("Could not look up this code")
             }
         }
     }

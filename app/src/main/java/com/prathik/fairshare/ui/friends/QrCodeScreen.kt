@@ -358,7 +358,7 @@ private fun MyCodeTab(
                 onClick  = {
                     val intent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, "Add me on FairShare! My code: $friendCode\nhttps://fairshareapp.app/join/$friendCode")
+                        putExtra(Intent.EXTRA_TEXT, "Add me on FairShare! My code: $friendCode\nhttps://fairshareapp.app/friend/$friendCode")
                     }
                     context.startActivity(Intent.createChooser(intent, "Share via"))
                 },

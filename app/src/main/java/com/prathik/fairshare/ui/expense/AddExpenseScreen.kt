@@ -146,8 +146,13 @@ fun AddExpenseScreen(
     val scannerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
-            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data!!)
+        // Capture result.data to a local val BEFORE the null check so Kotlin's smart
+        // cast can prove non-nullness inside the if-body. result.data is a Java property
+        // (Intent?) — the compiler cannot smart cast it through the outer null check
+        // the way it can with Kotlin properties. Assigning first gives it direct proof.
+        val intentData = result.data
+        if (result.resultCode == android.app.Activity.RESULT_OK && intentData != null) {
+            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(intentData)
             val imageUri = scanResult?.pages?.firstOrNull()?.imageUri
             if (imageUri != null) {
                 try {
