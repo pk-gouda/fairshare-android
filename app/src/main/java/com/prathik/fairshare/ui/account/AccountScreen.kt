@@ -85,6 +85,7 @@ fun AccountScreen(
     onNavigateToChangePassword: () -> Unit,
     onNavigateToMyAnalytics  : () -> Unit,
     onNavigateToImport       : () -> Unit,
+    onNavigateToCloseAccount : () -> Unit,
     onLoggedOut              : () -> Unit,
     viewModel                : AccountViewModel = hiltViewModel(),
 ) {
@@ -314,19 +315,25 @@ fun AccountScreen(
                     }
                 }
 
-                // ── Deactivate ────────────────────────────────────────────────
+                // ── Close account ─────────────────────────────────────────
                 item {
+                    Spacer(modifier = Modifier.height(Spacing.sm))
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier         = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = Spacing.md),
+                            .padding(horizontal = Spacing.lg)
+                            .padding(bottom = Spacing.md),
                     ) {
-                        Text(
-                            text     = "Deactivate account",
-                            fontSize = 13.sp,
-                            color    = TextTertiary.copy(alpha = 0.5f),
-                        )
+                        // A single de-emphasised entry point — the dedicated
+                        // CloseAccountScreen handles the full deactivate/delete flow.
+                        TextButton(onClick = { onNavigateToCloseAccount() }) {
+                            Text(
+                                text     = "Close your account",
+                                fontSize = 13.sp,
+                                color    = TextTertiary.copy(alpha = 0.6f),
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(80.dp))
                 }

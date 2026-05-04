@@ -4,6 +4,8 @@ import com.prathik.fairshare.data.local.UserDao
 import com.prathik.fairshare.data.local.UserEntity
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.model.mapper.toDomain
+import com.prathik.fairshare.data.model.request.DeactivateAccountRequest
+import com.prathik.fairshare.data.model.request.DeleteAccountRequest
 import com.prathik.fairshare.data.model.request.UpdateProfileRequest
 import com.prathik.fairshare.data.network.api.UserApiService
 import com.prathik.fairshare.data.network.mapSuccess
@@ -100,15 +102,23 @@ class UserRepositoryImpl @Inject constructor(
         return result.mapSuccess { it.toDomain() }
     }
 
-    override suspend fun deactivateAccount(): ApiResult<Unit> =
-        safeApiCall { userService.deactivateAccount() }.mapSuccess { }
+    override suspend fun deactivateAccount(password: String?): ApiResult<Unit> =
+        safeApiCall { userService.deactivateAccount(DeactivateAccountRequest(password = password)) }
+            .mapSuccess { }
 
     override suspend fun reactivateAccount(): ApiResult<Unit> =
         safeApiCall { userService.reactivateAccount() }.mapSuccess { }
 
-    override suspend fun deleteAccount(): ApiResult<Unit> {
-        val result = safeApiCall { userService.deleteAccount() }.mapSuccess { }
+    override suspend fun deleteAccount(password: String?): ApiResult<Unit> {
+        val result = safeApiCall {
+            userService.deleteAccount(DeleteAccountRequest(password = password))
+        }.mapSuccess { }
         if (result is ApiResult.Success) {
+            // Clear the user profile cache. The full session cache (groups, expenses,
+            // friends, balances, settlements, etc.) is cleared by logoutUseCase()
+            // which AccountViewModel calls immediately after this returns Success.
+            // This avoids needing to inject all DAOs here — UserRepositoryImpl only
+            // has userDao in its constructor; AuthRepositoryImpl owns the rest.
             userDao.deleteAll()
         }
         return result

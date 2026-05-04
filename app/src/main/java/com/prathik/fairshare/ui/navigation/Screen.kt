@@ -27,7 +27,8 @@ sealed class Screen(val route: String) {
     object Groups : Screen("groups")
     object Friends : Screen("friends")
     object Activity : Screen("activity")
-    object Account : Screen("account")
+    object Account      : Screen("account")
+    object CloseAccount  : Screen("close_account")
 
     // ── Group ─────────────────────────────────────────────────────────────────
     object GroupDetail : Screen("group/{groupId}") {

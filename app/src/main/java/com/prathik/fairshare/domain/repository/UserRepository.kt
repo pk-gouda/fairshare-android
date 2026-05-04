@@ -37,8 +37,11 @@ interface UserRepository {
     /**
      * Deactivates the current user's account.
      * Soft delete — account can be reactivated.
+     *
+     * [password] is required for LOCAL accounts and must match the stored BCrypt hash.
+     * [password] should be null for GOOGLE/APPLE accounts (no stored password).
      */
-    suspend fun deactivateAccount(): ApiResult<Unit>
+    suspend fun deactivateAccount(password: String? = null): ApiResult<Unit>
 
     /**
      * Reactivates a previously deactivated account.
@@ -47,9 +50,12 @@ interface UserRepository {
 
     /**
      * Permanently deletes the current user's account.
-     * This is irreversible — all data is removed.
+     * This is irreversible — all personal data is anonymised server-side.
+     *
+     * [password] is required for LOCAL accounts.
+     * [password] should be null for GOOGLE/APPLE accounts.
      */
-    suspend fun deleteAccount(): ApiResult<Unit>
+    suspend fun deleteAccount(password: String? = null): ApiResult<Unit>
 
     /**
      * Returns the current user's friend code.

@@ -4,8 +4,11 @@ import com.prathik.fairshare.data.model.request.UpdateProfileRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.FriendResponse
 import com.prathik.fairshare.data.model.response.UserResponse
+import com.prathik.fairshare.data.model.request.DeactivateAccountRequest
+import com.prathik.fairshare.data.model.request.DeleteAccountRequest
 import retrofit2.http.Body
 import retrofit2.http.DELETE
+import retrofit2.http.HTTP
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -39,11 +42,13 @@ interface UserApiService {
     suspend fun verifyEmailChange(@Query("token") token: String): ApiResponse<Unit>
 
     @POST("api/users/me/deactivate")
-    suspend fun deactivateAccount(): ApiResponse<Unit>
+    suspend fun deactivateAccount(@Body request: DeactivateAccountRequest): ApiResponse<Unit>
 
     @POST("api/users/me/reactivate")
     suspend fun reactivateAccount(): ApiResponse<Unit>
 
-    @DELETE("api/users/me")
-    suspend fun deleteAccount(): ApiResponse<Unit>
+    // @HTTP is required instead of @DELETE because Retrofit's @DELETE annotation
+    // does not support a request body. @HTTP with hasBody=true is the correct pattern.
+    @HTTP(method = "DELETE", path = "api/users/me", hasBody = true)
+    suspend fun deleteAccount(@Body request: DeleteAccountRequest): ApiResponse<Unit>
 }

@@ -22,4 +22,10 @@ fun UserResponse.toDomain(): User = User(
     isActive            = accountStatus == "ACTIVE",
     friendCode          = friendCode,
     timezone            = timezone ?: "UTC",
+    // authProvider is passed through from the DTO so AccountScreen can determine
+    // whether to show a password dialog (LOCAL) or skip it (GOOGLE/APPLE).
+    // It is NOT stored in the Room cache — UserEntity has no authProvider column.
+    // Defaults to "LOCAL" in the domain model for cache reads (safe fallback: server
+    // enforces the correct check regardless of the client value).
+    authProvider        = authProvider,
 )

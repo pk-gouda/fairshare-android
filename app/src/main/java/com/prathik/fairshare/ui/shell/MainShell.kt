@@ -69,6 +69,7 @@ import com.prathik.fairshare.ui.friends.FriendDetailScreen
 import com.prathik.fairshare.ui.friends.FriendSettingsScreen
 import com.prathik.fairshare.ui.activity.ActivityScreen
 import com.prathik.fairshare.ui.account.AccountScreen
+import com.prathik.fairshare.ui.account.CloseAccountScreen
 import com.prathik.fairshare.ui.account.AccountViewModel
 import com.prathik.fairshare.ui.account.ChangePasswordScreen
 import com.prathik.fairshare.ui.account.EditProfileScreen
@@ -609,12 +610,13 @@ fun MainShell(
             }
             composable(Screen.Account.route) {
                 AccountScreen(
-                    onNavigateToEditProfile = { shellNavController.navigate(Screen.EditProfile.route) },
-                    onNavigateToQrCode = { shellNavController.navigate(Screen.QrCode.route) },
-                    onNavigateToCurrency = { shellNavController.navigate(Screen.CurrencySelect.route) },
+                    onNavigateToEditProfile  = { shellNavController.navigate(Screen.EditProfile.route) },
+                    onNavigateToQrCode       = { shellNavController.navigate(Screen.QrCode.route) },
+                    onNavigateToCurrency     = { shellNavController.navigate(Screen.CurrencySelect.route) },
                     onNavigateToChangePassword = { shellNavController.navigate(Screen.ChangePassword.route) },
-                    onNavigateToMyAnalytics = { shellNavController.navigate(Screen.MyAnalytics.route) },
-                    onNavigateToImport = { shellNavController.navigate(Screen.ImportSplitwise.route) },
+                    onNavigateToMyAnalytics  = { shellNavController.navigate(Screen.MyAnalytics.route) },
+                    onNavigateToImport       = { shellNavController.navigate(Screen.ImportSplitwise.route) },
+                    onNavigateToCloseAccount = { shellNavController.navigate(Screen.CloseAccount.route) },
                     onLoggedOut = {
                         rootNavController.navigate(Screen.Login.route) {
                             popUpTo(Screen.Groups.route) { inclusive = true }
@@ -1427,6 +1429,17 @@ fun MainShell(
 
 
             // ── Account screens ───────────────────────────────────────────────
+            composable(Screen.CloseAccount.route) {
+                CloseAccountScreen(
+                    onBack = { shellNavController.popBackStack() },
+                    onLoggedOut = {
+                        rootNavController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Groups.route) { inclusive = true }
+                        }
+                    },
+                )
+            }
+
             composable(Screen.EditProfile.route) {
                 EditProfileScreen(
                     onBack               = { shellNavController.popBackStack() },

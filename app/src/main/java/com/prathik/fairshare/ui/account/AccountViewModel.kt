@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.User
+import com.prathik.fairshare.domain.repository.UserRepository
 import com.prathik.fairshare.domain.usecase.auth.LogoutUseCase
 import com.prathik.fairshare.domain.usecase.balance.GetAllBalancesUseCase
 import com.prathik.fairshare.domain.usecase.user.GetMyProfileUseCase
@@ -25,6 +26,7 @@ class AccountViewModel @Inject constructor(
     private val updateProfileUseCase : UpdateProfileUseCase,
     private val getAllBalancesUseCase : GetAllBalancesUseCase,
     private val logoutUseCase        : LogoutUseCase,
+    private val userRepository       : UserRepository,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -88,6 +90,81 @@ class AccountViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Deactivate the account with optional password verification.
+     *
+     * LOCAL accounts: [password] must be provided and will be verified server-side
+     * against the BCrypt hash before the action proceeds.
+     *
+     * GOOGLE/APPLE accounts: [password] is null — the valid JWT is sufficient.
+     * The server skips the password check for non-LOCAL providers.
+     *
+     * On success: emits [AccountActionState.Deactivated]. The caller (AccountScreen)
+     * is responsible for triggering logout + routing to Login.
+     */
+    fun deactivateAccount(password: String?, onDone: () -> Unit) {
+        viewModelScope.launch {
+            _actionState.value = AccountActionState.Loading
+            when (val result = userRepository.deactivateAccount(password)) {
+                is ApiResult.Success -> {
+                    // Clear local session — server invalidates tokens on next request.
+                    logoutUseCase()
+                    _actionState.value = AccountActionState.Deactivated
+                    onDone()
+                }
+                is ApiResult.HttpError -> _actionState.value = AccountActionState.Error(
+                    result.message ?: "Failed to deactivate account"
+                )
+                // BusinessLogicException (e.g. unsettled balances) returns 409 Conflict
+                is ApiResult.Conflict -> _actionState.value = AccountActionState.Error(
+                    result.message ?: "Cannot deactivate account"
+                )
+                is ApiResult.Unauthorized -> _actionState.value = AccountActionState.Error(
+                    result.message ?: "Incorrect password"
+                )
+                else -> _actionState.value = AccountActionState.Error(
+                    "Something went wrong. Please try again."
+                )
+            }
+        }
+    }
+
+    /**
+     * Permanently delete the account with optional password verification.
+     *
+     * Same password policy as [deactivateAccount]. This action is irreversible —
+     * personal data is anonymised on the server and all local caches are cleared.
+     *
+     * On success: emits [AccountActionState.Deleted]. The caller routes to Login.
+     */
+    fun deleteAccount(password: String?, onDone: () -> Unit) {
+        viewModelScope.launch {
+            _actionState.value = AccountActionState.Loading
+            when (val result = userRepository.deleteAccount(password)) {
+                is ApiResult.Success -> {
+                    // logoutUseCase clears tokens; UserRepositoryImpl.deleteAccount()
+                    // already cleared all local DAOs on success.
+                    logoutUseCase()
+                    _actionState.value = AccountActionState.Deleted
+                    onDone()
+                }
+                is ApiResult.HttpError -> _actionState.value = AccountActionState.Error(
+                    result.message ?: "Failed to delete account"
+                )
+                // BusinessLogicException (e.g. unsettled balances) returns 409 Conflict
+                is ApiResult.Conflict -> _actionState.value = AccountActionState.Error(
+                    result.message ?: "Cannot delete account"
+                )
+                is ApiResult.Unauthorized -> _actionState.value = AccountActionState.Error(
+                    result.message ?: "Incorrect password"
+                )
+                else -> _actionState.value = AccountActionState.Error(
+                    "Something went wrong. Please try again."
+                )
+            }
+        }
+    }
+
     fun resetActionState() { _actionState.value = AccountActionState.Idle }
 
     private fun buildSummary(balances: List<Balance>): BalanceSummary {
@@ -115,8 +192,11 @@ class AccountViewModel @Inject constructor(
 }
 
 sealed class AccountActionState {
-    object Idle      : AccountActionState()
-    object LoggedOut : AccountActionState()
+    object Idle        : AccountActionState()
+    object Loading     : AccountActionState()
+    object LoggedOut   : AccountActionState()
+    object Deactivated : AccountActionState()
+    object Deleted     : AccountActionState()
     data class Success(val message: String) : AccountActionState()
     data class Error(val message: String)   : AccountActionState()
 }
