@@ -98,7 +98,8 @@ fun FriendSettingsScreen(
 ) {
     val friend        by viewModel.friend.collectAsState()
     val friendType    by viewModel.friendType.collectAsState()
-    val sharedGroups  by viewModel.sharedGroups.collectAsState()
+    val sharedGroups           by viewModel.sharedGroups.collectAsState()
+    val sharedGroupsLoadFailed by viewModel.sharedGroupsLoadFailed.collectAsState()
     val allGroups     by viewModel.allGroups.collectAsState()
     val directBalance    by viewModel.directBalance.collectAsState()
     val balanceEntries   by viewModel.balanceEntries.collectAsState()
@@ -127,6 +128,9 @@ fun FriendSettingsScreen(
     val tryRemove: () -> Unit = {
         when {
             isLoading -> { /* still loading — ignore tap */ }
+            sharedGroupsLoadFailed -> viewModel.showError(
+                "Couldn't verify shared groups. Please try again."
+            )
             sharedGroups.isNotEmpty() -> showSharedGroupsBlocker = true
             else -> showRemoveDialog = true
         }

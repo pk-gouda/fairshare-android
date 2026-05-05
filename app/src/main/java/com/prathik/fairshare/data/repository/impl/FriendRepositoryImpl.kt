@@ -9,6 +9,7 @@ import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.domain.model.AccountStatus
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Friend
+import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.FriendStatus
 import com.prathik.fairshare.domain.model.Friendship
 import com.prathik.fairshare.domain.repository.FriendRepository
@@ -98,6 +99,14 @@ class FriendRepositoryImpl @Inject constructor(
     override suspend fun lookupByFriendCode(code: String): ApiResult<Friend> =
         safeApiCall { friendService.lookupByFriendCode(code) }
             .mapSuccess { it.toDomain() }
+
+
+
+    override suspend fun getSharedGroups(friendId: String): ApiResult<List<Group>> =
+    // Membership-based — NOT GroupBalance rows.
+        // Uses GET /api/friends/{friendId}/shared-groups.
+        safeApiCall { friendService.getSharedGroups(friendId) }
+            .mapSuccess { list -> list.map { it.toDomain() } }
 
     override suspend fun addByFriendCode(code: String): ApiResult<Friendship> =
         safeApiCall { friendService.addByFriendCode(code) }

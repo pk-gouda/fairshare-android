@@ -2,6 +2,7 @@ package com.prathik.fairshare.data.network.api
 
 import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.FriendResponse
+import com.prathik.fairshare.data.model.response.GroupResponse
 import com.prathik.fairshare.data.model.response.FriendshipResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -58,4 +59,11 @@ interface FriendApiService {
 
     @GET("api/users/friend-code/{code}")
     suspend fun lookupByFriendCode(@Path("code") code: String): ApiResponse<FriendResponse>
+
+    /**
+     * Returns groups shared between the current user and [friendId].
+     * Membership-based — NOT GroupBalance rows.
+     */
+    @GET("api/friends/{friendId}/shared-groups")
+    suspend fun getSharedGroups(@Path("friendId") friendId: String): ApiResponse<List<GroupResponse>>
 }

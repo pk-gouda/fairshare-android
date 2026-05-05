@@ -50,6 +50,14 @@ class FriendSettingsViewModel @Inject constructor(
     private val _sharedGroups = MutableStateFlow<List<Group>>(emptyList())
     val sharedGroups: StateFlow<List<Group>> = _sharedGroups.asStateFlow()
 
+    /**
+     * True if the shared-groups API call failed.
+     * An empty [sharedGroups] list should NOT be treated as "confirmed no shared groups"
+     * when this is true — the UI must block removal attempts and ask the user to retry.
+     */
+    private val _sharedGroupsLoadFailed = MutableStateFlow(false)
+    val sharedGroupsLoadFailed: StateFlow<Boolean> = _sharedGroupsLoadFailed.asStateFlow()
+
     /** All groups the current user belongs to — for the "Add to existing group" picker. */
     private val _allGroups = MutableStateFlow<List<Group>>(emptyList())
     val allGroups: StateFlow<List<Group>> = _allGroups.asStateFlow()
@@ -86,13 +94,13 @@ class FriendSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
 
-            val friendsDeferred   = async { friendRepository.getFriends() }
-            val sentDeferred      = async { friendRepository.getSentRequests() }
-            val breakdownDeferred = async { balanceRepository.getBreakdownWithUser(friendId) }
-            // getNetBalanceWithUser queries UserBalance — catches ALL expenses including non-group.
-            // This is the authoritative source for the removal guard.
-            val netBalanceDeferred = async { balanceRepository.getNetBalanceWithUser(friendId) }
-            val groupsDeferred    = async { getGroupsUseCase() }
+            val friendsDeferred        = async { friendRepository.getFriends() }
+            val sentDeferred           = async { friendRepository.getSentRequests() }
+            // Shared groups via membership query — NOT GroupBalance rows.
+            val sharedGroupsDeferred   = async { friendRepository.getSharedGroups(friendId) }
+            // Net balance is still from UserBalance — covers group + non-group expenses.
+            val netBalanceDeferred     = async { balanceRepository.getNetBalanceWithUser(friendId) }
+            val groupsDeferred         = async { getGroupsUseCase() }
 
             val allFriends = (friendsDeferred.await() as? ApiResult.Success)?.data ?: emptyList()
             val found = allFriends.find { it.id == friendId }
@@ -118,13 +126,27 @@ class FriendSettingsViewModel @Inject constructor(
                 }
             }
 
-            // Shared groups — from GroupBalance breakdown (per-group rows)
-            val breakdownResult = breakdownDeferred.await()
-            val groupsResult    = groupsDeferred.await()
-            if (breakdownResult is ApiResult.Success && groupsResult is ApiResult.Success) {
-                val sharedGroupIds = breakdownResult.data.mapNotNull { it.groupId }.toSet()
-                _sharedGroups.value = groupsResult.data.filter { it.id in sharedGroupIds }
-                _allGroups.value    = groupsResult.data   // for "Add to existing group" picker
+            // Shared groups — membership-based via /api/friends/{friendId}/shared-groups.
+            // Does NOT depend on GroupBalance rows, so it is correct even for groups
+            // where both users are members but have no expenses or balance rows yet.
+            val sharedGroupsResult = sharedGroupsDeferred.await()
+            when (sharedGroupsResult) {
+                is ApiResult.Success -> {
+                    _sharedGroups.value = sharedGroupsResult.data
+                    _sharedGroupsLoadFailed.value = false
+                }
+                else -> {
+                    // Do not replace an existing list with empty on failure.
+                    // _sharedGroupsLoadFailed = true tells the UI to block remove-friend
+                    // so an empty list is never misread as "no shared groups."
+                    _sharedGroupsLoadFailed.value = true
+                }
+            }
+
+            // _allGroups powers "Add to existing group" picker — still from getGroupsUseCase
+            val groupsResult = groupsDeferred.await()
+            if (groupsResult is ApiResult.Success) {
+                _allGroups.value = groupsResult.data
             }
 
             // Net balance guard — from UserBalance (covers group + non-group expenses)
@@ -189,16 +211,24 @@ class FriendSettingsViewModel @Inject constructor(
     }
 
     fun removeFriend(onRemoved: () -> Unit) {
-        // Backend soft-deletes all direct expenses and clears UserBalance records,
-        // so no frontend balance guard is needed here.
         viewModelScope.launch {
             _isLoading.value = true
-            when (friendRepository.removeFriend(friendId)) {
+            when (val result = friendRepository.removeFriend(friendId)) {
                 is ApiResult.Success -> {
                     _actionState.value = FriendSettingsActionState.Success("Removed")
                     onRemoved()
                 }
-                else -> _actionState.value = FriendSettingsActionState.Error("Failed to remove")
+                // 409: backend blocked removal (shared groups or unsettled balance).
+                // Surface the exact server message so the user knows what to fix.
+                is ApiResult.Conflict -> _actionState.value = FriendSettingsActionState.Error(
+                    result.message ?: "Cannot remove: shared groups or unsettled balances remain."
+                )
+                is ApiResult.NetworkError -> _actionState.value = FriendSettingsActionState.Error(
+                    result.message ?: "Network error. Please try again."
+                )
+                else -> _actionState.value = FriendSettingsActionState.Error(
+                    "Failed to remove friend. Please try again."
+                )
             }
             _isLoading.value = false
         }

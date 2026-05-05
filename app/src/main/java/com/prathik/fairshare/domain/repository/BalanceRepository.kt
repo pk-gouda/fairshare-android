@@ -28,7 +28,9 @@ interface BalanceRepository {
      * Each Balance has groupId and groupName populated.
      *
      * Always hits the network (no Room cache).
-     * Powers: FriendDetail per-group rows, FriendSettings shared groups list,
+     * Powers: FriendDetail per-group balance rows and SettleUp scoped amounts.
+     * NOT used for shared-group membership detection (see FriendRepository.getSharedGroups).
+     * Previously also incorrectly cited as powering FriendSettings shared groups list —
      * SettleUp screen for scoped (group) settlements.
      */
     suspend fun getBreakdownWithUser(otherUserId: String): ApiResult<List<Balance>>

@@ -2,6 +2,7 @@ package com.prathik.fairshare.domain.repository
 
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Friend
+import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.FriendStatus
 import com.prathik.fairshare.domain.model.Friendship
 
@@ -22,4 +23,11 @@ interface FriendRepository {
     suspend fun getBlocked(): ApiResult<List<Friend>>
     suspend fun lookupByFriendCode(code: String): ApiResult<Friend>
     suspend fun addByFriendCode(code: String): ApiResult<Friendship>
+
+    /**
+     * Returns groups shared between the current user and [friendId].
+     * Backed by GET /api/friends/{friendId}/shared-groups which uses
+     * membership-based detection — NOT GroupBalance rows.
+     */
+    suspend fun getSharedGroups(friendId: String): ApiResult<List<Group>>
 }
