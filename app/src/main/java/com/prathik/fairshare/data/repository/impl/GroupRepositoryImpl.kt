@@ -1,6 +1,7 @@
 package com.prathik.fairshare.data.repository.impl
 
 import com.prathik.fairshare.data.local.BalanceDao
+import com.prathik.fairshare.data.local.ExpenseDao
 import com.prathik.fairshare.data.local.BalanceEntity
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.local.GroupDao
@@ -38,6 +39,7 @@ class GroupRepositoryImpl @Inject constructor(
     private val groupMemberDao : GroupMemberDao,
     private val settlementDao  : SettlementDao,
     private val balanceDao     : BalanceDao,
+    private val expenseDao     : ExpenseDao,
     private val tokenStore     : EncryptedTokenStore,
 ) : GroupRepository {
 
@@ -116,6 +118,25 @@ class GroupRepositoryImpl @Inject constructor(
         val result = safeApiCall { groupService.deleteGroup(groupId) }.mapSuccess { }
         if (result is ApiResult.Success) {
             groupDao.deleteById(groupId)
+            // Clear cached expenses for this group so deleted group expenses
+            // never appear in offline/cached views.
+            expenseDao.deleteByGroupId(groupId)
+            // Clear balance cache rows scoped to this group. Without this,
+            // the FriendDetail balance breakdown and overall balance summary
+            // can still show stale amounts from the deleted group until the
+            // next full refresh. deleteAllBalanceRows clears all cached
+            // balance entries for the current user — cheaper than a targeted
+            // per-group clear since balance data is always re-fetched fresh.
+            val userId = tokenStore.getUserId()
+            if (userId != null) {
+                // GROUP_BALANCE rows for this group
+                balanceDao.deleteByGroupId(userId, groupId)
+                // FRIEND_BREAKDOWN rows for this group across all friends —
+                // prevents the deleted group appearing in FriendDetail offline fallback
+                balanceDao.deleteBreakdownByGroupId(userId, groupId)
+                // ALL_BALANCES (net totals) — stale after group deletion
+                balanceDao.deleteAllBalanceRows(userId)
+            }
         }
         return result
     }
@@ -124,6 +145,15 @@ class GroupRepositoryImpl @Inject constructor(
         val result = safeApiCall { groupService.leaveGroup(groupId) }.mapSuccess { }
         if (result is ApiResult.Success) {
             groupDao.deleteById(groupId)
+            // Same cache clearing as deleteGroup — balance and expense rows
+            // for a group the user has left are stale from that point on.
+            expenseDao.deleteByGroupId(groupId)
+            val userId = tokenStore.getUserId()
+            if (userId != null) {
+                balanceDao.deleteByGroupId(userId, groupId)
+                balanceDao.deleteBreakdownByGroupId(userId, groupId)
+                balanceDao.deleteAllBalanceRows(userId)
+            }
         }
         return result
     }

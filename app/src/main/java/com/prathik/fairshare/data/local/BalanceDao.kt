@@ -42,6 +42,15 @@ interface BalanceDao {
     @Query("DELETE FROM balances WHERE userId = :userId AND otherUserId = :otherUserId AND cacheScope = 'FRIEND_BREAKDOWN'")
     suspend fun deleteBreakdownForFriend(userId: String, otherUserId: String)
 
+    /**
+     * Delete FRIEND_BREAKDOWN rows for a specific group across ALL friends.
+     * Called after group delete/leave so the per-group breakdown in FriendDetail
+     * does not show a deleted group's balance row in the offline fallback.
+     * GROUP_BALANCE rows for the group are handled by deleteByGroupId separately.
+     */
+    @Query("DELETE FROM balances WHERE userId = :userId AND groupId = :groupId AND cacheScope = 'FRIEND_BREAKDOWN'")
+    suspend fun deleteBreakdownByGroupId(userId: String, groupId: String)
+
     /** Replace GROUP_BALANCE rows for a group before reinserting fresh data. */
     @Query("DELETE FROM balances WHERE userId = :userId AND groupId = :groupId AND cacheScope = 'GROUP_BALANCE'")
     suspend fun deleteByGroupId(userId: String, groupId: String)
