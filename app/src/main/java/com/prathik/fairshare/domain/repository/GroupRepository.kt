@@ -52,7 +52,7 @@ interface GroupRepository {
      * Returns [ApiResult.Forbidden] if user is not the group creator.
      * Returns [ApiResult.Conflict] if group has unsettled balances.
      */
-    suspend fun deleteGroup(groupId: String): ApiResult<Unit>
+    suspend fun deleteGroup(groupId: String, confirmName: String): ApiResult<Unit>
     suspend fun leaveGroup(groupId: String): ApiResult<Unit>
 
     /**

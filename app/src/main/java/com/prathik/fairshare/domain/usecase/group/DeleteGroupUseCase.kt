@@ -6,16 +6,19 @@ import javax.inject.Inject
 
 /**
  * Permanently deletes a group.
- * Only the group creator can do this.
+ * Any member can delete. Name confirmation required. Balance guard removed.
  * Server rejects if there are unsettled balances.
  */
 class DeleteGroupUseCase @Inject constructor(
     private val groupRepository: GroupRepository,
 ) {
-    suspend operator fun invoke(groupId: String): ApiResult<Unit> {
+    suspend operator fun invoke(groupId: String, confirmName: String): ApiResult<Unit> {
         if (groupId.isBlank()) {
             return ApiResult.ValidationError("Group ID cannot be empty")
         }
-        return groupRepository.deleteGroup(groupId)
+        if (confirmName.isBlank()) {
+            return ApiResult.ValidationError("Please type the group name to confirm deletion")
+        }
+        return groupRepository.deleteGroup(groupId, confirmName)
     }
 }

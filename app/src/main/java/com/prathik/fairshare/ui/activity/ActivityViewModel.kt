@@ -89,9 +89,9 @@ class ActivityViewModel @Inject constructor(
                     _actionState.value = ActivityActionState.GroupRestored
                 }
                 is ApiResult.Forbidden -> _actionState.value =
-                    ActivityActionState.Error("Only the group creator can restore")
+                    ActivityActionState.Error("You must be a member of this group to restore it")
                 is ApiResult.Conflict -> _actionState.value =
-                    ActivityActionState.Error("Restore window has expired (30 days)")
+                    ActivityActionState.Error("Restore window has expired (60 days)")
                 else -> _actionState.value =
                     ActivityActionState.Error("Failed to restore group")
             }

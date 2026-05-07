@@ -27,6 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -77,12 +80,14 @@ fun ActivityScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     var showRestoreDialog by remember { mutableStateOf(false) }
     var pendingRestoreGroupId by remember { mutableStateOf<String?>(null) }
     var pendingRestoreGroupName by remember { mutableStateOf("") }
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val grouped by remember { derivedStateOf { viewModel.groupedNotifications(selectedFilter) } }
     val hasUnread by remember { derivedStateOf { viewModel.hasUnread } }
+    val deletedGroups by viewModel.deletedGroups.collectAsState()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -113,7 +118,7 @@ fun ActivityScreen(
         AlertDialog(
             onDismissRequest = { showRestoreDialog = false },
             title = { Text("Restore group?") },
-            text = { Text("Restore '$pendingRestoreGroupName'? Groups can be restored within 30 days of deletion.") },
+            text = { Text("Restore '$pendingRestoreGroupName'? Groups can be restored within 60 days of deletion by any member.") },
             confirmButton = {
                 FsPrimaryButton(
                     text = "Restore",
@@ -246,9 +251,19 @@ fun ActivityScreen(
                                 onNavigateToGroup = onNavigateToGroup,
                                 onNavigateToSettlement = onNavigateToSettlement,
                                 onGroupDeleted = { groupId, groupName ->
-                                    pendingRestoreGroupId = groupId
-                                    pendingRestoreGroupName = groupName
-                                    showRestoreDialog = true
+                                    // If the group is no longer in the deletedGroups list
+                                    // it has already been restored — navigate straight to it.
+                                    val alreadyRestored = deletedGroups.none { group -> group.id == groupId }
+                                    if (alreadyRestored) {
+                                        coroutineScope.launch {
+                                            snackbarHost.showSnackbar("'$groupName' has already been restored")
+                                        }
+                                        onNavigateToGroup(groupId)
+                                    } else {
+                                        pendingRestoreGroupId = groupId
+                                        pendingRestoreGroupName = groupName
+                                        showRestoreDialog = true
+                                    }
                                 },
                                 onNotMember = onNotMember,
                             )

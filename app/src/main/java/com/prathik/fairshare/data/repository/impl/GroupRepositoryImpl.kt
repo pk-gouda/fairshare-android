@@ -13,6 +13,7 @@ import com.prathik.fairshare.data.local.GroupEntity
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.AddMemberRequest
 import com.prathik.fairshare.data.model.request.CreateGroupRequest
+import com.prathik.fairshare.data.model.request.DeleteGroupRequest
 import com.prathik.fairshare.data.model.request.JoinGroupRequest
 import com.prathik.fairshare.data.model.request.UpdateGroupRequest
 import com.prathik.fairshare.data.network.api.GroupApiService
@@ -114,8 +115,10 @@ class GroupRepositoryImpl @Inject constructor(
         return raw.mapSuccess { it.toDomain() }
     }
 
-    override suspend fun deleteGroup(groupId: String): ApiResult<Unit> {
-        val result = safeApiCall { groupService.deleteGroup(groupId) }.mapSuccess { }
+    override suspend fun deleteGroup(groupId: String, confirmName: String): ApiResult<Unit> {
+        val result = safeApiCall {
+            groupService.deleteGroup(groupId, DeleteGroupRequest(confirmName = confirmName))
+        }.mapSuccess { }
         if (result is ApiResult.Success) {
             groupDao.deleteById(groupId)
             // Clear cached expenses for this group so deleted group expenses

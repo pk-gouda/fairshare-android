@@ -2,6 +2,7 @@ package com.prathik.fairshare.data.network.api
 
 import com.prathik.fairshare.data.model.request.AddMemberRequest
 import com.prathik.fairshare.data.model.request.CreateGroupRequest
+import com.prathik.fairshare.data.model.request.DeleteGroupRequest
 import com.prathik.fairshare.data.model.request.JoinGroupRequest
 import com.prathik.fairshare.data.model.request.UpdateGroupRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
@@ -13,6 +14,7 @@ import com.prathik.fairshare.data.model.response.SettlementResponse
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
+import retrofit2.http.HTTP
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -35,8 +37,12 @@ interface GroupApiService {
         @Body request: UpdateGroupRequest,
     ): ApiResponse<GroupResponse>
 
-    @DELETE("api/groups/{groupId}")
-    suspend fun deleteGroup(@Path("groupId") groupId: String): ApiResponse<Unit>
+    // @HTTP required for DELETE with body — Retrofit's @DELETE does not support @Body.
+    @HTTP(method = "DELETE", path = "api/groups/{groupId}", hasBody = true)
+    suspend fun deleteGroup(
+        @Path("groupId") groupId: String,
+        @Body request: DeleteGroupRequest,
+    ): ApiResponse<Unit>
 
     @POST("api/groups/{groupId}/members")
     suspend fun addMember(

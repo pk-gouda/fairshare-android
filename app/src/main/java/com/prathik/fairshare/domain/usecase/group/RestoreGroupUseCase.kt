@@ -5,7 +5,7 @@ import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.repository.GroupRepository
 import javax.inject.Inject
 
-/** Restores a soft-deleted group within the 30-day window. Only the creator can restore. */
+/** Restores a soft-deleted group within the 60-day window. Any member can restore. */
 class RestoreGroupUseCase @Inject constructor(
     private val groupRepository: GroupRepository,
 ) {

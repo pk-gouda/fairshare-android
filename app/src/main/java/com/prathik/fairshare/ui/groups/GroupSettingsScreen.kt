@@ -29,7 +29,10 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -118,7 +121,8 @@ fun GroupSettingsScreen(
     val snackbarHost = remember { SnackbarHostState() }
     val clipboard    = LocalClipboardManager.current
 
-    var showDeleteDialog  by remember { mutableStateOf(false) }
+    var showDeleteDialog   by remember { mutableStateOf(false) }
+    var deleteConfirmText  by remember { mutableStateOf("") }
     var showRemoveDialog  by remember { mutableStateOf<GroupMember?>(null) }
     var showNameDialog    by remember { mutableStateOf(false) }
     var showLeaveDialog   by remember { mutableStateOf(false) }
@@ -240,18 +244,74 @@ fun GroupSettingsScreen(
     }
 
     if (showDeleteDialog) {
+        val groupName = group?.name ?: ""
+        val nameMatches = deleteConfirmText == groupName
+
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            containerColor   = Surface2,
-            title = { Text("Delete group?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-            text  = { Text("This will permanently delete the group and all its expenses. This cannot be undone.", color = TextSecondary, fontSize = 14.sp) },
+            onDismissRequest = {
+                showDeleteDialog = false
+                deleteConfirmText = ""
+            },
+            containerColor = Surface2,
+            title = {
+                Text(
+                    "Delete group?",
+                    color      = TextPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        "This will delete the group for ALL members. " +
+                                "Any member can restore it within 60 days from the Activity tab. " +
+                                "Outstanding balances will be cleared.",
+                        color    = TextSecondary,
+                        fontSize = 14.sp,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Type the group name to confirm:",
+                        color    = TextSecondary,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value         = deleteConfirmText,
+                        onValueChange = { deleteConfirmText = it },
+                        placeholder   = { Text(groupName, color = TextTertiary) },
+                        singleLine    = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                        isError       = deleteConfirmText.isNotEmpty() && !nameMatches,
+                        supportingText = if (deleteConfirmText.isNotEmpty() && !nameMatches) {
+                            { Text("Name doesn't match", color = Negative, fontSize = 12.sp) }
+                        } else null,
+                    )
+                }
+            },
             confirmButton = {
-                TextButton(onClick = { showDeleteDialog = false; viewModel.deleteGroup() }) {
-                    Text("Delete", color = Negative, fontWeight = FontWeight.SemiBold)
+                TextButton(
+                    enabled = nameMatches,
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteGroup(deleteConfirmText)
+                        deleteConfirmText = ""
+                    },
+                ) {
+                    Text(
+                        "Delete",
+                        color      = if (nameMatches) Negative else TextTertiary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel", color = TextSecondary) }
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    deleteConfirmText = ""
+                }) {
+                    Text("Cancel", color = TextSecondary)
+                }
             },
         )
     }

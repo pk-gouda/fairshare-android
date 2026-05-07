@@ -202,15 +202,19 @@ class GroupSettingsViewModel @Inject constructor(
         }
     }
 
-    fun deleteGroup() {
+    fun deleteGroup(confirmName: String) {
         viewModelScope.launch {
             _actionState.value = GroupSettingsActionState.Loading
-            when (deleteGroupUseCase(groupId)) {
-                is ApiResult.Success  -> _actionState.value = GroupSettingsActionState.GroupDeleted
+            when (val result = deleteGroupUseCase(groupId, confirmName)) {
+                is ApiResult.Success -> _actionState.value = GroupSettingsActionState.GroupDeleted
                 is ApiResult.Conflict -> _actionState.value =
-                    GroupSettingsActionState.Error("Settle all balances before deleting")
+                    GroupSettingsActionState.Error(result.message ?: "Failed to delete group")
+                is ApiResult.HttpError -> _actionState.value =
+                    GroupSettingsActionState.Error(result.message ?: "Failed to delete group")
+                is ApiResult.ValidationError -> _actionState.value =
+                    GroupSettingsActionState.Error(result.message ?: "Invalid input")
                 else -> _actionState.value =
-                    GroupSettingsActionState.Error("Failed to delete group")
+                    GroupSettingsActionState.Error("Failed to delete group. Please try again.")
             }
         }
     }
