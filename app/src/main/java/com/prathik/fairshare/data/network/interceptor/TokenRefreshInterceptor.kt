@@ -110,10 +110,11 @@ class TokenRefreshInterceptor @Inject constructor(
     ): Boolean {
         return try {
             val request = chain.request()
-            val baseUrl = "${request.url.scheme}://${request.url.host}" +
-                    if (request.url.port != 80 && request.url.port != 443)
-                        ":${request.url.port}"
-                    else ""
+            // OkHttp returns -1 for default ports (443 for HTTPS, 80 for HTTP).
+            // Using port > 0 guards against -1 and any other sentinel values.
+            val port = request.url.port
+            val portPart = if (port > 0 && port != 80 && port != 443) ":$port" else ""
+            val baseUrl = "${request.url.scheme}://${request.url.host}$portPart".trimEnd('/')
 
             val refreshRequest = Request.Builder()
                 .url("$baseUrl/api/auth/refresh")
