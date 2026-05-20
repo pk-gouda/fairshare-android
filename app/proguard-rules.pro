@@ -44,3 +44,26 @@
 # the factory wiring, but not for the concrete worker class names.
 -keep class com.prathik.fairshare.data.sync.SyncWorker { *; }
 -keep class com.prathik.fairshare.data.sync.CacheWarmupWorker { *; }
+
+
+# ── 3. Strip Android Log calls from release builds ─────────────
+#
+# The codebase contains android.util.Log.d / Log.w calls in repository,
+# cache, sync, expense, settlement, and balance paths. These log entries
+# can expose sensitive financial state (balances, group IDs, user IDs,
+# token lifetimes) in production logcat on any device with ADB access.
+#
+# -assumenosideeffects tells R8 that these methods have no observable
+# side effects — R8 then removes all call sites entirely in release builds.
+#
+# Debug builds are NOT affected: minifyEnabled is false in the debug
+# build type, so this rule is never applied during development and
+# all logs remain visible in Android Studio Logcat as normal.
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+    public static int w(...);
+    public static int e(...);
+}
