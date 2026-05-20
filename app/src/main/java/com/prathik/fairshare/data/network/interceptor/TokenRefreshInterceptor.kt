@@ -46,7 +46,9 @@ class TokenRefreshInterceptor @Inject constructor(
         // Skip refresh for the refresh endpoint itself
         // to prevent infinite loop
         if (originalRequest.url.encodedPath.contains("/api/auth/refresh")) {
-            tokenStore.clearTokens()
+            // The refresh endpoint itself got a 401 — refresh token is expired/revoked.
+            // Signal expiry so the UI can redirect to Login.
+            tokenStore.clearTokensAndSignalExpiry()
             return originalResponse
         }
 
@@ -76,14 +78,17 @@ class TokenRefreshInterceptor @Inject constructor(
                 val refreshToken = tokenStore.getRefreshToken()
 
                 if (refreshToken == null) {
-                    tokenStore.clearTokens()
+                    // No refresh token — unrecoverable. Signal expiry so MainShell
+                    // can navigate the user to Login instead of showing broken screens.
+                    tokenStore.clearTokensAndSignalExpiry()
                     return@withLock originalResponse
                 }
 
                 val refreshed = tryRefreshToken(chain, refreshToken)
 
                 if (refreshed) {
-                    // Retry original request with new token
+                    // Refresh succeeded — retry original request silently.
+                    // User stays in the app; no session-expired event emitted.
                     originalResponse.close()
                     val newToken = tokenStore.getAccessToken()
                     val retryRequest = originalRequest.newBuilder()
@@ -91,8 +96,9 @@ class TokenRefreshInterceptor @Inject constructor(
                         .build()
                     chain.proceed(retryRequest)
                 } else {
-                    // Refresh failed — user must log in again
-                    tokenStore.clearTokens()
+                    // Refresh failed (401 from refresh endpoint, network error, etc.)
+                    // Unrecoverable — signal expiry so MainShell navigates to Login.
+                    tokenStore.clearTokensAndSignalExpiry()
                     originalResponse
                 }
             }

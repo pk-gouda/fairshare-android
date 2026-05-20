@@ -9,6 +9,9 @@ import java.util.Currency
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 /**
  * Secure token storage using EncryptedSharedPreferences (AES256).
@@ -40,6 +43,27 @@ class EncryptedTokenStore @Inject constructor(
         .build()
 
     private val prefs: SharedPreferences = createPrefs()
+
+    /**
+     * Emits Unit when the session is unrecoverably expired — i.e. when the refresh
+     * token itself is missing or the refresh endpoint returns 401/error.
+     *
+     * Observed by MainShellViewModel → MainShell, which navigates the user to Login.
+     *
+     * NOT emitted on normal logout (clearTokens) — only on forced expiry via
+     * clearTokensAndSignalExpiry(), which is called exclusively by TokenRefreshInterceptor.
+     *
+     * replay = 0: no stale events for new collectors.
+     * extraBufferCapacity = 1: lets tryEmit succeed while MainShell is actively collecting.
+     */
+    private val _sessionExpired = MutableSharedFlow<Unit>(
+        replay              = 0,
+        // extraBufferCapacity = 1 lets tryEmit succeed while MainShell is actively collecting.
+        // This is intended for foreground protected-screen API failures. Cold-start auth
+        // routing is still handled by the normal token/login state check at app launch.
+        extraBufferCapacity = 1,
+    )
+    val sessionExpired: SharedFlow<Unit> = _sessionExpired.asSharedFlow()
 
     private fun createPrefs(): SharedPreferences {
         return try {
@@ -146,5 +170,20 @@ class EncryptedTokenStore @Inject constructor(
             .remove(KEY_FULL_NAME)
             .remove(KEY_PREFERRED_CURRENCY) // Bug fix: clear on logout so next user starts fresh
             .commit()
+    }
+
+    /**
+     * Clears tokens AND signals session expiry to the UI layer.
+     *
+     * Called exclusively by TokenRefreshInterceptor on unrecoverable refresh failure
+     * (missing refresh token or refresh endpoint returned an error).
+     * Normal logout calls clearTokens() directly — no event is emitted.
+     *
+     * tryEmit is used (not suspend emit) because this is called from an OkHttp
+     * thread, not a coroutine.
+     */
+    fun clearTokensAndSignalExpiry() {
+        clearTokens()
+        _sessionExpired.tryEmit(Unit)
     }
 }

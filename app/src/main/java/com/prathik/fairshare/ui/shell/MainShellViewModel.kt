@@ -2,6 +2,7 @@ package com.prathik.fairshare.ui.shell
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.data.model.response.GroupPreviewResponse
 import com.prathik.fairshare.domain.model.Friend
@@ -28,6 +29,7 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class MainShellViewModel @Inject constructor(
+    private val tokenStore           : EncryptedTokenStore,
     private val getUnreadCountUseCase: GetUnreadCountUseCase,
     private val friendRepository     : FriendRepository,
     private val groupRepository      : GroupRepository,
@@ -35,6 +37,14 @@ class MainShellViewModel @Inject constructor(
 
     private val _unreadCount = MutableStateFlow(0)
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
+
+    /**
+     * Forwarded from EncryptedTokenStore.sessionExpired.
+     * MainShell collects this and navigates to Login when the refresh token
+     * is expired or revoked — instead of leaving the user on a broken screen.
+     * Normal logout does NOT emit on this flow.
+     */
+    val sessionExpired = tokenStore.sessionExpired
 
     init {
         startPollingUnreadCount()
