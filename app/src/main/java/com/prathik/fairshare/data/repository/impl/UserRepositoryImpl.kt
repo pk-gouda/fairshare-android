@@ -125,9 +125,17 @@ class UserRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getFriendCode(): ApiResult<String> {
-        return when (val result = getMyProfile()) {
-            is ApiResult.Success -> ApiResult.Success(result.data.friendCode ?: "")
-            else -> ApiResult.HttpError(500, "Failed to load friend code")
+        // Call the dedicated endpoint instead of reading from the profile cache.
+        // GET /api/users/me/friend-code generates a code server-side if null/blank,
+        // so existing users with no friend_code self-heal on first QR screen open.
+        val result = safeApiCall { userService.getMyFriendCode() }
+            .mapSuccess { it["friendCode"] ?: "" }
+        // If the code came back blank despite a 200, treat as failure so the UI
+        // shows a retry instead of rendering an empty/invalid QR code.
+        return when {
+            result is ApiResult.Success && result.data.isBlank() ->
+                ApiResult.HttpError(500, "Could not generate your friend code. Please try again.")
+            else -> result
         }
     }
 

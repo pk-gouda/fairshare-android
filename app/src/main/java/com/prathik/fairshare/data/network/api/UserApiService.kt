@@ -29,6 +29,14 @@ interface UserApiService {
     @GET("api/users/friend-code/{code}")
     suspend fun lookupByFriendCode(@Path("code") code: String): ApiResponse<FriendResponse>
 
+    /**
+     * Get the current user's friend code.
+     * Generates and saves a new FAIR-XXXXXX code server-side if the user
+     * doesn't have one yet (null or blank). Safe to call on every QR screen open.
+     */
+    @GET("api/users/me/friend-code")
+    suspend fun getMyFriendCode(): ApiResponse<Map<String, String>>
+
     @POST("api/users/me/friend-code/regenerate")
     suspend fun regenerateFriendCode(): ApiResponse<Map<String, String>>
 

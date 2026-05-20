@@ -292,7 +292,7 @@ private fun MyCodeTab(
 ) {
     if (isLoading) { FsLoadingScreen(); return }
 
-    if (friendCode == null) {
+    if (friendCode.isNullOrBlank()) {
         com.prathik.fairshare.ui.components.FsErrorScreen(
             message = "Could not load your QR code",
             onRetry = onRetry,

@@ -3,7 +3,7 @@ package com.prathik.fairshare.ui.friends
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
-import com.prathik.fairshare.domain.usecase.user.GetMyProfileUseCase
+import com.prathik.fairshare.domain.repository.UserRepository
 import com.prathik.fairshare.domain.usecase.user.RegenerateFriendCodeUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +14,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class QrCodeViewModel @Inject constructor(
-    private val getMyProfileUseCase       : GetMyProfileUseCase,
+    private val userRepository             : UserRepository,
     private val regenerateFriendCodeUseCase: RegenerateFriendCodeUseCase,
 ) : ViewModel() {
 
@@ -32,9 +32,22 @@ class QrCodeViewModel @Inject constructor(
     fun loadFriendCode() {
         viewModelScope.launch {
             _isLoading.value = true
-            when (val result = getMyProfileUseCase()) {
-                is ApiResult.Success -> _friendCode.value = result.data.friendCode
-                else -> _actionState.value = QrCodeActionState.Error("Failed to load code")
+            // Use the dedicated friend-code endpoint (not profile cache) so that
+            // existing users with null/blank friend_code self-heal on first open.
+            when (val result = userRepository.getFriendCode()) {
+                is ApiResult.Success -> {
+                    val code = result.data
+                    _friendCode.value = code.ifBlank { null }
+                    if (code.isBlank()) {
+                        _actionState.value = QrCodeActionState.Error(
+                            "Could not generate your friend code. Please try again."
+                        )
+                    }
+                }
+                is ApiResult.HttpError -> _actionState.value =
+                    QrCodeActionState.Error(result.message ?: "Could not load your QR code")
+                else -> _actionState.value =
+                    QrCodeActionState.Error("Could not load your QR code")
             }
             _isLoading.value = false
         }
@@ -48,6 +61,12 @@ class QrCodeViewModel @Inject constructor(
                     _friendCode.value = result.data
                     _actionState.value = QrCodeActionState.Success("Code changed")
                 }
+                is ApiResult.HttpError -> _actionState.value = QrCodeActionState.Error(
+                    if (result.code == 429)
+                        "Too many changes. Please wait a moment and try again."
+                    else
+                        result.message
+                )
                 else -> _actionState.value = QrCodeActionState.Error("Failed to change code")
             }
             _isLoading.value = false
