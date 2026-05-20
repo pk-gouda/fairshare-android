@@ -3,6 +3,7 @@ package com.prathik.fairshare.ui.account
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.errorMessage
 import com.prathik.fairshare.domain.usecase.user.GetMyProfileUseCase
 import com.prathik.fairshare.domain.usecase.user.UpdateProfileUseCase
 import com.prathik.fairshare.domain.repository.UserRepository
@@ -88,12 +89,14 @@ class EditProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             val deviceTimezone = TimeZone.getDefault().id
-            when (updateProfileUseCase(fullName = name, timezone = deviceTimezone)) {
+            when (val result = updateProfileUseCase(fullName = name, timezone = deviceTimezone)) {
                 is ApiResult.Success -> {
                     _editingField.value = null
                     _actionState.value  = EditProfileActionState.Success("Name updated")
                 }
-                else -> _actionState.value = EditProfileActionState.Error("Failed to update name")
+                else -> _actionState.value = EditProfileActionState.Error(
+                    result.errorMessage() ?: "Failed to update name"
+                )
             }
             _isLoading.value = false
         }
@@ -104,12 +107,14 @@ class EditProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             val deviceTimezone = TimeZone.getDefault().id
-            when (updateProfileUseCase(phoneNumber = _phoneNumber.value.trim().ifBlank { null }, timezone = deviceTimezone)) {
+            when (val result = updateProfileUseCase(phoneNumber = _phoneNumber.value.trim().ifBlank { null }, timezone = deviceTimezone)) {
                 is ApiResult.Success -> {
                     _editingField.value = null
                     _actionState.value  = EditProfileActionState.Success("Phone updated")
                 }
-                else -> _actionState.value = EditProfileActionState.Error("Failed to update phone")
+                else -> _actionState.value = EditProfileActionState.Error(
+                    result.errorMessage() ?: "Failed to update phone"
+                )
             }
             _isLoading.value = false
         }
@@ -119,8 +124,8 @@ class EditProfileViewModel @Inject constructor(
     fun requestEmailChange() {
         val newEmail  = _pendingNewEmail.value.trim()
         val password  = _currentPassword.value
-        if (newEmail.isBlank() || !newEmail.contains("@")) {
-            _actionState.value = EditProfileActionState.Error("Enter a valid email address")
+        if (newEmail.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(newEmail).matches()) {
+            _actionState.value = EditProfileActionState.Error("Please enter a valid email address")
             return
         }
         if (password.isBlank()) {
@@ -129,7 +134,7 @@ class EditProfileViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _isLoading.value = true
-            when (userRepository.requestEmailChange(newEmail, password)) {
+            when (val result = userRepository.requestEmailChange(newEmail, password)) {
                 is ApiResult.Success -> {
                     // Collapse the form — user taps the link in their email to confirm.
                     // No token entry needed; the deep link handles it automatically.
@@ -140,9 +145,15 @@ class EditProfileViewModel @Inject constructor(
                     _actionState.value      = EditProfileActionState.Success(
                         "Check your inbox at $newEmail and tap the confirmation link.")
                 }
-                is ApiResult.Unauthorized -> _actionState.value = EditProfileActionState.Error("Incorrect password")
-                is ApiResult.Conflict     -> _actionState.value = EditProfileActionState.Error("Email already in use")
-                else -> _actionState.value = EditProfileActionState.Error("Failed to send verification")
+                is ApiResult.Unauthorized -> _actionState.value =
+                    EditProfileActionState.Error("Incorrect password")
+                is ApiResult.Conflict -> _actionState.value =
+                    EditProfileActionState.Error("This email is already in use")
+                is ApiResult.ValidationError -> _actionState.value =
+                    EditProfileActionState.Error(result.message)
+                else -> _actionState.value = EditProfileActionState.Error(
+                    result.errorMessage() ?: "Could not send verification email. Please try again later."
+                )
             }
             _isLoading.value = false
         }

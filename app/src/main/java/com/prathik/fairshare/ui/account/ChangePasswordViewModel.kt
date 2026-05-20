@@ -3,6 +3,7 @@ package com.prathik.fairshare.ui.account
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.errorMessage
 import com.prathik.fairshare.domain.repository.AuthRepository
 import com.prathik.fairshare.domain.usecase.auth.LogoutUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,23 +49,31 @@ class ChangePasswordViewModel @Inject constructor(
     fun onConfirmPasswordChanged(v: String) { _confirmPassword.value = v; _confirmPasswordError.value = null }
 
     fun changePassword() {
-        // Validate
+        // Validate locally — rules match backend (NIST SP 800-63B: min 12 chars, no forced complexity).
         var valid = true
         if (_currentPassword.value.isBlank()) {
-            _currentPasswordError.value = "Enter your current password"; valid = false
+            _currentPasswordError.value = "Current password is required"; valid = false
         }
-        if (_newPassword.value.length < 8) {
-            _newPasswordError.value = "Password must be at least 8 characters"; valid = false
+        when {
+            _newPassword.value.isBlank() -> {
+                _newPasswordError.value = "New password is required"; valid = false
+            }
+            _newPassword.value.length < 12 -> {
+                _newPasswordError.value = "Password must be at least 12 characters"; valid = false
+            }
+            _newPassword.value.length > 128 -> {
+                _newPasswordError.value = "Password must not exceed 128 characters"; valid = false
+            }
         }
-        if (_newPassword.value != _confirmPassword.value) {
-            _confirmPasswordError.value = "Passwords don't match"; valid = false
+        if (_newPassword.value.isNotBlank() && _newPassword.value != _confirmPassword.value) {
+            _confirmPasswordError.value = "Passwords do not match"; valid = false
         }
         if (!valid) return
 
         viewModelScope.launch {
             _isLoading.value = true
-            when (authRepository.changePassword(_currentPassword.value, _newPassword.value)) {
-                is ApiResult.Success    -> {
+            when (val result = authRepository.changePassword(_currentPassword.value, _newPassword.value)) {
+                is ApiResult.Success -> {
                     // Clear local tokens — current device must re-authenticate
                     logoutUseCase()
                     _actionState.value = ChangePasswordActionState.Success("Password updated")
@@ -72,7 +81,13 @@ class ChangePasswordViewModel @Inject constructor(
                 is ApiResult.Unauthorized -> {
                     _currentPasswordError.value = "Current password is incorrect"
                 }
-                else -> _actionState.value = ChangePasswordActionState.Error("Failed to update password")
+                is ApiResult.ValidationError -> {
+                    // Backend rejected the new password — show the exact message as a field error.
+                    _newPasswordError.value = result.message
+                }
+                else -> _actionState.value = ChangePasswordActionState.Error(
+                    result.errorMessage() ?: "Failed to update password"
+                )
             }
             _isLoading.value = false
         }
