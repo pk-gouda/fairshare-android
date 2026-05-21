@@ -1,5 +1,7 @@
 package com.prathik.fairshare.ui.navigation
 
+import android.net.Uri
+
 /**
  * Defines all 39 navigation routes in one place.
  *
@@ -18,7 +20,7 @@ sealed class Screen(val route: String) {
     object Register : Screen("register")
     object VerifyEmail : Screen("verify_email?email={email}") {
         fun route(email: String? = null) =
-            if (email != null) "verify_email?email=$email" else "verify_email"
+            if (email != null) "verify_email?email=${Uri.encode(email)}" else "verify_email"
     }
 
     object ForgotPassword : Screen("forgot_password")
@@ -72,7 +74,7 @@ sealed class Screen(val route: String) {
     }
     object JoinGroup : Screen("join_group?inviteCode={inviteCode}") {
         fun route(inviteCode: String? = null) =
-            if (inviteCode != null) "join_group?inviteCode=$inviteCode"
+            if (inviteCode != null) "join_group?inviteCode=${Uri.encode(inviteCode)}"
             else "join_group"
     }
 
@@ -109,7 +111,8 @@ sealed class Screen(val route: String) {
     // ── Settlement ────────────────────────────────────────────────────────────
     object SettleUp : Screen("settle/{otherUserId}?groupId={groupId}&payerId={payerId}&payerName={payerName}&currency={currency}") {
         fun route(otherUserId: String, groupId: String? = null, payerId: String? = null, payerName: String? = null, currency: String? = null) =
-            "settle/$otherUserId?groupId=${groupId ?: ""}&payerId=${payerId ?: ""}&payerName=${payerName ?: ""}&currency=${currency ?: ""}"
+            "settle/$otherUserId?groupId=${groupId ?: ""}&payerId=${payerId ?: ""}" +
+                    "&payerName=${Uri.encode(payerName ?: "")}&currency=${Uri.encode(currency ?: "")}"
     }
 
     object PartialSettle : Screen("settle/{otherUserId}/partial?groupId={groupId}") {
@@ -150,7 +153,7 @@ sealed class Screen(val route: String) {
 
     // ── Account ───────────────────────────────────────────────────────────────
     object ConfirmEmailChange : Screen("confirm_email_change?token={token}") {
-        fun route(token: String) = "confirm_email_change?token=$token"
+        fun route(token: String) = "confirm_email_change?token=${Uri.encode(token)}"
     }
 
     object EditProfile : Screen("edit_profile")

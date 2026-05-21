@@ -206,20 +206,6 @@ fun MainShell(
         }
     }
 
-    // ── Session expiry — navigate to Login on unrecoverable refresh failure ─────
-    // TokenRefreshInterceptor calls clearTokensAndSignalExpiry() when the refresh
-    // token itself is expired, revoked, or missing. EncryptedTokenStore emits on
-    // sessionExpired, MainShellViewModel forwards it here.
-    // Normal logout (onLoggedOut callbacks) does NOT trigger this path.
-    LaunchedEffect(Unit) {
-        viewModel.sessionExpired.collect {
-            rootNavController.navigate(Screen.Login.route) {
-                popUpTo(0) { inclusive = true }
-                launchSingleTop = true
-            }
-        }
-    }
-
     // ── Handle group invite deep link ─────────────────────────────────────────
     // Arrives from https://fairshareapp.app/join/{code} (or fairshare://join/{code}).
     // MainActivity extracts the bare invite code and threads it here.
@@ -574,7 +560,11 @@ fun MainShell(
                         shellNavController.navigate(Screen.Search.route())
                     },
                     onNavigateToCreateGroup = {
-                        shellNavController.navigate(Screen.CreateGroup.route)
+                        // Must call .route() (function), not .route (property).
+                        // .route property returns the template "create_group?friendId={friendId}",
+                        // which NavController resolves literally — getString("friendId") then
+                        // returns "{friendId}" and that literal string reaches the backend.
+                        shellNavController.navigate(Screen.CreateGroup.route())
                     },
                     onNavigateToJoinGroup = {
                         shellNavController.navigate(Screen.JoinGroup.route())
