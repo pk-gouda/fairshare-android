@@ -3,6 +3,7 @@ package com.prathik.fairshare.data.repository.impl
 import com.prathik.fairshare.data.model.mapper.toDomain
 import com.prathik.fairshare.data.model.request.SettleRequest
 import com.prathik.fairshare.data.model.request.UpdateSettlementRequest
+import com.prathik.fairshare.data.model.response.SettlementPreviewResponse
 import com.prathik.fairshare.data.local.SettlementDao
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.local.toEntity
@@ -54,6 +55,23 @@ class SettlementRepositoryImpl @Inject constructor(
         }
         return result
     }
+
+    override suspend fun previewSettlement(
+        otherUserId: String,
+        type       : String,
+        groupId    : String?,
+        amount     : Double?,
+        currency   : String?,
+    ): ApiResult<SettlementPreviewResponse> =
+        safeApiCall {
+            settlementService.previewSettlement(
+                otherUserId = otherUserId,
+                type        = type,
+                groupId     = groupId,
+                amount      = amount,
+                currency    = currency,
+            )
+        }.mapSuccess { it }
 
     override suspend fun getHistory(otherUserId: String): ApiResult<List<Settlement>> {
         val currentUserId = tokenStore.getUserId()

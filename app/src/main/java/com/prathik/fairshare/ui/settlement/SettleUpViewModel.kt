@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
+import com.prathik.fairshare.data.model.response.SettlementPreviewResponse
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.errorMessage
 import com.prathik.fairshare.domain.model.SettleType
@@ -20,11 +21,12 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettleUpViewModel @Inject constructor(
-    private val settleUseCase    : SettleUseCase,
-    private val balanceRepository: BalanceRepository,
-    private val friendRepository : FriendRepository,
-    private val tokenStore       : EncryptedTokenStore,
-    savedStateHandle             : SavedStateHandle,
+    private val settleUseCase          : SettleUseCase,
+    private val settlementRepository   : com.prathik.fairshare.domain.repository.SettlementRepository,
+    private val balanceRepository      : BalanceRepository,
+    private val friendRepository       : FriendRepository,
+    private val tokenStore             : EncryptedTokenStore,
+    savedStateHandle                   : SavedStateHandle,
 ) : ViewModel() {
 
     val otherUserId    : String  = savedStateHandle.get<String>("otherUserId") ?: ""
@@ -46,6 +48,14 @@ class SettleUpViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<SettleUpUiState>(SettleUpUiState.Idle)
     val uiState: StateFlow<SettleUpUiState> = _uiState.asStateFlow()
+
+    /**
+     * Preview state — populated after the user taps "Record payment" and before
+     * they confirm the overpayment dialog or the breakdown sheet is dismissed.
+     * Null when no preview is pending.
+     */
+    private val _previewState = MutableStateFlow<SettlementPreviewResponse?>(null)
+    val previewState: StateFlow<SettlementPreviewResponse?> = _previewState.asStateFlow()
 
     private val _otherUserName = MutableStateFlow("")
     val otherUserName: StateFlow<String> = _otherUserName.asStateFlow()
@@ -200,19 +210,64 @@ class SettleUpViewModel @Inject constructor(
         settle(type = SettleType.PARTIAL, amount = amt)
     }
 
+    /**
+     * Step 1 — called when the user taps "Record payment".
+     * Fetches a preview from the backend to show allocation breakdown
+     * and detect overpayment before committing.
+     *
+     * The idempotency key is generated here (or reused on retry) so that
+     * preview → confirm → submit all use the same key.
+     * If preview fails, the key is reset so the next attempt is fresh.
+     */
     private fun settle(type: SettleType, amount: Double?) {
         viewModelScope.launch {
             _uiState.value = SettleUpUiState.Loading
 
-            val payerId = overridePayerId
-                ?: if (_balanceAmount.value > 0) otherUserId else null
+            val currency = _activeCurrency.value
+            val typeStr  = type.name
 
-            // Bug fix: use _balanceCurrency.value, NOT tokenStore.getPreferredCurrency().
-            // For PARTIAL type, the BE records the settlement in this currency and applies
-            // the balance delta in that exact currency. Sending the user's preferred currency
-            // (e.g. USD) when the actual balance is EUR creates a USD settlement that can never
-            // be matched — the EUR balance stays unfixed and a phantom USD debt appears on the
-            // other side.
+            when (val preview = settlementRepository.previewSettlement(
+                otherUserId = otherUserId,
+                type        = typeStr,
+                groupId     = groupId,
+                amount      = amount,
+                currency    = currency,
+            )) {
+                is ApiResult.Success -> {
+                    // Preview loaded — show breakdown. If there's an overpayment, the UI
+                    // will show a confirmation dialog before calling confirmSettle().
+                    _previewState.value = preview.data
+                    _uiState.value      = SettleUpUiState.AwaitingConfirmation(
+                        type   = type,
+                        amount = amount,
+                    )
+                }
+                is ApiResult.NetworkError -> {
+                    // Retain key — transient failure
+                    _uiState.value = SettleUpUiState.Error("No internet connection.")
+                }
+                else -> {
+                    // Preview rejected — reset key so next tap is treated as a new action
+                    settleIdempotencyKey = UUID.randomUUID().toString()
+                    _uiState.value = SettleUpUiState.Error(
+                        preview.errorMessage() ?: "Could not load settlement preview."
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Step 2 — called after the user has seen the preview and explicitly confirmed.
+     * Uses the same idempotency key generated in settle() — key is NOT regenerated
+     * between preview and submit so the backend can safely deduplicate a retry.
+     */
+    fun confirmSettle(type: SettleType, amount: Double?) {
+        _previewState.value = null
+        viewModelScope.launch {
+            _uiState.value = SettleUpUiState.Loading
+
+            val payerId  = overridePayerId ?: if (_balanceAmount.value > 0) otherUserId else null
             val currency = _activeCurrency.value
 
             when (val result = settleUseCase(
@@ -227,19 +282,13 @@ class SettleUpViewModel @Inject constructor(
                 idempotencyKey = settleIdempotencyKey,
             )) {
                 is ApiResult.Success -> {
-                    // Action completed — generate a fresh key so any future settlement
-                    // (e.g. user settles again after coming back) is treated as a new action.
                     settleIdempotencyKey = UUID.randomUUID().toString()
                     _uiState.value = SettleUpUiState.Success
                 }
                 is ApiResult.NetworkError -> {
-                    // Transient failure — retain the same key so a retry sends the same
-                    // idempotency key and the backend can deduplicate if needed.
                     _uiState.value = SettleUpUiState.Error("No internet connection.")
                 }
                 else -> {
-                    // Non-retryable failure (Conflict, ValidationError, etc.) — reset key
-                    // because the user must change something before the next attempt.
                     settleIdempotencyKey = UUID.randomUUID().toString()
                     _uiState.value = SettleUpUiState.Error(
                         result.errorMessage() ?: "Failed to record settlement."
@@ -249,6 +298,12 @@ class SettleUpViewModel @Inject constructor(
         }
     }
 
+    /** Dismiss preview without submitting. Key is retained in case user retries immediately. */
+    fun dismissPreview() {
+        _previewState.value = null
+        _uiState.value      = SettleUpUiState.Idle
+    }
+
     fun resetUiState() { _uiState.value = SettleUpUiState.Idle }
 }
 
@@ -256,5 +311,7 @@ sealed class SettleUpUiState {
     object Idle    : SettleUpUiState()
     object Loading : SettleUpUiState()
     object Success : SettleUpUiState()
+    /** Preview loaded — waiting for user to confirm (and dismiss overpayment dialog if needed). */
+    data class AwaitingConfirmation(val type: SettleType, val amount: Double?) : SettleUpUiState()
     data class Error(val message: String) : SettleUpUiState()
 }

@@ -30,12 +30,15 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -96,6 +99,7 @@ fun SettleUpScreen(
     val availableCurrencies by viewModel.availableCurrencies.collectAsState()
     val activeCurrency      by viewModel.activeCurrency.collectAsState()
 
+    val previewState    by viewModel.previewState.collectAsState()
     val snackbarHost    = remember { SnackbarHostState() }
     val scope           = rememberCoroutineScope()
     val context         = LocalContext.current
@@ -169,6 +173,90 @@ fun SettleUpScreen(
             is SettleUpUiState.Success -> { onSuccess(); viewModel.resetUiState() }
             is SettleUpUiState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetUiState() }
             else -> Unit
+        }
+    }
+
+    // ── Overpayment confirmation dialog ───────────────────────────────────────
+    // Shown when preview reveals the payment exceeds the balance.
+    // User must explicitly confirm before settlement is submitted.
+    val awaitingState = uiState as? SettleUpUiState.AwaitingConfirmation
+    val preview       = previewState
+    val hasOverpayment = preview?.overpaymentAmount != null && (preview.overpaymentAmount ?: 0.0) > 0.0
+
+    if (awaitingState != null && preview != null && hasOverpayment) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPreview() },
+            containerColor   = com.prathik.fairshare.ui.theme.Surface2,
+            title = {
+                Text(
+                    text       = "Overpayment detected",
+                    color      = com.prathik.fairshare.ui.theme.TextPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text     = preview.overpaymentMessage
+                            ?: "You are paying more than owed. A reverse credit will be created.",
+                        color    = com.prathik.fairshare.ui.theme.TextSecondary,
+                        fontSize = 14.sp,
+                    )
+                    if (preview.allocations.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Divider(color = com.prathik.fairshare.ui.theme.Surface3)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text     = "Breakdown",
+                            color    = com.prathik.fairshare.ui.theme.TextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        preview.allocations.forEach { alloc ->
+                            Row(
+                                modifier              = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text     = if (alloc.contextType == "GROUP" && alloc.groupName != null)
+                                        alloc.groupName else "Direct",
+                                    color    = if (alloc.isOverpaymentCredit)
+                                        com.prathik.fairshare.ui.theme.TextTertiary
+                                    else com.prathik.fairshare.ui.theme.TextSecondary,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    text     = MoneyUtils.format(alloc.amount, alloc.currency),
+                                    color    = if (alloc.isOverpaymentCredit)
+                                        com.prathik.fairshare.ui.theme.TextTertiary
+                                    else com.prathik.fairshare.ui.theme.TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.confirmSettle(awaitingState.type, awaitingState.amount)
+                }) {
+                    Text("Confirm", color = Green400, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissPreview() }) {
+                    Text("Cancel", color = com.prathik.fairshare.ui.theme.TextSecondary)
+                }
+            },
+        )
+    } else if (awaitingState != null && preview != null && !hasOverpayment) {
+        // No overpayment — auto-confirm immediately
+        LaunchedEffect(awaitingState) {
+            viewModel.confirmSettle(awaitingState.type, awaitingState.amount)
         }
     }
 

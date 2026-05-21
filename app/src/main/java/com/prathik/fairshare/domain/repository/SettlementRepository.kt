@@ -1,5 +1,6 @@
 package com.prathik.fairshare.domain.repository
 
+import com.prathik.fairshare.data.model.response.SettlementPreviewResponse
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.domain.model.SettleType
@@ -33,6 +34,19 @@ interface SettlementRepository {
         payerId       : String? = null,
         idempotencyKey: String,
     ): ApiResult<List<Settlement>>
+
+    /**
+     * Preview what allocations would be created for a settlement without committing.
+     * Returns the allocation breakdown and overpayment info if applicable.
+     * Does not mutate any balances or create any records.
+     */
+    suspend fun previewSettlement(
+        otherUserId: String,
+        type       : String,
+        groupId    : String?,
+        amount     : Double?,
+        currency   : String?,
+    ): ApiResult<SettlementPreviewResponse>
 
     /**
      * Fetches the full settlement history between the current user

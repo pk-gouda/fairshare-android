@@ -4,16 +4,38 @@ import com.prathik.fairshare.data.model.request.SettleRequest
 import com.prathik.fairshare.data.model.request.UpdateSettlementRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.SettlementChangeLogResponse
+import com.prathik.fairshare.data.model.response.SettlementPreviewResponse
 import com.prathik.fairshare.data.model.response.SettlementResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Query
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 
 interface SettlementApiService {
+
+    /**
+     * Preview what allocations would be created for a settlement without committing.
+     * Call this before final submit to show the breakdown and detect overpayment.
+     *
+     * GET /api/settlements/preview
+     * type        — ALL | GROUP | NON_GROUP | PARTIAL (required)
+     * otherUserId — the other user (required)
+     * groupId     — required for GROUP type
+     * amount      — required for PARTIAL type
+     * currency    — required for PARTIAL type
+     */
+    @GET("api/settlements/preview")
+    suspend fun previewSettlement(
+        @Query("otherUserId") otherUserId: String,
+        @Query("type")        type       : String,
+        @Query("groupId")     groupId    : String? = null,
+        @Query("amount")      amount     : Double? = null,
+        @Query("currency")    currency   : String? = null,
+    ): ApiResponse<SettlementPreviewResponse>
 
     @POST("api/settlements")
     suspend fun settle(
