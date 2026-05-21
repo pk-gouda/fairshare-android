@@ -32,6 +32,8 @@ android {
 
     signingConfigs {
         create("release") {
+            // All values read from local.properties or CI env vars.
+            // local.properties must NEVER be committed or included in shared zips.
             val storeFilePath = localProps.getProperty("RELEASE_STORE_FILE")
                 ?: System.getenv("RELEASE_STORE_FILE")
             val storePass = localProps.getProperty("RELEASE_STORE_PASSWORD")
@@ -53,7 +55,8 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            signingConfig = signingConfigs.getByName("release")
+            // Uses the default Android debug signing key.
+            // Do NOT apply release signingConfig here — release key must never be used on debug builds.
 
             val baseUrl = localProps.getProperty("BASE_URL")
                 ?: "https://api.fairshareapp.app/"
