@@ -268,6 +268,21 @@ fun MainShell(
         if (index >= 0) selectedTabIndex = index
     }
 
+    // ── Session expiry ────────────────────────────────────────────────────────
+    // Emitted by EncryptedTokenStore.clearTokensAndSignalExpiry(), which is called
+    // exclusively by TokenRefreshInterceptor on unrecoverable refresh failure.
+    // Normal logout does NOT emit here — it navigates via its own onLoggedOut callback.
+    // popUpTo(0) clears the entire back stack (auth + shell) so Back cannot return
+    // to a protected screen after the session has expired.
+    LaunchedEffect(Unit) {
+        viewModel.sessionExpired.collect {
+            rootNavController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
     // Routes where bottom nav should be hidden (modal screens)
     // Hide bottom nav on modal screens — check exact static prefixes
     val showBottomBar = when {
@@ -623,7 +638,8 @@ fun MainShell(
                     onNavigateToCloseAccount = { shellNavController.navigate(Screen.CloseAccount.route) },
                     onLoggedOut = {
                         rootNavController.navigate(Screen.Login.route) {
-                            popUpTo(Screen.Groups.route) { inclusive = true }
+                            popUpTo(0) { inclusive = true }
+                            launchSingleTop = true
                         }
                     },
                 )
@@ -1438,7 +1454,8 @@ fun MainShell(
                     onBack = { shellNavController.popBackStack() },
                     onLoggedOut = {
                         rootNavController.navigate(Screen.Login.route) {
-                            popUpTo(Screen.Groups.route) { inclusive = true }
+                            popUpTo(0) { inclusive = true }
+                            launchSingleTop = true
                         }
                     },
                 )
@@ -1456,6 +1473,7 @@ fun MainShell(
                     onLoggedOut = {
                         rootNavController.navigate(Screen.Login.route) {
                             popUpTo(0) { inclusive = true }
+                            launchSingleTop = true
                         }
                     },
                 )
