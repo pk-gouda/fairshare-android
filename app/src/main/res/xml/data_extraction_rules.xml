@@ -1,24 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Data extraction rules for API 31+ (Android 12+).
-    Applies to both cloud backup (Google Account) and device-to-device transfer.
+    Controls both cloud backup (Google Account) and device-to-device transfer.
 
-    Exclusions:
-    - fairshare_db: Room database containing financial data. It is server-cache
-      only — no user data lives solely here. Restoring it to a new device would
-      show stale data until the next sync anyway.
-    - fairshare_secure_prefs.xml: EncryptedSharedPreferences for auth tokens.
-      The backing AES key is in Android Keystore (hardware-backed) and cannot
-      be transferred. Restoring this file without the key causes an
-      AEADBadTagException on the new device, forcing a re-login.
+    android:allowBackup="false" disables cloud backup, but device-to-device
+    transfer on API 31+ is governed separately by this file. Both are fully
+    excluded here: all valid domains are excluded so no data is transferred
+    in either direction.
+
+    Cache directories are excluded by the system automatically — no explicit
+    rule needed. External app files are covered by domain="external".
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="database" path="fairshare_db" />
-        <exclude domain="sharedpref" path="fairshare_secure_prefs.xml" />
+        <exclude domain="database"   path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file"       path="." />
+        <exclude domain="root"       path="." />
+        <exclude domain="external"   path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="database" path="fairshare_db" />
-        <exclude domain="sharedpref" path="fairshare_secure_prefs.xml" />
+        <exclude domain="database"   path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file"       path="." />
+        <exclude domain="root"       path="." />
+        <exclude domain="external"   path="." />
     </device-transfer>
 </data-extraction-rules>
