@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.errorMessage
 import com.prathik.fairshare.domain.model.SettleType
 import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.FriendRepository
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -77,6 +79,26 @@ class SettleUpViewModel @Inject constructor(
 
     /** Raw balance list cached so setActiveCurrency can recompute without a network call. */
     private val _cachedBalances = MutableStateFlow<List<com.prathik.fairshare.domain.model.Balance>>(emptyList())
+
+    /**
+     * Idempotency key for the current settlement action.
+     *
+     * Generated once when [settleAll] or [settlePartial] is first called.
+     * The same key is reused on retry (e.g. after a network failure) so the
+     * backend can safely deduplicate the request.
+     *
+     * Reset to a new UUID after:
+     * - Successful settlement (action completed, next tap is a new action).
+     * - Non-retryable failure (Conflict, ValidationError, etc.) — the user must
+     *   adjust input before retrying, so a new key is appropriate.
+     *
+     * NOT reset on NetworkError — a transient network failure is a retry of the
+     * same user-intended action, so the same key must be sent.
+     *
+     * NOT generated on recomposition — the ViewModel survives config changes,
+     * so this field is stable across screen rotations.
+     */
+    private var settleIdempotencyKey: String = UUID.randomUUID().toString()
 
     init {
         // Pre-populate payer name immediately from nav arg — no async needed
@@ -194,18 +216,35 @@ class SettleUpViewModel @Inject constructor(
             val currency = _activeCurrency.value
 
             when (val result = settleUseCase(
-                otherUserId   = otherUserId,
-                type          = type,
-                groupId       = groupId,
-                amount        = amount,
-                currency      = currency,
-                paymentMethod = _paymentMethod.value.ifBlank { null },
-                notes         = _notes.value.ifBlank { null },
-                payerId       = payerId,
+                otherUserId    = otherUserId,
+                type           = type,
+                groupId        = groupId,
+                amount         = amount,
+                currency       = currency,
+                paymentMethod  = _paymentMethod.value.ifBlank { null },
+                notes          = _notes.value.ifBlank { null },
+                payerId        = payerId,
+                idempotencyKey = settleIdempotencyKey,
             )) {
-                is ApiResult.Success      -> _uiState.value = SettleUpUiState.Success
-                is ApiResult.NetworkError -> _uiState.value = SettleUpUiState.Error("No internet connection.")
-                else                      -> _uiState.value = SettleUpUiState.Error("Failed to record settlement.")
+                is ApiResult.Success -> {
+                    // Action completed — generate a fresh key so any future settlement
+                    // (e.g. user settles again after coming back) is treated as a new action.
+                    settleIdempotencyKey = UUID.randomUUID().toString()
+                    _uiState.value = SettleUpUiState.Success
+                }
+                is ApiResult.NetworkError -> {
+                    // Transient failure — retain the same key so a retry sends the same
+                    // idempotency key and the backend can deduplicate if needed.
+                    _uiState.value = SettleUpUiState.Error("No internet connection.")
+                }
+                else -> {
+                    // Non-retryable failure (Conflict, ValidationError, etc.) — reset key
+                    // because the user must change something before the next attempt.
+                    settleIdempotencyKey = UUID.randomUUID().toString()
+                    _uiState.value = SettleUpUiState.Error(
+                        result.errorMessage() ?: "Failed to record settlement."
+                    )
+                }
             }
         }
     }

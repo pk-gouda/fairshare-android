@@ -24,18 +24,20 @@ class SettlementRepositoryImpl @Inject constructor(
 ) : SettlementRepository {
 
     override suspend fun settle(
-        otherUserId: String,
-        type: SettleType,
-        groupId: String?,
-        amount: Double?,
-        currency: String?,
-        paymentMethod: String?,
-        notes: String?,
-        payerId: String?,
+        otherUserId   : String,
+        type          : SettleType,
+        groupId       : String?,
+        amount        : Double?,
+        currency      : String?,
+        paymentMethod : String?,
+        notes         : String?,
+        payerId       : String?,
+        idempotencyKey: String,
     ): ApiResult<List<Settlement>> {
         val result = safeApiCall {
             settlementService.settle(
-                SettleRequest(
+                idempotencyKey = idempotencyKey,
+                request = SettleRequest(
                     otherUserId   = otherUserId,
                     type          = type,
                     groupId       = groupId,
@@ -83,15 +85,15 @@ class SettlementRepositoryImpl @Inject constructor(
         safeApiCall { settlementService.getInitiated() }
             .mapSuccess { list -> list.map { it.toDomain() } }
 
-    override suspend fun cancelSettlement(settlementId: String): ApiResult<Settlement> {
-        val result = safeApiCall { settlementService.cancelSettlement(settlementId) }
+    override suspend fun cancelSettlement(settlementId: String, idempotencyKey: String): ApiResult<Settlement> {
+        val result = safeApiCall { settlementService.cancelSettlement(idempotencyKey, settlementId) }
             .mapSuccess { it.toDomain() }
         if (result is ApiResult.Success) settlementDao.insertAll(listOf(result.data.toEntity()))
         return result
     }
 
-    override suspend fun restoreSettlement(settlementId: String): ApiResult<Settlement> {
-        val result = safeApiCall { settlementService.restoreSettlement(settlementId) }
+    override suspend fun restoreSettlement(settlementId: String, idempotencyKey: String): ApiResult<Settlement> {
+        val result = safeApiCall { settlementService.restoreSettlement(idempotencyKey, settlementId) }
             .mapSuccess { it.toDomain() }
         if (result is ApiResult.Success) settlementDao.insertAll(listOf(result.data.toEntity()))
         return result

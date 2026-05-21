@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.errorMessage
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.Group
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -206,11 +208,17 @@ class GroupDetailViewModel @Inject constructor(
     val settlementActionState: StateFlow<SettlementActionState> =
         _settlementActionState.asStateFlow()
 
+    // Per-settlement idempotency keys — same map pattern as FriendDetailViewModel.
+    private val cancelIdempotencyKeys  = mutableMapOf<String, String>()
+    private val restoreIdempotencyKeys = mutableMapOf<String, String>()
+
     fun cancelSettlement(settlementId: String) {
         viewModelScope.launch {
             _settlementActionState.value = SettlementActionState.Loading
-            when (val result = settlementRepository.cancelSettlement(settlementId)) {
+            val key = cancelIdempotencyKeys.getOrPut(settlementId) { UUID.randomUUID().toString() }
+            when (val result = settlementRepository.cancelSettlement(settlementId, key)) {
                 is ApiResult.Success -> {
+                    cancelIdempotencyKeys.remove(settlementId)
                     // Update in-place so the row remains visible with CANCELLED status.
                     _settlements.value = _settlements.value.map { s ->
                         if (s.id == settlementId) result.data else s
@@ -218,12 +226,14 @@ class GroupDetailViewModel @Inject constructor(
                     refreshExpenses()
                     _settlementActionState.value = SettlementActionState.Cancelled
                 }
-
-                is ApiResult.NetworkError -> _settlementActionState.value =
-                    SettlementActionState.Error("No internet connection.")
-
-                else -> _settlementActionState.value =
-                    SettlementActionState.Error("Failed to cancel settlement.")
+                is ApiResult.NetworkError -> {
+                    // Retain key for retry
+                    _settlementActionState.value = SettlementActionState.Error("No internet connection.")
+                }
+                else -> {
+                    cancelIdempotencyKeys.remove(settlementId)
+                    _settlementActionState.value = SettlementActionState.Error(result.errorMessage() ?: "Failed to cancel settlement.")
+                }
             }
         }
     }
@@ -231,20 +241,24 @@ class GroupDetailViewModel @Inject constructor(
     fun restoreSettlement(settlementId: String) {
         viewModelScope.launch {
             _settlementActionState.value = SettlementActionState.Loading
-            when (val result = settlementRepository.restoreSettlement(settlementId)) {
+            val key = restoreIdempotencyKeys.getOrPut(settlementId) { UUID.randomUUID().toString() }
+            when (val result = settlementRepository.restoreSettlement(settlementId, key)) {
                 is ApiResult.Success -> {
+                    restoreIdempotencyKeys.remove(settlementId)
                     _settlements.value = _settlements.value.map { s ->
                         if (s.id == settlementId) result.data else s
                     }
                     refreshExpenses()
                     _settlementActionState.value = SettlementActionState.Restored
                 }
-
-                is ApiResult.NetworkError -> _settlementActionState.value =
-                    SettlementActionState.Error("No internet connection.")
-
-                else -> _settlementActionState.value =
-                    SettlementActionState.Error("Failed to restore settlement.")
+                is ApiResult.NetworkError -> {
+                    // Retain key for retry
+                    _settlementActionState.value = SettlementActionState.Error("No internet connection.")
+                }
+                else -> {
+                    restoreIdempotencyKeys.remove(settlementId)
+                    _settlementActionState.value = SettlementActionState.Error(result.errorMessage() ?: "Failed to restore settlement.")
+                }
             }
         }
     }

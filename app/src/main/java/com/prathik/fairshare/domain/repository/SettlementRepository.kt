@@ -23,14 +23,15 @@ interface SettlementRepository {
      * Returns [ApiResult.Conflict] if there is nothing to settle.
      */
     suspend fun settle(
-        otherUserId: String,
-        type: SettleType,
-        groupId: String?,
-        amount: Double?,
-        currency: String?,
-        paymentMethod: String?,
-        notes: String?,
-        payerId: String? = null,
+        otherUserId   : String,
+        type          : SettleType,
+        groupId       : String?,
+        amount        : Double?,
+        currency      : String?,
+        paymentMethod : String?,
+        notes         : String?,
+        payerId       : String? = null,
+        idempotencyKey: String,
     ): ApiResult<List<Settlement>>
 
     /**
@@ -53,7 +54,7 @@ interface SettlementRepository {
      * Cancels a settlement.
      * Returns [ApiResult.Forbidden] if user did not initiate the settlement.
      */
-    suspend fun cancelSettlement(settlementId: String): ApiResult<Settlement>
+    suspend fun cancelSettlement(settlementId: String, idempotencyKey: String): ApiResult<Settlement>
 
     /**
      * Deletes a completed settlement and reverses its balance changes.
@@ -68,7 +69,7 @@ interface SettlementRepository {
      * Returns [ApiResult.Forbidden] if user is not involved.
      * Returns [ApiResult.Conflict] if settlement is already active or not cancellable.
      */
-    suspend fun restoreSettlement(settlementId: String): ApiResult<Settlement>
+    suspend fun restoreSettlement(settlementId: String, idempotencyKey: String): ApiResult<Settlement>
 
     /**
      * Fetches a single settlement by ID.

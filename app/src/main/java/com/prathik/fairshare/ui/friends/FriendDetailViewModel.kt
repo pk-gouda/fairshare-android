@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.errorMessage
 import com.prathik.fairshare.domain.model.Balance
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.Friend
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -243,10 +245,18 @@ class FriendDetailViewModel @Inject constructor(
         }
     }
 
+    // Per-settlement idempotency keys. Map allows multiple settlements to be
+    // retried independently. Key is generated on first attempt, retained across
+    // NetworkError, and removed after terminal success or non-retryable failure.
+    private val cancelIdempotencyKeys  = mutableMapOf<String, String>()
+    private val restoreIdempotencyKeys = mutableMapOf<String, String>()
+
     fun cancelSettlement(settlementId: String) {
         viewModelScope.launch {
-            when (val result = settlementRepository.cancelSettlement(settlementId)) {
+            val key = cancelIdempotencyKeys.getOrPut(settlementId) { UUID.randomUUID().toString() }
+            when (val result = settlementRepository.cancelSettlement(settlementId, key)) {
                 is ApiResult.Success -> {
+                    cancelIdempotencyKeys.remove(settlementId)
                     // Update in-place — row stays visible with CANCELLED status
                     _settlements.value = _settlements.value.map { s ->
                         if (s.id == settlementId) result.data else s
@@ -254,34 +264,38 @@ class FriendDetailViewModel @Inject constructor(
                     refreshExpenses()
                     _actionState.value = FriendDetailActionState.Success("Settlement cancelled")
                 }
-
-                is ApiResult.NetworkError ->
+                is ApiResult.NetworkError -> {
+                    // Retain key for retry
                     _actionState.value = FriendDetailActionState.Error("No internet connection.")
-
-                else ->
-                    _actionState.value =
-                        FriendDetailActionState.Error("Failed to cancel settlement.")
+                }
+                else -> {
+                    cancelIdempotencyKeys.remove(settlementId)
+                    _actionState.value = FriendDetailActionState.Error(result.errorMessage() ?: "Failed to cancel settlement.")
+                }
             }
         }
     }
 
     fun restoreSettlement(settlementId: String) {
         viewModelScope.launch {
-            when (val result = settlementRepository.restoreSettlement(settlementId)) {
+            val key = restoreIdempotencyKeys.getOrPut(settlementId) { UUID.randomUUID().toString() }
+            when (val result = settlementRepository.restoreSettlement(settlementId, key)) {
                 is ApiResult.Success -> {
+                    restoreIdempotencyKeys.remove(settlementId)
                     _settlements.value = _settlements.value.map { s ->
                         if (s.id == settlementId) result.data else s
                     }
                     refreshExpenses()
                     _actionState.value = FriendDetailActionState.Success("Settlement restored")
                 }
-
-                is ApiResult.NetworkError ->
+                is ApiResult.NetworkError -> {
+                    // Retain key for retry
                     _actionState.value = FriendDetailActionState.Error("No internet connection.")
-
-                else ->
-                    _actionState.value =
-                        FriendDetailActionState.Error("Failed to restore settlement.")
+                }
+                else -> {
+                    restoreIdempotencyKeys.remove(settlementId)
+                    _actionState.value = FriendDetailActionState.Error(result.errorMessage() ?: "Failed to restore settlement.")
+                }
             }
         }
     }

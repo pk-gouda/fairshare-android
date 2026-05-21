@@ -8,6 +8,7 @@ import com.prathik.fairshare.data.model.response.SettlementResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -15,16 +16,25 @@ import retrofit2.http.Path
 interface SettlementApiService {
 
     @POST("api/settlements")
-    suspend fun settle(@Body request: SettleRequest): ApiResponse<List<SettlementResponse>>
+    suspend fun settle(
+        @Header("Idempotency-Key") idempotencyKey: String,
+        @Body request: SettleRequest,
+    ): ApiResponse<List<SettlementResponse>>
 
     @POST("api/settlements/{settlementId}/confirm")
     suspend fun confirmSettlement(@Path("settlementId") settlementId: String): ApiResponse<SettlementResponse>
 
     @POST("api/settlements/{settlementId}/cancel")
-    suspend fun cancelSettlement(@Path("settlementId") settlementId: String): ApiResponse<SettlementResponse>
+    suspend fun cancelSettlement(
+        @Header("Idempotency-Key") idempotencyKey: String,
+        @Path("settlementId") settlementId: String,
+    ): ApiResponse<SettlementResponse>
 
     @POST("api/settlements/{settlementId}/restore")
-    suspend fun restoreSettlement(@Path("settlementId") settlementId: String): ApiResponse<SettlementResponse>
+    suspend fun restoreSettlement(
+        @Header("Idempotency-Key") idempotencyKey: String,
+        @Path("settlementId") settlementId: String,
+    ): ApiResponse<SettlementResponse>
 
     @GET("api/settlements/history/{otherUserId}")
     suspend fun getHistory(@Path("otherUserId") otherUserId: String): ApiResponse<List<SettlementResponse>>

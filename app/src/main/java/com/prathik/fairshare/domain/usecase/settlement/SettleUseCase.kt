@@ -14,14 +14,15 @@ class SettleUseCase @Inject constructor(
     private val settlementRepository: SettlementRepository,
 ) {
     suspend operator fun invoke(
-        otherUserId: String,
-        type: SettleType,
-        groupId: String?,
-        amount: Double?,
-        currency: String?,
-        paymentMethod: String?,
-        notes: String?,
-        payerId: String? = null,
+        otherUserId   : String,
+        type          : SettleType,
+        groupId       : String?,
+        amount        : Double?,
+        currency      : String?,
+        paymentMethod : String?,
+        notes         : String?,
+        payerId       : String? = null,
+        idempotencyKey: String,
     ): ApiResult<List<Settlement>> {
         if (otherUserId.isBlank()) {
             return ApiResult.ValidationError("User ID cannot be empty")
@@ -38,14 +39,15 @@ class SettleUseCase @Inject constructor(
             }
         }
         return settlementRepository.settle(
-            otherUserId   = otherUserId,
-            type          = type,
-            groupId       = groupId,
-            amount        = amount,
-            currency      = currency,
-            paymentMethod = paymentMethod,
-            notes         = notes?.trim(),
-            payerId       = payerId,
+            otherUserId    = otherUserId,
+            type           = type,
+            groupId        = groupId,
+            amount         = amount,
+            currency       = currency,
+            paymentMethod  = paymentMethod,
+            notes          = notes?.trim(),
+            payerId        = payerId,
+            idempotencyKey = idempotencyKey,
         )
     }
 }
