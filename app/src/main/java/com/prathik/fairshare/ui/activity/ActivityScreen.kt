@@ -34,7 +34,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +48,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.Notification
 import com.prathik.fairshare.domain.model.NotificationType
 import com.prathik.fairshare.ui.components.FsLoadingScreen
@@ -88,6 +88,8 @@ fun ActivityScreen(
     val grouped by remember { derivedStateOf { viewModel.groupedNotifications(selectedFilter) } }
     val hasUnread by remember { derivedStateOf { viewModel.hasUnread } }
     val deletedGroups by viewModel.deletedGroups.collectAsState()
+    val showDeletedGroups = selectedFilter == ActivityFilter.ALL ||
+            selectedFilter == ActivityFilter.GROUPS
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -118,7 +120,7 @@ fun ActivityScreen(
         AlertDialog(
             onDismissRequest = { showRestoreDialog = false },
             title = { Text("Restore group?") },
-            text = { Text("Restore '$pendingRestoreGroupName'? Groups can be restored within 60 days of deletion by any member.") },
+            text = { Text("Restore '$pendingRestoreGroupName'? The group and its financial history will be restored.") },
             confirmButton = {
                 FsPrimaryButton(
                     text = "Restore",
@@ -212,7 +214,7 @@ fun ActivityScreen(
                     FsLoadingScreen(); return@PullToRefreshBox
                 }
 
-                if (grouped.isEmpty()) {
+                if (grouped.isEmpty() && (!showDeletedGroups || deletedGroups.isEmpty())) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(text = "🔔", fontSize = 36.sp)
@@ -273,10 +275,97 @@ fun ActivityScreen(
                             )
                         }
                     }
+                    // ── Recently Deleted ──────────────────────────────────────────
+                    // Shown at the bottom of Activity for All and Groups filters.
+                    // Groups remain here until restored; deletion is permanent only via
+                    // a future explicit admin flow (P0-5).
+                    if (showDeletedGroups && deletedGroups.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "RECENTLY DELETED",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextTertiary,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(
+                                    horizontal = Spacing.lg,
+                                    vertical = Spacing.sm,
+                                ),
+                            )
+                        }
+                        items(items = deletedGroups, key = { "deleted_${it.id}" }) { group ->
+                            DeletedGroupRow(
+                                group = group,
+                                onRestoreClick = {
+                                    pendingRestoreGroupId = group.id
+                                    pendingRestoreGroupName = group.name
+                                    showRestoreDialog = true
+                                },
+                            )
+                            HorizontalDivider(
+                                color = Surface3,
+                                thickness = 0.5.dp,
+                                modifier = Modifier.padding(start = Spacing.lg),
+                            )
+                        }
+                    }
+
                     item { Spacer(modifier = Modifier.height(80.dp)) }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DeletedGroupRow(
+    group: Group,
+    onRestoreClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Surface0)
+            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Icon bucket — matches NotificationRow size so columns align
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Surface2),
+        ) {
+            Text(text = "🗑️", fontSize = 18.sp)
+        }
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = group.name,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val deletedLabel = remember(group.deletedAt) {
+                group.deletedAt?.toRelativeTime()?.let { "Deleted $it" }
+            }
+            if (deletedLabel != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = deletedLabel,
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(Spacing.sm))
+        FsTextButton(
+            text = "Restore",
+            onClick = onRestoreClick,
+        )
     }
 }
 
