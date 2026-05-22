@@ -123,7 +123,7 @@ fun FriendSettingsScreen(
 
     // Remove guard:
     //  • Has shared groups → show blocker (must leave groups first)
-    //  • No shared groups  → show Splitwise-style disclaimer (backend will delete direct expenses)
+    //  • No shared groups  → show confirmation; direct expense and settlement history is preserved
     //  • Invited/Pending   → no balance possible, skip both checks
     val tryRemove: () -> Unit = {
         when {
@@ -151,7 +151,7 @@ fun FriendSettingsScreen(
         }
     }
 
-    // ── Remove dialog — Splitwise-style disclaimer (Image 1) ──────────────────
+    // ── Remove dialog ─────────────────────────────────────────────────────────
     if (showRemoveDialog) {
         AlertDialog(
             onDismissRequest = { showRemoveDialog = false },
@@ -160,7 +160,7 @@ fun FriendSettingsScreen(
             text  = {
                 Column {
                     Text(
-                        "This will remove ${friend?.fullName ?: "this person"} from your friends list, and delete any non-group expenses you two have shared.",
+                        "Remove ${friend?.fullName ?: "this person"} from your friends list? Your direct expense and settlement history will be preserved.",
                         color    = TextSecondary,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
