@@ -78,7 +78,6 @@ import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.SplitType
 import com.prathik.fairshare.ui.components.FsAvatar
-import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsTextButton
 import com.prathik.fairshare.ui.components.FsTextField
@@ -261,7 +260,7 @@ fun AddExpenseScreen(
         },
     ) { innerPadding ->
 
-        if (isLoading) { FsLoadingScreen(); return@Scaffold }
+        // Form stays visible while saving — Save button is disabled below.
 
         Column(
             modifier = Modifier
@@ -331,12 +330,25 @@ fun AddExpenseScreen(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier
                         .clip(RoundedCornerShape(Radius.lg))
-                        .background(if (membersOfflineUnavailable) Surface3 else Green400)
-                        .then(if (!membersOfflineUnavailable) Modifier.clickable { viewModel.submit() } else Modifier)
+                        .background(
+                            when {
+                                isLoading || membersOfflineUnavailable -> Surface3
+                                else -> Green400
+                            }
+                        )
+                        .then(
+                            if (!isLoading && !membersOfflineUnavailable)
+                                Modifier.clickable { viewModel.submit() }
+                            else Modifier
+                        )
                         .padding(horizontal = Spacing.md, vertical = 8.dp),
                 ) {
-                    Text("Save", fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                        color = if (membersOfflineUnavailable) TextTertiary else Surface0)
+                    Text(
+                        text = if (isLoading) "Saving…" else "Save",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isLoading || membersOfflineUnavailable) TextTertiary else Surface0,
+                    )
                 }
             }
 

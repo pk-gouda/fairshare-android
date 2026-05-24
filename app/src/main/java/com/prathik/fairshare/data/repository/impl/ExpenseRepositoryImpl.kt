@@ -70,8 +70,11 @@ class ExpenseRepositoryImpl @Inject constructor(
         val result = safeApiCall { expenseService.getExpense(expenseId) }
         if (result is ApiResult.Success) {
             val response = result.data
-            // Cache the basic entity for list-level operations.
-            expenseDao.insert(response.toEntity())
+            // Preserve any existing otherUserId (set for direct friend expenses) so
+            // a detail-prefetch call does not erase it. Consistent with updateExpense()
+            // and restoreExpense() which already follow this pattern.
+            val existingOtherUserId = expenseDao.getById(expenseId)?.otherUserId
+            expenseDao.insert(response.toEntity(otherUserId = existingOtherUserId))
             // Cache full payer and split rows so offline edit has complete data.
             expensePayerDao.deleteByExpenseId(expenseId)
             expensePayerDao.insertAll(
@@ -440,6 +443,12 @@ class ExpenseRepositoryImpl @Inject constructor(
 
     // ── Optimistic balance read (Wave 2D-Balance Optimism) ──────────────────────
 
+    override suspend fun getCachedGroupExpenses(groupId: String): List<com.prathik.fairshare.domain.model.Expense> =
+        expenseDao.getByGroupId(groupId).map { it.toDomain() }
+
+    override suspend fun getCachedDirectExpensesWithFriend(friendId: String): List<com.prathik.fairshare.domain.model.Expense> =
+        expenseDao.getByOtherUserId(friendId).map { it.toDomain() }
+
     override suspend fun getCachedExpense(expenseId: String): com.prathik.fairshare.domain.model.Expense? =
         expenseDao.getById(expenseId)?.toDomain()
 
@@ -642,6 +651,10 @@ class ExpenseRepositoryImpl @Inject constructor(
         android.util.Log.d("ExpenseCache",
             "applyLocalPendingExpenseUpdate: $expenseId old=$oldYourBalance new=$newYourBalance")
         return Pair(oldYourBalance, newYourBalance)
+    }
+
+    override suspend fun setCachedDirectOtherUserId(expenseId: String, otherUserId: String) {
+        expenseDao.updateOtherUserId(expenseId, otherUserId)
     }
 
     override suspend fun propagateOtherUserId(fromId: String, toId: String) {

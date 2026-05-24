@@ -192,8 +192,18 @@ interface ExpenseRepository {
      */
     suspend fun getCachedExpenseMutationContext(expenseId: String): ExpenseMutationContext?
 
+    /**
+     * Room-only reads — never hit the network.
+     * Used by detail screens to show cached data immediately before background sync.
+     */
+    suspend fun getCachedGroupExpenses(groupId: String): List<Expense>
+    suspend fun getCachedDirectExpensesWithFriend(friendId: String): List<Expense>
+
     /** Returns the [otherUserId] of a cached direct expense, or null if not cached / not a direct expense. */
     suspend fun getCachedDirectOtherUserId(expenseId: String): String?
+
+    /** Directly set [otherUserId] on a server-confirmed cached direct expense. */
+    suspend fun setCachedDirectOtherUserId(expenseId: String, otherUserId: String)
 
     /**
      * Copy the [otherUserId] from the local placeholder ([fromId]) to the

@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.data.model.request.CreateExpenseRequest
 import com.prathik.fairshare.data.sync.OperationType
-import com.prathik.fairshare.data.sync.ExpenseMutationCacheRefresher
 import com.prathik.fairshare.data.sync.PendingOperationRepository
 import com.prathik.fairshare.data.sync.SyncWorker
 import com.prathik.fairshare.domain.model.ApiResult
@@ -47,7 +46,7 @@ class AddExpenseViewModel @Inject constructor(
     private val scanReceiptUseCase: ScanReceiptUseCase,
     private val tokenStore: EncryptedTokenStore,
     private val pendingOperationRepository: PendingOperationRepository,
-    private val mutationCacheRefresher   : ExpenseMutationCacheRefresher,
+    private val syncManager              : com.prathik.fairshare.data.sync.FairShareSyncManager,
     private val json: Json,
     @ApplicationContext private val appContext: Context,
     savedStateHandle: SavedStateHandle,
@@ -579,8 +578,8 @@ class AddExpenseViewModel @Inject constructor(
             return
         }
 
+        _uiState.value = AddExpenseUiState.Loading  // set synchronously — prevents double-tap
         viewModelScope.launch {
-            _uiState.value = AddExpenseUiState.Loading
 
             // Build request for JSON storage (needed for SyncWorker replay).
             val effectiveSplitType = if (_itemSplitData.value.isNotEmpty()) SplitType.UNEQUAL
@@ -642,16 +641,25 @@ class AddExpenseViewModel @Inject constructor(
                         operationId      = enqueued.operationId,
                         serverResourceId = result.data.id,
                     )
-                    // Await cache cascade before navigating — ensures FRIEND_NET/
-                    // FRIEND_BREAKDOWN/GROUP_BALANCE are ready for immediate offline use.
-                    mutationCacheRefresher.refreshAfterCreateSuccess(
+                    // For direct friend expenses, propagate otherUserId from the local
+                    // placeholder to the server-confirmed cached row so FriendDetail
+                    // can find it by otherUserId immediately from Room.
+                    if (groupId == null && preselectedFriendId != null) {
+                        expenseRepository.setCachedDirectOtherUserId(
+                            expenseId   = result.data.id,
+                            otherUserId = preselectedFriendId,
+                        )
+                    }
+                    // Navigate immediately — cache refresh runs in background.
+                    _uiState.value = AddExpenseUiState.Success
+                    // SyncManager owns backgroundScope — survives ViewModel teardown.
+                    syncManager.launchSyncAfterExpenseCreate(
                         expense       = result.data,
                         groupId       = groupId,
                         currentUserId = userId,
                         payerIds      = _payerData.value.keys,
                         splitIds      = effectiveSplitData?.keys ?: emptySet(),
                     )
-                    _uiState.value = AddExpenseUiState.Success
                 }
 
                 is ApiResult.NetworkError -> {
@@ -754,8 +762,8 @@ class AddExpenseViewModel @Inject constructor(
             "${members.value.find { it.userId == fromId }?.fullName ?: "Someone"} → " +
                     "${members.value.find { it.userId == toId }?.fullName ?: "Someone"}"
 
+        _uiState.value = AddExpenseUiState.Loading  // set synchronously — prevents double-tap
         viewModelScope.launch {
-            _uiState.value = AddExpenseUiState.Loading
 
             val request = CreateExpenseRequest(
                 groupId     = groupId,
@@ -800,15 +808,20 @@ class AddExpenseViewModel @Inject constructor(
             )) {
                 is ApiResult.Success -> {
                     pendingOperationRepository.markSynced(enqueued.operationId, result.data.id)
-                    // Await cache cascade for direct/transfer expenses too.
-                    mutationCacheRefresher.refreshAfterCreateSuccess(
+                    if (groupId == null && preselectedFriendId != null) {
+                        expenseRepository.setCachedDirectOtherUserId(
+                            expenseId   = result.data.id,
+                            otherUserId = preselectedFriendId,
+                        )
+                    }
+                    _uiState.value = AddExpenseUiState.Success
+                    syncManager.launchSyncAfterExpenseCreate(
                         expense       = result.data,
                         groupId       = groupId,
                         currentUserId = userId,
                         payerIds      = setOf(fromId),
                         splitIds      = setOf(toId),
                     )
-                    _uiState.value = AddExpenseUiState.Success
                 }
 
                 is ApiResult.NetworkError -> {

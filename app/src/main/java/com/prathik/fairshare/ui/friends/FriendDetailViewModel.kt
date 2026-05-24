@@ -205,42 +205,40 @@ class FriendDetailViewModel @Inject constructor(
 
     fun refreshExpenses() {
         viewModelScope.launch {
-            // Sync all friend scopes first.
-            syncManager.syncFriendDetail(friendId, SyncReason.MANUAL_REFRESH)
-            // Refresh net balance — always fresh from network (no cache)
-            when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
-                is ApiResult.Success -> {
-                    _balancesLoadFailed.value = false
-                    _userBalances.value = result.data
-                    _netBalance.value = result.data.sumOf { it.amount }
-                    _currency.value = result.data.firstOrNull()?.currency ?: "USD"
-                }
-
-                else -> _balancesLoadFailed.value = true
-            }
-
-            // Refresh per-group breakdown
-            when (val result = balanceRepository.getBreakdownWithUser(friendId)) {
-                is ApiResult.Success -> _groupBalances.value = result.data
-                else -> Unit
-            }
-
-            // Refresh direct expenses only
-            when (val result = expenseRepository.getDirectExpensesWithFriend(friendId)) {
-                is ApiResult.Success -> _expensesState.value = FriendExpensesState.Success(
-                    result.data.sortedByDescending { it.expenseDate }
+            // Step 1 — Room-only reads: show cached data immediately with no network wait.
+            val cachedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
+            if (cachedExpenses.isNotEmpty()) {
+                _expensesState.value = FriendExpensesState.Success(
+                    cachedExpenses.sortedByDescending { it.expenseDate }
                 )
-
-                else -> Unit
             }
 
-            // Refresh settlement history
-            when (val result = getSettlementHistoryUseCase(friendId)) {
-                is ApiResult.Success -> {
-                    _settlements.value = result.data.filter { it.groupId == null }
+            // Step 2 — Background network sync: update Room, then re-read all scopes.
+            launch {
+                syncManager.syncFriendDetail(friendId, SyncReason.MANUAL_REFRESH)
+                when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
+                    is ApiResult.Success -> {
+                        _balancesLoadFailed.value = false
+                        _userBalances.value = result.data
+                        _netBalance.value = result.data.sumOf { it.amount }
+                        _currency.value = result.data.firstOrNull()?.currency ?: "USD"
+                    }
+                    else -> _balancesLoadFailed.value = true
                 }
-
-                else -> Unit
+                when (val result = balanceRepository.getBreakdownWithUser(friendId)) {
+                    is ApiResult.Success -> _groupBalances.value = result.data
+                    else -> Unit
+                }
+                val refreshedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
+                if (refreshedExpenses.isNotEmpty() || _expensesState.value is FriendExpensesState.Success) {
+                    _expensesState.value = FriendExpensesState.Success(
+                        refreshedExpenses.sortedByDescending { it.expenseDate }
+                    )
+                }
+                when (val result = getSettlementHistoryUseCase(friendId)) {
+                    is ApiResult.Success -> _settlements.value = result.data.filter { it.groupId == null }
+                    else -> Unit
+                }
             }
         }
     }

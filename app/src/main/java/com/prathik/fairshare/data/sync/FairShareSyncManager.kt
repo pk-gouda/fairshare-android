@@ -70,6 +70,24 @@ class FairShareSyncManager @Inject constructor(
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
+     * Fire-and-forget version of [syncAfterExpenseCreate].
+     * Runs in [backgroundScope] so it is NOT cancelled when AddExpenseViewModel
+     * is cleared after the screen is popped. Safe to call immediately before or
+     * after emitting Success from AddExpenseViewModel.
+     */
+    fun launchSyncAfterExpenseCreate(
+        expense       : Expense,
+        groupId       : String?,
+        currentUserId : String,
+        payerIds      : Set<String> = emptySet(),
+        splitIds      : Set<String> = emptySet(),
+    ) {
+        backgroundScope.launch {
+            syncAfterExpenseCreate(expense, groupId, currentUserId, payerIds, splitIds)
+        }
+    }
+
+    /**
      * Fire-and-forget full account sync.
      * Throttled — ignores call if a run started within [MIN_INTERVAL_MS].
      * Safe to call from MainActivity.onStart() or AuthViewModel after login.

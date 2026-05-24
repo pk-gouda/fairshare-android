@@ -175,30 +175,39 @@ class GroupDetailViewModel @Inject constructor(
             _expensesState.value is ExpensesUiState.Loading
         ) return
 
-        // Sync first, then reload — single coroutine prevents race where
-        // ViewModel state reloads before the sync cache writes complete.
         viewModelScope.launch {
-            syncManager.syncGroupDetail(groupId, SyncReason.MANUAL_REFRESH)
-            val expensesDeferred = async { getGroupExpensesUseCase(groupId) }
-            val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
-            val balancesDeferred = async { getGroupBalancesUseCase(groupId) }
+            // Step 1 — Room-only read: show cached data immediately with no network wait.
+            val cachedExpenses = expenseRepository.getCachedGroupExpenses(groupId)
+            if (cachedExpenses.isNotEmpty() || _expensesState.value is ExpensesUiState.Success) {
+                _expensesState.value = ExpensesUiState.Success(
+                    cachedExpenses.sortedByDescending { it.expenseDate }
+                )
+            }
 
-            when (val result = expensesDeferred.await()) {
-                is ApiResult.Success -> _expensesState.value = ExpensesUiState.Success(result.data)
-                else -> Unit
-            }
-            when (val result = settlementsDeferred.await()) {
-                is ApiResult.Success -> _settlements.value = result.data
-                else -> Unit
-            }
-            when (val result = balancesDeferred.await()) {
-                is ApiResult.Success -> {
-                    _balancesLoadFailed.value = false
-                    _balances.value = result.data
-                    _yourBalance.value = result.data.sumOf { it.amount }
+            // Step 2 — Background network sync: update Room, then re-read.
+            launch {
+                syncManager.syncGroupDetail(groupId, SyncReason.MANUAL_REFRESH)
+                val settlementsDeferred  = async { groupRepository.getGroupSettlements(groupId) }
+                val balancesDeferred     = async { getGroupBalancesUseCase(groupId) }
+
+                val refreshedExpenses = expenseRepository.getCachedGroupExpenses(groupId)
+                if (refreshedExpenses.isNotEmpty() || _expensesState.value is ExpensesUiState.Success) {
+                    _expensesState.value = ExpensesUiState.Success(
+                        refreshedExpenses.sortedByDescending { it.expenseDate }
+                    )
                 }
-
-                else -> _balancesLoadFailed.value = true
+                when (val result = settlementsDeferred.await()) {
+                    is ApiResult.Success -> _settlements.value = result.data
+                    else -> Unit
+                }
+                when (val result = balancesDeferred.await()) {
+                    is ApiResult.Success -> {
+                        _balancesLoadFailed.value = false
+                        _balances.value = result.data
+                        _yourBalance.value = result.data.sumOf { it.amount }
+                    }
+                    else -> _balancesLoadFailed.value = true
+                }
             }
         }
     }
