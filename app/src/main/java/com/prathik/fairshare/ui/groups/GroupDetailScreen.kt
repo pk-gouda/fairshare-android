@@ -203,6 +203,7 @@ fun GroupDetailScreen(
     val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
     val balancesLoadFailed      by viewModel.balancesLoadFailed.collectAsState()
     val balancesLoaded          by viewModel.balancesLoaded.collectAsState()
+    val manualRefreshing        by viewModel.manualRefreshing.collectAsState()
     val optimisticYourBalance   by viewModel.optimisticYourBalance.collectAsState()
     val hasPendingBalanceSync      by viewModel.hasPendingBalanceSync.collectAsState()
     val optimisticBalanceCurrency  by viewModel.optimisticBalanceCurrency.collectAsState()
@@ -276,10 +277,10 @@ fun GroupDetailScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             PullToRefreshBox(
-                isRefreshing = false,  // silent — no visible pull-refresh spinner
-                onRefresh    = { viewModel.refreshExpenses() },
+                isRefreshing = manualRefreshing,   // indicator only for manual pull
+                onRefresh    = { viewModel.refreshExpenses(manual = true) },
                 modifier     = Modifier.fillMaxSize(),
-                indicator    = {},     // hide drag indicator; refresh remains silent
+                // No indicator = {} — default indicator shows for manual pull-to-refresh
             ) {
                 when (val state = groupState) {
                     is GroupDetailUiState.Loading -> FsDetailSkeleton()
@@ -390,7 +391,11 @@ fun GroupDetailScreen(
                                         settlements
                                             .filter { it.status == SettlementStatus.COMPLETED }
                                             .forEach { add(TimelineItem.SettlementItem(it)) }
-                                    }.sortedByDescending { it.date }
+                                    }.sortedWith(
+                                        compareByDescending<TimelineItem> { it.date }
+                                            .thenByDescending { it.sortTimestamp() }
+                                            .thenBy { it.stableId() }
+                                    )
 
                                     if (timeline.isEmpty()) {
                                         item {
@@ -1559,3 +1564,18 @@ private fun categoryEmoji(category: ExpenseCategory?): String = when (category) 
     ExpenseCategory.TRASH             -> "🗑️"
     else                              -> "💰"
 }
+// ── TimelineItem stable sort helpers (used in GroupDetail mixed timeline) ─────
+
+private fun TimelineItem.sortTimestamp(): String =
+    when (this) {
+        is TimelineItem.ExpenseItem ->
+            expense.createdAt.ifBlank { expense.updatedAt }
+        is TimelineItem.SettlementItem ->
+            settlement.completedAt?.takeIf { it.isNotBlank() } ?: settlement.createdAt
+    }
+
+private fun TimelineItem.stableId(): String =
+    when (this) {
+        is TimelineItem.ExpenseItem -> "e_${expense.id}"
+        is TimelineItem.SettlementItem -> "s_${settlement.id}"
+    }

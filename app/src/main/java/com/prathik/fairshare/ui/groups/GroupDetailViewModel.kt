@@ -107,6 +107,10 @@ class GroupDetailViewModel @Inject constructor(
     // at the same time as the 5 requests already in-flight from init { loadData() }.
     private var initialLoadDone = false
 
+    /** True only during a user-initiated pull-to-refresh. Drives the visible indicator. */
+    private val _manualRefreshing = MutableStateFlow(false)
+    val manualRefreshing: StateFlow<Boolean> = _manualRefreshing.asStateFlow()
+
     init {
         loadData()
         observeOptimisticBalance()
@@ -120,7 +124,7 @@ class GroupDetailViewModel @Inject constructor(
         val cachedExpenses = expenseRepository.getCachedGroupExpenses(groupId)
         if (cachedExpenses.isNotEmpty()) {
             _expensesState.value = ExpensesUiState.Success(
-                cachedExpenses.sortedByDescending { it.expenseDate }
+                cachedExpenses.stableSortedForTimeline()
             )
         }
         val cachedBalances = balanceRepository.getCachedGroupBalances(groupId)
@@ -207,31 +211,32 @@ class GroupDetailViewModel @Inject constructor(
         }
     }
 
-    fun refreshExpenses() {
+    fun refreshExpenses(manual: Boolean = false) {
         if (!initialLoadDone) return
         if (_groupState.value is GroupDetailUiState.Loading &&
             _expensesState.value is ExpensesUiState.Loading
         ) return
 
         viewModelScope.launch {
-            // Step 1 — Room-only read: show cached data immediately with no network wait.
-            val cachedExpenses = expenseRepository.getCachedGroupExpenses(groupId)
-            if (cachedExpenses.isNotEmpty() || _expensesState.value is ExpensesUiState.Success) {
-                _expensesState.value = ExpensesUiState.Success(
-                    cachedExpenses.sortedByDescending { it.expenseDate }
-                )
-            }
+            if (manual) _manualRefreshing.value = true
+            try {
+                // Step 1 — Room-only read: show cached data immediately with no network wait.
+                val cachedExpenses = expenseRepository.getCachedGroupExpenses(groupId)
+                if (cachedExpenses.isNotEmpty() || _expensesState.value is ExpensesUiState.Success) {
+                    _expensesState.value = ExpensesUiState.Success(
+                        cachedExpenses.stableSortedForTimeline()
+                    )
+                }
 
-            // Step 2 — Background network sync: update Room, then re-read.
-            launch {
+                // Step 2 — Network sync (same coroutine so indicator stays until done).
                 syncManager.syncGroupDetail(groupId, SyncReason.MANUAL_REFRESH)
-                val settlementsDeferred  = async { groupRepository.getGroupSettlements(groupId) }
-                val balancesDeferred     = async { getGroupBalancesUseCase(groupId) }
+                val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
+                val balancesDeferred    = async { getGroupBalancesUseCase(groupId) }
 
                 val refreshedExpenses = expenseRepository.getCachedGroupExpenses(groupId)
                 if (refreshedExpenses.isNotEmpty() || _expensesState.value is ExpensesUiState.Success) {
                     _expensesState.value = ExpensesUiState.Success(
-                        refreshedExpenses.sortedByDescending { it.expenseDate }
+                        refreshedExpenses.stableSortedForTimeline()
                     )
                 }
                 when (val result = settlementsDeferred.await()) {
@@ -246,13 +251,13 @@ class GroupDetailViewModel @Inject constructor(
                         _yourBalance.value = result.data.sumOf { it.amount }
                     }
                     else -> {
-                        // Only mark failed if no cached balance was already loaded.
-                        // A background refresh failure must not erase a confirmed cached state.
                         if (!_balancesLoaded.value && _balances.value.isEmpty()) {
                             _balancesLoadFailed.value = true
                         }
                     }
                 }
+            } finally {
+                if (manual) _manualRefreshing.value = false
             }
         }
     }
@@ -411,6 +416,19 @@ sealed class ExpensesUiState {
     data class Success(val expenses: List<Expense>) : ExpensesUiState()
     data class Error(val message: String, val isNetwork: Boolean) : ExpensesUiState()
 }
+
+// ── Stable timeline sort helpers ─────────────────────────────────────────────
+
+/**
+ * Within the same [expenseDate], sort by [createdAt] (or [updatedAt] as fallback)
+ * so same-day expenses appear in consistent add order. Final tie-breaker: [id] ASC.
+ */
+private fun List<Expense>.stableSortedForTimeline(): List<Expense> =
+    sortedWith(
+        compareByDescending<Expense> { it.expenseDate }
+            .thenByDescending { it.createdAt.ifBlank { it.updatedAt } }
+            .thenBy { it.id }
+    )
 
 sealed class TimelineItem(val date: String) {
     data class ExpenseItem(val expense: Expense) : TimelineItem(expense.expenseDate)
