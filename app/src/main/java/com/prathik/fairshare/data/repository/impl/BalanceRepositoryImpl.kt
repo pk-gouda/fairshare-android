@@ -151,6 +151,18 @@ class BalanceRepositoryImpl @Inject constructor(
         return balanceDao.getGroupBalanceRows(userId, groupId).map { it.toDomain() }
     }
 
+    override suspend fun getCachedNetBalanceWithUser(otherUserId: String): List<com.prathik.fairshare.domain.model.Balance> {
+        val userId = tokenStore.getUserId() ?: return emptyList()
+        val rows = balanceDao.getFriendNetRows(userId, otherUserId)
+            .ifEmpty { balanceDao.getAllBalanceRows(userId).filter { it.otherUserId == otherUserId } }
+        return rows.map { it.toDomain() }
+    }
+
+    override suspend fun getCachedBreakdownWithUser(otherUserId: String): List<com.prathik.fairshare.domain.model.Balance> {
+        val userId = tokenStore.getUserId() ?: return emptyList()
+        return balanceDao.getFriendBreakdownRows(userId, otherUserId).map { it.toDomain() }
+    }
+
     private fun BalanceEntity.toDomain() = Balance(
         userId            = userId,
         otherUserId       = otherUserId,

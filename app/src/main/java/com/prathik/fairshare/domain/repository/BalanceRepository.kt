@@ -61,4 +61,6 @@ interface BalanceRepository {
      */
     suspend fun getCachedGroupBalance(groupId: String): Double?
     suspend fun getCachedGroupBalances(groupId: String): List<Balance>
+    suspend fun getCachedNetBalanceWithUser(otherUserId: String): List<Balance>
+    suspend fun getCachedBreakdownWithUser(otherUserId: String): List<Balance>
 }

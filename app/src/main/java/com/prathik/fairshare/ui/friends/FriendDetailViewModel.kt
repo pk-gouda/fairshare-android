@@ -69,6 +69,13 @@ class FriendDetailViewModel @Inject constructor(
     private val _balancesLoadFailed = MutableStateFlow(false)
     val balancesLoadFailed: StateFlow<Boolean> = _balancesLoadFailed.asStateFlow()
 
+    /**
+     * True once balances have been loaded from cache or network.
+     * UI must not show SETTLED_WITH_HISTORY until this is true.
+     */
+    private val _balancesLoaded = MutableStateFlow(false)
+    val balancesLoaded: StateFlow<Boolean> = _balancesLoaded.asStateFlow()
+
     val pendingDeleteExpenseIds: StateFlow<Set<String>> =
         pendingOperationRepository.observePendingDeleteResourceIds()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
@@ -113,13 +120,60 @@ class FriendDetailViewModel @Inject constructor(
         MutableStateFlow<FriendDetailActionState>(FriendDetailActionState.Idle)
     val actionState: StateFlow<FriendDetailActionState> = _actionState.asStateFlow()
 
+    private var initialLoadDone = false
+
     init {
         loadData()
         observeOptimisticBalance()
     }
 
+    /** Render any cached data immediately before starting network calls. */
+    private suspend fun renderCachedSnapshot() {
+        // Cached friend profile — prevents FsLoadingScreen when Room has the friend
+        friendRepository.getCachedFriend(friendId)?.let { cachedFriend ->
+            _friend.value = cachedFriend
+            _friendStatus.value = when {
+                cachedFriend.isPlaceholder -> "placeholder"
+                cachedFriend.isInvited -> "invited"
+                else -> null
+            }
+        }
+        // Cached direct expenses
+        val cachedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
+        if (cachedExpenses.isNotEmpty()) {
+            _expensesState.value = FriendExpensesState.Success(
+                cachedExpenses.sortedByDescending { it.expenseDate }
+            )
+        }
+        // Cached net balance
+        val cachedNet = balanceRepository.getCachedNetBalanceWithUser(friendId)
+        if (cachedNet.isNotEmpty()) {
+            _userBalances.value = cachedNet
+            _netBalance.value = cachedNet.sumOf { it.amount }
+            _currency.value = cachedNet.firstOrNull()?.currency ?: "USD"
+            _balancesLoaded.value = true
+            _balancesLoadFailed.value = false
+        }
+        // Cached group breakdown
+        val cachedBreakdown = balanceRepository.getCachedBreakdownWithUser(friendId)
+        if (cachedBreakdown.isNotEmpty()) {
+            _groupBalances.value = cachedBreakdown
+        }
+        // Cached direct settlements
+        val cachedSettlements = settlementRepository.getCachedDirectSettlements(friendId)
+        if (cachedSettlements.isNotEmpty()) {
+            _settlements.value = cachedSettlements.filter { it.groupId == null }
+        }
+    }
+
     fun loadData() {
         viewModelScope.launch {
+            initialLoadDone = false
+
+            // Step 1: Render cached data immediately — no network wait.
+            renderCachedSnapshot()
+
+            // Step 2: Set Loading only for states not yet satisfied from cache.
             if (_expensesState.value !is FriendExpensesState.Success) {
                 _expensesState.value = FriendExpensesState.Loading
             }
@@ -161,12 +215,14 @@ class FriendDetailViewModel @Inject constructor(
             when (val result = balancesDeferred.await()) {
                 is ApiResult.Success -> {
                     _balancesLoadFailed.value = false
+                    _balancesLoaded.value = true
                     _userBalances.value = result.data
                     _netBalance.value = result.data.sumOf { it.amount }
                     _currency.value = result.data.firstOrNull()?.currency ?: "USD"
                 }
-
-                else -> _balancesLoadFailed.value = true
+                else -> {
+                    if (!_balancesLoaded.value) _balancesLoadFailed.value = true
+                }
             }
 
             // Per-group breakdown — shown in the balance card
@@ -199,11 +255,13 @@ class FriendDetailViewModel @Inject constructor(
                 directExpenses.sortedByDescending { it.expenseDate }
             )
 
+            initialLoadDone = true
             _isLoading.value = false
         }
     }
 
     fun refreshExpenses() {
+        if (!initialLoadDone) return
         viewModelScope.launch {
             // Step 1 — Room-only reads: show cached data immediately with no network wait.
             val cachedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
@@ -219,11 +277,16 @@ class FriendDetailViewModel @Inject constructor(
                 when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
                     is ApiResult.Success -> {
                         _balancesLoadFailed.value = false
+                        _balancesLoaded.value = true
                         _userBalances.value = result.data
                         _netBalance.value = result.data.sumOf { it.amount }
                         _currency.value = result.data.firstOrNull()?.currency ?: "USD"
                     }
-                    else -> _balancesLoadFailed.value = true
+                    else -> {
+                        if (!_balancesLoaded.value && _userBalances.value.isEmpty()) {
+                            _balancesLoadFailed.value = true
+                        }
+                    }
                 }
                 when (val result = balanceRepository.getBreakdownWithUser(friendId)) {
                     is ApiResult.Success -> _groupBalances.value = result.data

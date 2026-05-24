@@ -25,6 +25,9 @@ class FriendRepositoryImpl @Inject constructor(
     private val friendDao    : FriendDao,
 ) : FriendRepository {
 
+    override suspend fun getCachedFriend(friendId: String): Friend? =
+        friendDao.getAll().firstOrNull { it.id == friendId }?.toFriend()
+
     override suspend fun getFriends(): ApiResult<List<Friend>> {
         // Always fetch from network to ensure newly added/removed friends appear immediately.
         val result = refreshFriendsFromNetwork()

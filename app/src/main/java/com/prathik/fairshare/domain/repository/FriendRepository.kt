@@ -8,6 +8,8 @@ import com.prathik.fairshare.domain.model.Friendship
 
 interface FriendRepository {
     suspend fun getFriends(): ApiResult<List<Friend>>
+    /** Room-only read — never hits the network. */
+    suspend fun getCachedFriend(friendId: String): Friend?
     suspend fun sendRequest(receiverId: String): ApiResult<Friendship>
     suspend fun inviteFriend(email: String, name: String): ApiResult<Friendship>
     suspend fun createPlaceholder(name: String): ApiResult<Friendship>

@@ -73,6 +73,11 @@ class SettlementRepositoryImpl @Inject constructor(
             )
         }.mapSuccess { it }
 
+    override suspend fun getCachedDirectSettlements(otherUserId: String): List<com.prathik.fairshare.domain.model.Settlement> {
+        val currentUserId = tokenStore.getUserId() ?: return emptyList()
+        return settlementDao.getDirectBetween(currentUserId, otherUserId).map { it.toDomain() }
+    }
+
     override suspend fun getHistory(otherUserId: String): ApiResult<List<Settlement>> {
         val currentUserId = tokenStore.getUserId()
         val networkResult = safeApiCall { settlementService.getHistory(otherUserId) }

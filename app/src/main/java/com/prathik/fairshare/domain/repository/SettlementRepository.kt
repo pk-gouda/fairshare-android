@@ -52,6 +52,7 @@ interface SettlementRepository {
      * Fetches the full settlement history between the current user
      * and another user, ordered by date descending.
      */
+    suspend fun getCachedDirectSettlements(otherUserId: String): List<Settlement>
     suspend fun getHistory(otherUserId: String): ApiResult<List<Settlement>>
 
     /**

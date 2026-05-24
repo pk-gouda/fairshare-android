@@ -103,6 +103,7 @@ import java.time.format.DateTimeFormatter
 // ── Friend UI State ───────────────────────────────────────────────────────────
 
 enum class FriendUiState {
+    LOADING_BALANCE,      // balances not yet known — neutral state, avoid premature SETTLED
     BRAND_NEW,            // $0, no history — gold ring, gray initials, all actions disabled
     SETTLED_WITH_HISTORY, // $0, has history — gold ring, gold checkmark, charts/history only
     THEY_OWE_YOU,         // netBalance > 0  — green ring, green initials, all actions enabled
@@ -153,6 +154,7 @@ fun FriendDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
     val balancesLoadFailed by viewModel.balancesLoadFailed.collectAsState()
+    val balancesLoaded     by viewModel.balancesLoaded.collectAsState()
     val optimisticNetBalance by viewModel.optimisticNetBalance.collectAsState()
     val hasPendingBalanceSync      by viewModel.hasPendingBalanceSync.collectAsState()
     val optimisticBalanceCurrency  by viewModel.optimisticBalanceCurrency.collectAsState()
@@ -342,7 +344,12 @@ fun FriendDetailScreen(
         hasPendingBalanceSync && effectiveNetBalance > 0.01  -> FriendUiState.THEY_OWE_YOU
         hasPendingBalanceSync && effectiveNetBalance < -0.01 -> FriendUiState.YOU_OWE_THEM
         hasPendingBalanceSync                                -> FriendUiState.BRAND_NEW
-        ubPositives == 0.0 && ubNegatives == 0.0 && hasAnyActivity && !balancesLoadFailed -> FriendUiState.SETTLED_WITH_HISTORY
+        // Balances not yet known — show neutral state to avoid premature SETTLED_WITH_HISTORY
+        !balancesLoaded && !balancesLoadFailed               -> FriendUiState.LOADING_BALANCE
+        ubPositives == 0.0 && ubNegatives == 0.0
+                && hasAnyActivity
+                && !balancesLoadFailed
+                && balancesLoaded                            -> FriendUiState.SETTLED_WITH_HISTORY
         ubPositives == 0.0 && ubNegatives == 0.0 -> FriendUiState.BRAND_NEW
         ubNegatives > ubPositives -> FriendUiState.YOU_OWE_THEM
         else -> FriendUiState.THEY_OWE_YOU
@@ -350,6 +357,7 @@ fun FriendDetailScreen(
 
     // Progress % for ring — depends on friendState
     val settledPct: Float = when (friendState) {
+        FriendUiState.LOADING_BALANCE -> 0f
         FriendUiState.BRAND_NEW, FriendUiState.SETTLED_WITH_HISTORY -> 1f
         FriendUiState.THEY_OWE_YOU -> {
             val settled = settlements.sumOf { it.amount }
@@ -1507,7 +1515,8 @@ private fun FriendStickyBalanceBar(
     hasPendingBalanceSync: Boolean = false,
 ) {
     val isCentered =
-        friendState == FriendUiState.BRAND_NEW || friendState == FriendUiState.SETTLED_WITH_HISTORY
+        friendState == FriendUiState.LOADING_BALANCE ||
+                friendState == FriendUiState.BRAND_NEW || friendState == FriendUiState.SETTLED_WITH_HISTORY
 
     Row(
         modifier = Modifier
@@ -1518,6 +1527,12 @@ private fun FriendStickyBalanceBar(
         horizontalArrangement = if (isCentered) Arrangement.Center else Arrangement.Start,
     ) {
         when (friendState) {
+            FriendUiState.LOADING_BALANCE -> {
+                Text(
+                    "Loading balance…", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF)
+                )
+            }
             FriendUiState.BRAND_NEW -> {
                 if (balancesLoadFailed) {
                     Row(
@@ -1666,7 +1681,8 @@ private fun FriendActionBar(
     val showRemind = friendState != FriendUiState.YOU_OWE_THEM  // hidden when you owe them
     val remindEnabled =
         friendState == FriendUiState.THEY_OWE_YOU  // disabled in brand new + settled
-    val secondaryEnabled = friendState != FriendUiState.BRAND_NEW
+    val secondaryEnabled = friendState != FriendUiState.BRAND_NEW &&
+            friendState != FriendUiState.LOADING_BALANCE
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Row(
