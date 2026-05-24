@@ -124,9 +124,20 @@ class ExpenseDetailViewModel @Inject constructor(
 
     private var hasLoadedOnce = false
 
-    fun loadExpense() {
+    fun loadExpense(silent: Boolean = false) {
         viewModelScope.launch {
-            if (!hasLoadedOnce) _expenseState.value = ExpenseDetailUiState.Loading
+            // Step 1: Render from Room immediately — no network wait.
+            val cached = expenseRepository.getCachedExpenseWithDetail(expenseId)
+                ?: expenseRepository.getCachedExpense(expenseId)
+            if (cached != null) {
+                _expenseState.value = ExpenseDetailUiState.Success(cached)
+                hasLoadedOnce = true
+            } else if (!silent && !hasLoadedOnce) {
+                // Truly nothing cached — show skeleton, not spinner
+                _expenseState.value = ExpenseDetailUiState.Loading
+            }
+
+            // Step 2: Network fetch — updates state only on success.
             when (val result = getExpenseUseCase(expenseId)) {
                 is ApiResult.Success -> {
                     _expenseState.value = ExpenseDetailUiState.Success(result.data)
@@ -136,12 +147,11 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
                 is ApiResult.NotFound -> _expenseState.value = ExpenseDetailUiState.Deleted
                 is ApiResult.NetworkError -> {
-                    // getExpenseUseCase already attempts a Room fallback before returning
-                    // NetworkError — reaching here means the expense is not cached at all.
+                    // Keep cached data visible. Only show error if truly nothing loaded.
                     if (!hasLoadedOnce) _expenseState.value =
                         ExpenseDetailUiState.Error(
                             "Expense details aren't saved on this device yet. Reconnect to view this expense.",
-                            isNetwork = false,   // don't show generic retry — it won't help offline
+                            isNetwork = false,
                         )
                 }
                 else -> {
@@ -152,10 +162,15 @@ class ExpenseDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Silent resume refresh — does not reset hasLoadedOnce, does not clear items,
+     * does not flash Loading. Called by the RESUMED lifecycle effect.
+     */
     fun forceRefresh() {
-        hasLoadedOnce = false
-        _items.value = emptyList()
-        loadExpense()
+        // Guard: skip if initial load is still running (hasLoadedOnce not yet set
+        // and state is Loading — the init load will handle it).
+        if (!hasLoadedOnce && _expenseState.value is ExpenseDetailUiState.Loading) return
+        loadExpense(silent = true)
     }
 
     fun loadItems() {

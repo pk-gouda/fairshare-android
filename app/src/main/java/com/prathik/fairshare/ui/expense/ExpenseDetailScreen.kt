@@ -64,7 +64,8 @@ import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.SplitType
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsIconButton
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsDetailSkeleton
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSectionLabel
 import com.prathik.fairshare.ui.components.FsTextButton
@@ -209,8 +210,8 @@ fun ExpenseDetailScreen(
                 .padding(innerPadding),
         ) {
             when (val state = expenseState) {
-                is ExpenseDetailUiState.Loading -> FsLoadingScreen()
-                is ExpenseDetailUiState.Deleted -> FsLoadingScreen() // briefly shown before LaunchedEffect pops back
+                is ExpenseDetailUiState.Loading -> FsDetailSkeleton()
+                is ExpenseDetailUiState.Deleted -> {} // blank while LaunchedEffect pops back — no spinner
                 is ExpenseDetailUiState.Error -> FsErrorScreen(
                     message = state.message, isNetwork = state.isNetwork,
                     onRetry = { viewModel.loadExpense() })
@@ -787,23 +788,16 @@ private fun ExpenseDetailContent(
             )
             Spacer(modifier = Modifier.height(Spacing.sm))
 
-            if (changeLogLoading) {
-                Box(
-                    modifier        = Modifier.fillMaxWidth().padding(Spacing.lg),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color    = Green400,
-                        strokeWidth = 2.dp,
-                    )
-                }
-            } else {
+            if (changeLog.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     changeLog.forEach { entry: ExpenseChangeLog ->
                         ChangeLogEntry(entry = entry)
                     }
                 }
+            } else if (changeLogLoading) {
+                // First load — skeleton rows while waiting; never replaces existing content
+                FsSkeletonTimelineRow()
+                FsSkeletonTimelineRow()
             }
         }
 
