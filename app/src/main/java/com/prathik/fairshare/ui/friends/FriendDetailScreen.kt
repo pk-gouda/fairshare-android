@@ -75,7 +75,8 @@ import com.prathik.fairshare.domain.model.ExpenseCategory
 import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsDetailSkeleton
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.prathik.fairshare.ui.components.FsPrimaryButton
@@ -634,12 +635,14 @@ fun FriendDetailScreen(
             .fillMaxSize()
             .padding(innerPadding)) {
             PullToRefreshBox(
-                isRefreshing = isLoading,
+                isRefreshing = false,  // silent — no visible pull-refresh spinner
                 onRefresh = { viewModel.refreshExpenses() },
                 modifier = Modifier.fillMaxSize(),
+                indicator = {},        // hide drag indicator; refresh remains silent
             ) {
-                if (isLoading && friend == null) {
-                    FsLoadingScreen()
+                if (friend == null) {
+                    // No cached friend data yet — show skeleton instead of spinner
+                    FsDetailSkeleton()
                 } else {
                     LazyColumn(state = lazyListState, modifier = Modifier.fillMaxSize()) {
 
@@ -730,7 +733,7 @@ fun FriendDetailScreen(
                         // ── Expense Timeline ──────────────────────────────────
                         when (val state = expensesState) {
                             is FriendExpensesState.Loading -> {
-                                item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
+                                items(4) { FsSkeletonTimelineRow() }
                             }
 
                             is FriendExpensesState.Error -> {

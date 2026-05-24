@@ -1,5 +1,18 @@
 package com.prathik.fairshare.ui.components
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -173,5 +186,118 @@ fun FsEmptyState(
                 onClick = onCta,
             )
         }
+    }
+}
+
+// ── Skeleton / shimmer placeholders ──────────────────────────────────────────
+
+/**
+ * A single animated shimmer placeholder block.
+ * Use [width] as a fraction of max width (0f..1f), or leave null for full width.
+ */
+@Composable
+fun FsSkeletonBlock(
+    height: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+    widthFraction: Float = 1f,
+    cornerRadius: androidx.compose.ui.unit.Dp = 6.dp,
+) {
+    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmer")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue  = 0.65f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(900),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "shimmer_alpha",
+    )
+    Box(
+        modifier = modifier
+            .fillMaxWidth(widthFraction)
+            .height(height)
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(androidx.compose.ui.graphics.Color(0xFF2A2A2D).copy(alpha = alpha))
+    )
+}
+
+/**
+ * Skeleton placeholder for a detail screen — mimics the cover header, balance bar,
+ * action row, and 3 timeline rows. Used in GroupDetail and FriendDetail when no
+ * cached data is available yet.
+ */
+@Composable
+fun FsDetailSkeleton(modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxSize()) {
+        // Cover header placeholder
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .background(androidx.compose.ui.graphics.Color(0xFF1A1A1C))
+        ) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FsSkeletonBlock(height = 22.dp, widthFraction = 0.45f)  // group/friend name
+                FsSkeletonBlock(height = 14.dp, widthFraction = 0.25f)  // member count / status
+            }
+        }
+        // Balance bar placeholder
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .background(androidx.compose.ui.graphics.Color(0xFF161618))
+                .padding(horizontal = 20.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            FsSkeletonBlock(height = 16.dp, widthFraction = 0.4f)
+        }
+        // Action row placeholder
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(androidx.compose.ui.graphics.Color(0xFF161618))
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            repeat(3) {
+                FsSkeletonBlock(
+                    height = 36.dp,
+                    modifier = Modifier.weight(1f),
+                    cornerRadius = 8.dp,
+                )
+            }
+        }
+        // Timeline row placeholders
+        repeat(4) {
+            FsSkeletonTimelineRow()
+        }
+    }
+}
+
+/** Single skeleton timeline row — mimics an expense or settlement row. */
+@Composable
+fun FsSkeletonTimelineRow(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FsSkeletonBlock(height = 40.dp, widthFraction = 0.1f, cornerRadius = 20.dp) // avatar circle
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            FsSkeletonBlock(height = 14.dp, widthFraction = 0.6f)
+            FsSkeletonBlock(height = 11.dp, widthFraction = 0.35f)
+        }
+        FsSkeletonBlock(height = 14.dp, widthFraction = 0.2f) // amount
     }
 }

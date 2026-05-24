@@ -81,7 +81,8 @@ import com.prathik.fairshare.domain.model.Settlement
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsDetailSkeleton
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSecondaryButton
 import com.prathik.fairshare.ui.theme.ComponentSize
@@ -275,12 +276,13 @@ fun GroupDetailScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             PullToRefreshBox(
-                isRefreshing = isLoading,
+                isRefreshing = false,  // silent — no visible pull-refresh spinner
                 onRefresh    = { viewModel.refreshExpenses() },
                 modifier     = Modifier.fillMaxSize(),
+                indicator    = {},     // hide drag indicator; refresh remains silent
             ) {
                 when (val state = groupState) {
-                    is GroupDetailUiState.Loading -> FsLoadingScreen()
+                    is GroupDetailUiState.Loading -> FsDetailSkeleton()
                     is GroupDetailUiState.Error   -> FsErrorScreen(
                         message   = state.message,
                         isNetwork = state.isNetwork,
@@ -369,7 +371,7 @@ fun GroupDetailScreen(
                             // ── Timeline ──────────────────────────────────────
                             when (val expenses = expensesState) {
                                 is ExpensesUiState.Loading -> {
-                                    item { FsLoadingScreen(modifier = Modifier.height(200.dp)) }
+                                    items(4) { FsSkeletonTimelineRow() }
                                 }
                                 is ExpensesUiState.Error -> {
                                     item {
