@@ -67,7 +67,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.GroupType
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
 import com.prathik.fairshare.ui.theme.Radius
@@ -111,7 +111,7 @@ fun GroupsHomeScreen(
     val optimisticGroupBalanceMap by viewModel.optimisticGroupBalanceMap.collectAsState()
     val groupsWithPendingSync    by viewModel.groupsWithPendingSync.collectAsState()
     val searchQuery              by viewModel.searchQuery.collectAsState()
-    val isLoading = groupsState is GroupsUiState.Loading
+    val manualRefreshing  by viewModel.manualRefreshing.collectAsState()
 
     var showAddGroupSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -119,7 +119,7 @@ fun GroupsHomeScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.loadData()
+            viewModel.refresh()  // silent background refresh; manual=false
         }
     }
 
@@ -262,14 +262,14 @@ fun GroupsHomeScreen(
         },
     ) { innerPadding ->
         PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh = { viewModel.refresh() },
+            isRefreshing = manualRefreshing,
+            onRefresh = { viewModel.refresh(manual = true) },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
             when (val state = groupsState) {
-                is GroupsUiState.Loading -> FsLoadingScreen()
+                is GroupsUiState.Loading -> GroupsHomeSkeleton()
 
                 is GroupsUiState.Error -> FsErrorScreen(
                     message = state.message,
@@ -834,4 +834,48 @@ private fun groupTypeEmoji(type: GroupType): String = when (type) {
     GroupType.EVENT     -> "🎉"
     GroupType.APARTMENT -> "🏢"
     GroupType.OTHER     -> "💰"
+}
+// ── GroupsHome skeleton placeholder ──────────────────────────────────────────
+
+@Composable
+private fun GroupsHomeSkeleton() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(5) {
+            GroupCardSkeleton()
+        }
+    }
+}
+
+@Composable
+private fun GroupCardSkeleton() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(76.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .background(androidx.compose.ui.graphics.Color(0xFF1A1A1C))
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FsSkeletonBlock(height = 44.dp, widthFraction = 0.12f, cornerRadius = 22.dp)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                FsSkeletonBlock(height = 14.dp, widthFraction = 0.55f)
+                FsSkeletonBlock(height = 11.dp, widthFraction = 0.35f)
+            }
+            FsSkeletonBlock(height = 14.dp, widthFraction = 0.18f)
+        }
+    }
 }

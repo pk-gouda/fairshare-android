@@ -55,6 +55,15 @@ class GroupRepositoryImpl @Inject constructor(
         return result
     }
 
+    override suspend fun getCachedGroups(): List<Group> =
+        groupDao.getAll().map { it.toDomain() }
+
+    override suspend fun getCachedGroup(groupId: String): com.prathik.fairshare.domain.model.Group? =
+        groupDao.getById(groupId)?.toDomain()
+
+    override suspend fun getCachedGroupSettlements(groupId: String): List<com.prathik.fairshare.domain.model.Settlement> =
+        settlementDao.getByGroupId(groupId).map { it.toDomain() }
+
     private suspend fun refreshGroupsFromNetwork(): ApiResult<List<Group>> {
         val result = safeApiCall { groupService.getMyGroups() }
         if (result is ApiResult.Success) {
@@ -251,12 +260,6 @@ class GroupRepositoryImpl @Inject constructor(
     override suspend fun getAllGroupBalances(groupId: String): ApiResult<List<Balance>> =
         safeApiCall { groupService.getAllGroupBalances(groupId) }
             .mapSuccess { list -> list.map { it.toDomain() } }
-
-    override suspend fun getCachedGroup(groupId: String): com.prathik.fairshare.domain.model.Group? =
-        groupDao.getById(groupId)?.toDomain()
-
-    override suspend fun getCachedGroupSettlements(groupId: String): List<com.prathik.fairshare.domain.model.Settlement> =
-        settlementDao.getByGroupId(groupId).map { it.toDomain() }
 
     override suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>> {
         // Network call returns ApiResult<List<SettlementResponse>> — map to domain first.

@@ -18,6 +18,12 @@ interface GroupRepository {
      * Returns empty list if the user has no groups yet.
      */
     suspend fun getMyGroups(): ApiResult<List<Group>>
+    /** Room-only — never hits the network. Returns empty list if no groups cached yet. */
+    suspend fun getCachedGroups(): List<Group>
+    /** Room-only — returns null if not cached. */
+    suspend fun getCachedGroup(groupId: String): Group?
+    /** Room-only — returns cached settlements for a group. */
+    suspend fun getCachedGroupSettlements(groupId: String): List<Settlement>
 
     /**
      * Fetches a single group by ID.
@@ -108,8 +114,6 @@ interface GroupRepository {
      * Fetches all settlements within a group, ordered by date descending.
      */
     suspend fun getGroupSettlements(groupId: String): ApiResult<List<Settlement>>
-    suspend fun getCachedGroup(groupId: String): Group?
-    suspend fun getCachedGroupSettlements(groupId: String): List<Settlement>
     suspend fun previewGroup(inviteCode: String): ApiResult<GroupPreviewResponse>
     suspend fun regenerateInviteCode(groupId: String): ApiResult<String>
 }

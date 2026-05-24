@@ -41,6 +41,7 @@ class GroupsViewModel @Inject constructor(
     private val getGroupsUseCase            : GetGroupsUseCase,
     private val getAllBalancesUseCase        : GetAllBalancesUseCase,
     private val getGroupBalancesUseCase     : GetGroupBalancesUseCase,
+    private val groupRepository             : com.prathik.fairshare.domain.repository.GroupRepository,
     private val pendingOperationRepository  : PendingOperationRepository,
     private val expenseRepository           : ExpenseRepository,
     private val balanceRepository           : BalanceRepository,
@@ -91,6 +92,11 @@ class GroupsViewModel @Inject constructor(
     private val _groupsWithPendingSync = MutableStateFlow<Set<String>>(emptySet())
     val groupsWithPendingSync: StateFlow<Set<String>> = _groupsWithPendingSync.asStateFlow()
 
+    private val _manualRefreshing = MutableStateFlow(false)
+    val manualRefreshing: StateFlow<Boolean> = _manualRefreshing.asStateFlow()
+
+    private var initialLoadDone = false
+
     /**
      * Effective top-bar summary including pending deltas.
      * Replaces confirmed balanceSummary on GroupsHome while ops are active.
@@ -109,24 +115,27 @@ class GroupsViewModel @Inject constructor(
      */
     fun loadData() {
         viewModelScope.launch {
-            // Only show loading spinner if we have no data yet
-            if (_groupsState.value !is GroupsUiState.Success) {
+            initialLoadDone = false
+
+            // Step 1: Render cached groups immediately — no network wait.
+            val cachedGroups = groupRepository.getCachedGroups().stableSorted()
+            if (cachedGroups.isNotEmpty()) {
+                loadCachedGroupBalanceMap(cachedGroups)  // populate tile balances from Room
+                _groupsState.value = GroupsUiState.Success(cachedGroups)
+            } else {
                 _groupsState.value = GroupsUiState.Loading
             }
 
-            // Load groups — instant from Room cache after first launch
+            // Step 2: Network fetch.
             when (val result = getGroupsUseCase()) {
                 is ApiResult.Success -> {
-                    _groupsState.value = GroupsUiState.Success(result.data)
+                    _groupsState.value = GroupsUiState.Success(result.data.stableSorted())
 
-                    // Load per-group balances and overall summary in background
-                    // Groups show immediately — balance cards fill in when ready
                     launch {
                         val groupBalanceResults = result.data.map { group ->
                             async {
                                 group.id to when (val r = getGroupBalancesUseCase(group.id)) {
                                     is ApiResult.Success -> {
-                                        // One entry per currency — never sum across currencies
                                         r.data.groupBy { it.currency }
                                             .map { (cur, list) -> Pair(list.sumOf { it.amount }, cur) }
                                             .filter { it.first != 0.0 }
@@ -138,8 +147,6 @@ class GroupsViewModel @Inject constructor(
                         _groupBalanceMap.value = groupBalanceResults
                             .mapNotNull { (id, bal) -> bal?.let { id to it } }
                             .toMap()
-                        // Recompute effective group tile balances now that confirmed
-                        // group data is ready (may have arrived after pending ops).
                         recomputeEffectiveBalances()
                     }
 
@@ -169,6 +176,54 @@ class GroupsViewModel @Inject constructor(
                         )
                     }
                 }
+            }
+            initialLoadDone = true
+        }
+    }
+
+    fun refresh(manual: Boolean = false) {
+        if (!initialLoadDone) return
+        viewModelScope.launch {
+            if (manual) _manualRefreshing.value = true
+            try {
+                syncManager.syncGroupsHome(SyncReason.MANUAL_REFRESH)
+                when (val result = getGroupsUseCase()) {
+                    is ApiResult.Success -> {
+                        val groups = result.data.stableSorted()
+                        _groupsState.value = GroupsUiState.Success(groups)
+
+                        // Refresh per-group tile balances
+                        val groupBalanceResults = groups.map { group ->
+                            async {
+                                group.id to when (val r = getGroupBalancesUseCase(group.id)) {
+                                    is ApiResult.Success -> {
+                                        r.data.groupBy { it.currency }
+                                            .map { (cur, list) -> Pair(list.sumOf { it.amount }, cur) }
+                                            .filter { it.first != 0.0 }
+                                    }
+                                    else -> null
+                                }
+                            }
+                        }.awaitAll()
+                        _groupBalanceMap.value = groupBalanceResults
+                            .mapNotNull { (id, bal) -> bal?.let { id to it } }
+                            .toMap()
+                        recomputeEffectiveBalances()
+
+                        // Refresh top balance summary
+                        when (val allBalances = getAllBalancesUseCase()) {
+                            is ApiResult.Success -> {
+                                _balanceSummary.value = calculateSummary(allBalances.data)
+                                recomputeEffectiveBalances()
+                            }
+                            else -> Unit
+                        }
+                    }
+                    is ApiResult.NetworkError -> Unit  // keep cached data visible
+                    else -> Unit
+                }
+            } finally {
+                if (manual) _manualRefreshing.value = false
             }
         }
     }
@@ -227,6 +282,22 @@ class GroupsViewModel @Inject constructor(
      * AND the ops collector (when pending ops change). Guarantees the effective overlay is
      * always consistent regardless of which data arrives first.
      */
+    /** Reads per-group balances from Room and populates [_groupBalanceMap] without any network call. */
+    private suspend fun loadCachedGroupBalanceMap(groups: List<Group>) {
+        val cachedBalanceMap = groups.mapNotNull { group ->
+            val balances = balanceRepository.getCachedGroupBalances(group.id)
+            val entries = balances
+                .groupBy { it.currency }
+                .map { (currency, list) -> Pair(list.sumOf { it.amount }, currency) }
+                .filter { kotlin.math.abs(it.first) > 0.005 }
+            if (entries.isNotEmpty()) group.id to entries else null
+        }.toMap()
+        if (cachedBalanceMap.isNotEmpty()) {
+            _groupBalanceMap.value = cachedBalanceMap
+            recomputeEffectiveBalances()
+        }
+    }
+
     private suspend fun recomputeEffectiveBalances() {
         val ops     = latestOps
         val cache   = latestExpenseCache
@@ -272,13 +343,18 @@ class GroupsViewModel @Inject constructor(
     }
 
     /** Pull-to-refresh: sync all group scopes then reload ViewModel state. */
-    fun refresh() {
-        viewModelScope.launch {
-            syncManager.syncGroupsHome(SyncReason.MANUAL_REFRESH)
-            loadData()
-        }
-    }
 }
+
+// ── Stable sort for group tiles ───────────────────────────────────────────────
+
+/** Active groups first, then archived; within each: lastActivity DESC → name ASC → id ASC. */
+private fun List<Group>.stableSorted(): List<Group> =
+    sortedWith(
+        compareBy<Group> { it.isArchived }          // false (active) before true (archived)
+            .thenByDescending { it.lastActivityDate ?: "" }
+            .thenBy { it.name.lowercase() }
+            .thenBy { it.id }
+    )
 
 // ── UI State ──────────────────────────────────────────────────────────────────
 
