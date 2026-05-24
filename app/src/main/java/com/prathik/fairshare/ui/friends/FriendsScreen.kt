@@ -37,6 +37,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -68,7 +69,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Friend
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
 import com.prathik.fairshare.ui.theme.AvatarColors
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -105,6 +106,9 @@ fun FriendsScreen(
     viewModel                   : FriendsViewModel = hiltViewModel(),
 ) {
     val isLoading        by viewModel.isLoading.collectAsState()
+    val manualRefreshing by viewModel.manualRefreshing.collectAsState()
+    val friendsLoaded    by viewModel.friendsLoaded.collectAsState()
+    val friendsLoadFailed by viewModel.friendsLoadFailed.collectAsState()
     val owedToYou        by viewModel.owedToYou.collectAsState()
     val youOwe           by viewModel.youOwe.collectAsState()
     val balanceMap               by viewModel.balanceMap.collectAsState()
@@ -144,7 +148,7 @@ fun FriendsScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.loadData()
+            viewModel.refresh()  // silent background refresh; manual=false
         }
     }
 
@@ -289,22 +293,54 @@ fun FriendsScreen(
         },
     ) { innerPadding ->
         PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh    = { viewModel.refresh() },
+            isRefreshing = manualRefreshing,
+            onRefresh    = { viewModel.refresh(manual = true) },
             modifier     = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
             if (isLoading && filteredFriends.isEmpty() && nonActiveFriends.isEmpty()) {
-                FsLoadingScreen()
+                FriendsHomeSkeleton()
                 return@PullToRefreshBox
             }
 
             val allEmpty = filteredFriends.isEmpty() && nonActiveFriends.isEmpty()
 
             if (allEmpty && searchQuery.isBlank()) {
-                // ── State 1: Empty ────────────────────────────────────────────
-                EmptyFriendsState(onAddFriend = { showSheet = true })
+                when {
+                    // Network failed and no cache — show non-blank error, not empty state
+                    friendsLoadFailed -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Text(
+                                    "Couldn't load friends",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary,
+                                )
+                                Text(
+                                    "Check your connection and try again",
+                                    fontSize = 14.sp,
+                                    color = TextTertiary,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                TextButton(onClick = { viewModel.loadData() }) {
+                                    Text("Retry", color = Green400, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                    }
+                    // Confirmed empty from cache or network
+                    friendsLoaded -> EmptyFriendsState(onAddFriend = { showSheet = true })
+                    // Still loading — skeleton visible above; do nothing here
+                    else -> Unit
+                }
             } else {
                 // Compute total owed / owed-to-me for ring fractions
                 val totalOwedMe = effectiveOwedToYou.takeIf { it > 0 } ?: 1.0
@@ -861,5 +897,49 @@ private fun FriendSheetOption(
             Text(text = subtitle, fontSize = 12.sp, color = TextTertiary)
         }
         Text("›", fontSize = 20.sp, color = TextTertiary)
+    }
+}
+// ── FriendsHome skeleton placeholder ─────────────────────────────────────────
+
+@Composable
+private fun FriendsHomeSkeleton() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Net balance bar placeholder
+        FsSkeletonBlock(
+            height = 52.dp,
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 10.dp,
+        )
+        // Friend card placeholders
+        repeat(5) { FriendCardSkeleton() }
+    }
+}
+
+@Composable
+private fun FriendCardSkeleton() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .background(androidx.compose.ui.graphics.Color(0xFF1A1A1C))
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FsSkeletonBlock(height = 40.dp, widthFraction = 0.12f, cornerRadius = 20.dp)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            FsSkeletonBlock(height = 14.dp, widthFraction = 0.5f)
+            FsSkeletonBlock(height = 11.dp, widthFraction = 0.3f)
+        }
+        FsSkeletonBlock(height = 13.dp, widthFraction = 0.2f)
     }
 }

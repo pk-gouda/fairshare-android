@@ -32,6 +32,8 @@ class FriendsViewModel @Inject constructor(
     private val friendEventBus            : FriendEventBus,
     private val pendingOperationRepository: PendingOperationRepository,
     private val expenseRepository         : ExpenseRepository,
+    private val friendRepository          : com.prathik.fairshare.domain.repository.FriendRepository,
+    private val balanceRepository         : com.prathik.fairshare.domain.repository.BalanceRepository,
     private val effectiveCalculator       : EffectiveBalanceCalculator,
     private val friendImpactCalculator    : PendingFriendImpactCalculator,
     private val tokenStore                : EncryptedTokenStore,
@@ -74,6 +76,19 @@ class FriendsViewModel @Inject constructor(
     private val _friendsWithPendingSync = MutableStateFlow<Set<String>>(emptySet())
     val friendsWithPendingSync: StateFlow<Set<String>> = _friendsWithPendingSync.asStateFlow()
 
+    private val _manualRefreshing = MutableStateFlow(false)
+    val manualRefreshing: StateFlow<Boolean> = _manualRefreshing.asStateFlow()
+
+    /** True once friends have been loaded from cache or network. */
+    private val _friendsLoaded = MutableStateFlow(false)
+    val friendsLoaded: StateFlow<Boolean> = _friendsLoaded.asStateFlow()
+
+    /** True when no cached friends exist and network load failed. */
+    private val _friendsLoadFailed = MutableStateFlow(false)
+    val friendsLoadFailed: StateFlow<Boolean> = _friendsLoadFailed.asStateFlow()
+
+    private var initialLoadDone = false
+
     /** Global effective summary — null when no pending ops (fall back to confirmed). */
     private val _effectiveSummary = MutableStateFlow<com.prathik.fairshare.ui.groups.BalanceSummary?>(null)
     val effectiveSummary: StateFlow<com.prathik.fairshare.ui.groups.BalanceSummary?> =
@@ -90,66 +105,106 @@ class FriendsViewModel @Inject constructor(
         observeOptimisticFriendBalances()
         viewModelScope.launch {
             friendEventBus.friendAdded.collect { event ->
-                _friends.value = event.updatedList
+                _friends.value = event.updatedList.stableSortedForHome()
                 val msg = if (event.addedCount == 1) "1 friend added" else "${event.addedCount} friends added"
                 _actionState.value = FriendsActionState.Success(msg)
             }
         }
     }
 
-    /** Pull-to-refresh: sync all friend scopes then reload ViewModel state. */
-    fun refresh() {
-        viewModelScope.launch {
-            syncManager.syncFriendsHome(SyncReason.MANUAL_REFRESH)
-            loadData()
-        }
+    /** Helper: apply cached balance rows to all balance state fields. */
+    private fun applyBalances(balances: List<com.prathik.fairshare.domain.model.Balance>) {
+        _balanceMap.value = balances
+            .groupBy { it.otherUserId }
+            .mapValues { (_, list) ->
+                list.groupBy { it.currency }
+                    .map { (cur, entries) -> Pair(entries.sumOf { it.amount }, cur) }
+                    .filter { it.first != 0.0 }
+            }
+        val byCurrency = balances.groupBy { it.currency }
+        _balanceEntries.value = byCurrency.map { (currency, list) ->
+            val owedToMe = list.filter { it.amount > 0 }.sumOf { it.amount }
+            val youOwe   = list.filter { it.amount < 0 }.sumOf { -it.amount }
+            BalanceCurrencyEntry(currency, owedToMe, youOwe, owedToMe - youOwe)
+        }.filter { it.owedToMe > 0.0 || it.youOwe > 0.0 }
+        _owedToYou.value = balances.filter { it.amount > 0 }.sumOf { it.amount }
+        _youOwe.value    = balances.filter { it.amount < 0 }.sumOf { -it.amount }
     }
 
     fun loadData() {
         viewModelScope.launch {
-            if (_friends.value.isEmpty()) _isLoading.value = true
+            initialLoadDone = false
 
-            // Friends first — instant from Room cache after first launch
-            when (val result = getFriendsUseCase()) {
-                is ApiResult.Success -> _friends.value = result.data
-                else -> Unit
+            // Step 1: Render cached friends + balances immediately — no network wait.
+            val cachedFriends = friendRepository.getCachedFriends().stableSortedForHome()
+            val cachedBalances = balanceRepository.getCachedAllBalances()
+            if (cachedFriends.isNotEmpty()) {
+                _friends.value = cachedFriends
+                _friendsLoaded.value = true
+                _friendsLoadFailed.value = false
+                if (cachedBalances.isNotEmpty()) {
+                    applyBalances(cachedBalances)
+                    recomputeEffectiveBalances()
+                }
+            } else {
+                _isLoading.value = true
             }
-            // Stop showing loader as soon as friends are ready
+
+            // Step 2: Network fetch — updates state only when fresh data is ready.
+            when (val result = getFriendsUseCase()) {
+                is ApiResult.Success -> {
+                    _friends.value = result.data.stableSortedForHome()
+                    _friendsLoaded.value = true
+                    _friendsLoadFailed.value = false
+                }
+                is ApiResult.NetworkError -> {
+                    if (!_friendsLoaded.value) _friendsLoadFailed.value = true
+                }
+                else -> {
+                    if (!_friendsLoaded.value) _friendsLoadFailed.value = true
+                }
+            }
             _isLoading.value = false
 
-            // Balances load independently — updates amounts when ready without blocking display
-            launch {
+            // Step 3: Fresh balances from network.
+            when (val result = getAllBalancesUseCase()) {
+                is ApiResult.Success -> {
+                    applyBalances(result.data)
+                    recomputeEffectiveBalances()
+                }
+                else -> Unit
+            }
+
+            initialLoadDone = true
+        }
+    }
+
+    fun refresh(manual: Boolean = false) {
+        if (!initialLoadDone) return
+        viewModelScope.launch {
+            if (manual) _manualRefreshing.value = true
+            try {
+                syncManager.syncFriendsHome(SyncReason.MANUAL_REFRESH)
+                when (val result = getFriendsUseCase()) {
+                    is ApiResult.Success -> _friends.value = result.data.stableSortedForHome()
+                    else -> Unit
+                }
                 when (val result = getAllBalancesUseCase()) {
                     is ApiResult.Success -> {
-                        val balances = result.data
-                        // Per-friend: take the dominant currency (largest abs amount)
-                        _balanceMap.value = balances
-                            .groupBy { it.otherUserId }
-                            .mapValues { (_, list) ->
-                                // One Pair per currency — never sum across currencies
-                                list.groupBy { it.currency }
-                                    .map { (cur, entries) -> Pair(entries.sumOf { it.amount }, cur) }
-                                    .filter { it.first != 0.0 }
-                            }
-                        // Per-currency entries for multi-currency net bar
-                        val byCurrency = balances.groupBy { it.currency }
-                        _balanceEntries.value = byCurrency.map { (currency, list) ->
-                            val owedToMe = list.filter { it.amount > 0 }.sumOf { it.amount }
-                            val youOwe   = list.filter { it.amount < 0 }.sumOf { -it.amount }
-                            BalanceCurrencyEntry(currency, owedToMe, youOwe, owedToMe - youOwe)
-                        }.filter { it.owedToMe > 0.0 || it.youOwe > 0.0 }
-                        _owedToYou.value = balances.filter { it.amount > 0 }.sumOf { it.amount }
-                        _youOwe.value    = balances.filter { it.amount < 0 }.sumOf { -it.amount }
-                        // Recompute effective overlays now that confirmed data is ready.
+                        applyBalances(result.data)
                         recomputeEffectiveBalances()
                     }
                     else -> Unit
                 }
+            } finally {
+                if (manual) _manualRefreshing.value = false
             }
         }
     }
 
     fun onSearchChanged(query: String) { _searchQuery.value = query }
+
+    // ── Stable sort helper ───────────────────────────────────────────────────
 
     // Active friends only — show in main list with balances
     fun filteredActiveFriends(): List<Friend> {
@@ -308,6 +363,22 @@ class FriendsViewModel @Inject constructor(
         }
     }
 }
+/** Active friends first, then invited, then placeholder, then others. Within each: name → email → id. */
+private fun List<Friend>.stableSortedForHome(): List<Friend> =
+    sortedWith(
+        compareBy<Friend> {
+            when {
+                it.isActive      -> 0
+                it.isInvited     -> 1
+                it.isPlaceholder -> 2
+                else             -> 3
+            }
+        }
+            .thenBy { it.fullName.lowercase() }
+            .thenBy { it.email.lowercase() }
+            .thenBy { it.id }
+    )
+
 sealed class FriendsActionState {
     object Idle : FriendsActionState()
     data class Success(val message: String) : FriendsActionState()
