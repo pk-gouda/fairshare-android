@@ -106,10 +106,11 @@ import java.time.format.DateTimeFormatter
 // ── Group UI State — drives ring, sticky bar, action bar, empty state ─────────
 
 enum class GroupUiState {
-    SOLO,        // 1 member — no expenses possible, add friends
-    NEW_GROUP,   // 2+ members, 0 expenses — ready to split
-    ACTIVE_DEBT, // has expenses, netBalance != 0
-    ALL_SETTLED, // has expenses, netBalance == 0
+    LOADING_DATA, // balances not yet known — show neutral loading state
+    SOLO,         // 1 member — no expenses possible, add friends
+    NEW_GROUP,    // 2+ members, 0 expenses — ready to split
+    ACTIVE_DEBT,  // has expenses, netBalance != 0
+    ALL_SETTLED,  // has expenses, netBalance == 0 — confirmed from cache or network
 }
 
 
@@ -200,6 +201,7 @@ fun GroupDetailScreen(
     val pendingExpenseIds      by viewModel.pendingExpenseIds.collectAsState()
     val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
     val balancesLoadFailed      by viewModel.balancesLoadFailed.collectAsState()
+    val balancesLoaded          by viewModel.balancesLoaded.collectAsState()
     val optimisticYourBalance   by viewModel.optimisticYourBalance.collectAsState()
     val hasPendingBalanceSync      by viewModel.hasPendingBalanceSync.collectAsState()
     val optimisticBalanceCurrency  by viewModel.optimisticBalanceCurrency.collectAsState()
@@ -295,19 +297,27 @@ fun GroupDetailScreen(
                                 ((expensesState as ExpensesUiState.Success).expenses.isNotEmpty() ||
                                         settlements.isNotEmpty())
 
+                        val expensesKnown = expensesState is ExpensesUiState.Success
+                        val balanceKnown  = balancesLoaded || hasPendingBalanceSync
+                        val dataStillLoading = !expensesKnown || (!balanceKnown && !balancesLoadFailed)
+
                         val groupUiState: GroupUiState = when {
-                            expensesState is ExpensesUiState.Loading -> GroupUiState.NEW_GROUP // neutral while loading
-                            group.memberCount <= 1                   -> GroupUiState.SOLO
-                            // Pending ops mean the user caused a change offline — show
-                            // ACTIVE_DEBT so the balance bar appears even if list is empty.
-                            hasPendingBalanceSync                    -> GroupUiState.ACTIVE_DEBT
-                            !hasActivity                             -> GroupUiState.NEW_GROUP
-                            effectiveYourBalance == 0.0 && !balancesLoadFailed -> GroupUiState.ALL_SETTLED
-                            else                                     -> GroupUiState.ACTIVE_DEBT
+                            group.memberCount <= 1  -> GroupUiState.SOLO
+                            // Pending ops: user caused an offline change — balance bar must show.
+                            hasPendingBalanceSync   -> GroupUiState.ACTIVE_DEBT
+                            // Balances not yet known from cache or network — neutral state.
+                            dataStillLoading        -> GroupUiState.LOADING_DATA
+                            !hasActivity            -> GroupUiState.NEW_GROUP
+                            // ALL_SETTLED only when balance is confirmed zero from cache or network.
+                            kotlin.math.abs(effectiveYourBalance) < 0.005
+                                    && balancesLoaded
+                                    && !balancesLoadFailed -> GroupUiState.ALL_SETTLED
+                            else                    -> GroupUiState.ACTIVE_DEBT
                         }
 
                         // Progress % for ring
                         val settledPct: Float = when (groupUiState) {
+                            GroupUiState.LOADING_DATA,
                             GroupUiState.SOLO, GroupUiState.NEW_GROUP -> 0f
                             GroupUiState.ALL_SETTLED                  -> 1f
                             GroupUiState.ACTIVE_DEBT                  -> {
@@ -897,7 +907,8 @@ private fun StickyBalanceBar(
     groupUiState          : GroupUiState = GroupUiState.ACTIVE_DEBT,
     hasPendingBalanceSync : Boolean = false,
 ) {
-    val isCentered = groupUiState == GroupUiState.SOLO ||
+    val isCentered = groupUiState == GroupUiState.LOADING_DATA ||
+            groupUiState == GroupUiState.SOLO ||
             groupUiState == GroupUiState.NEW_GROUP ||
             groupUiState == GroupUiState.ALL_SETTLED
 
@@ -910,6 +921,10 @@ private fun StickyBalanceBar(
         horizontalArrangement = if (isCentered) Arrangement.Center else Arrangement.Start,
     ) {
         when (groupUiState) {
+            GroupUiState.LOADING_DATA -> {
+                Text("Loading group data…", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF9AA3AF))
+            }
             GroupUiState.SOLO, GroupUiState.NEW_GROUP -> {
                 Text("No expenses yet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF9AA3AF))

@@ -146,6 +146,11 @@ class BalanceRepositoryImpl @Inject constructor(
         return if (rows.isEmpty()) null else rows.sumOf { it.amount }
     }
 
+    override suspend fun getCachedGroupBalances(groupId: String): List<com.prathik.fairshare.domain.model.Balance> {
+        val userId = tokenStore.getUserId() ?: return emptyList()
+        return balanceDao.getGroupBalanceRows(userId, groupId).map { it.toDomain() }
+    }
+
     private fun BalanceEntity.toDomain() = Balance(
         userId            = userId,
         otherUserId       = otherUserId,

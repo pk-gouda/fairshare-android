@@ -71,6 +71,13 @@ class GroupDetailViewModel @Inject constructor(
     private val _balancesLoadFailed = MutableStateFlow(false)
     val balancesLoadFailed: StateFlow<Boolean> = _balancesLoadFailed.asStateFlow()
 
+    /**
+     * True once balances have been loaded from cache or network.
+     * The UI must not show ALL_SETTLED until this is true.
+     */
+    private val _balancesLoaded = MutableStateFlow(false)
+    val balancesLoaded: StateFlow<Boolean> = _balancesLoaded.asStateFlow()
+
     /** Wave 2D-Final: IDs of expenses with an active DELETE_EXPENSE pending op. */
     val pendingDeleteExpenseIds: StateFlow<Set<String>> =
         pendingOperationRepository.observePendingDeleteResourceIds()
@@ -105,13 +112,44 @@ class GroupDetailViewModel @Inject constructor(
         observeOptimisticBalance()
     }
 
+    /** Render any cached data immediately before starting network calls. */
+    private suspend fun renderCachedSnapshot() {
+        groupRepository.getCachedGroup(groupId)?.let { cachedGroup ->
+            _groupState.value = GroupDetailUiState.Success(cachedGroup)
+        }
+        val cachedExpenses = expenseRepository.getCachedGroupExpenses(groupId)
+        if (cachedExpenses.isNotEmpty()) {
+            _expensesState.value = ExpensesUiState.Success(
+                cachedExpenses.sortedByDescending { it.expenseDate }
+            )
+        }
+        val cachedBalances = balanceRepository.getCachedGroupBalances(groupId)
+        if (cachedBalances.isNotEmpty()) {
+            _balances.value = cachedBalances
+            _yourBalance.value = cachedBalances.sumOf { it.amount }
+            _balancesLoaded.value = true
+            _balancesLoadFailed.value = false
+        }
+        val cachedSettlements = groupRepository.getCachedGroupSettlements(groupId)
+        if (cachedSettlements.isNotEmpty()) {
+            _settlements.value = cachedSettlements
+        }
+    }
+
     fun loadData() {
         viewModelScope.launch {
+            initialLoadDone = false
+
+            // Step 1: Render cached data immediately — no network wait.
+            renderCachedSnapshot()
+
+            // Step 2: Set Loading only for states not yet satisfied from cache.
             if (_groupState.value !is GroupDetailUiState.Success)
                 _groupState.value = GroupDetailUiState.Loading
             if (_expensesState.value !is ExpensesUiState.Success)
                 _expensesState.value = ExpensesUiState.Loading
 
+            // Step 3: Run all network calls in parallel.
             val groupDeferred = async { getGroupUseCase(groupId) }
             val expensesDeferred = async { getGroupExpensesUseCase(groupId) }
             val balancesDeferred = async { getGroupBalancesUseCase(groupId) }
@@ -124,7 +162,6 @@ class GroupDetailViewModel @Inject constructor(
                     if (_groupState.value !is GroupDetailUiState.Success)
                         _groupState.value = GroupDetailUiState.Error(result.message, true)
                 }
-
                 else -> {
                     if (_groupState.value !is GroupDetailUiState.Success)
                         _groupState.value = GroupDetailUiState.Error("Failed to load group.", false)
@@ -137,11 +174,9 @@ class GroupDetailViewModel @Inject constructor(
                     if (_expensesState.value !is ExpensesUiState.Success)
                         _expensesState.value = ExpensesUiState.Error(result.message, true)
                 }
-
                 else -> {
                     if (_expensesState.value !is ExpensesUiState.Success)
-                        _expensesState.value =
-                            ExpensesUiState.Error("Failed to load expenses.", false)
+                        _expensesState.value = ExpensesUiState.Error("Failed to load expenses.", false)
                 }
             }
 
@@ -153,11 +188,14 @@ class GroupDetailViewModel @Inject constructor(
             when (val result = balancesDeferred.await()) {
                 is ApiResult.Success -> {
                     _balancesLoadFailed.value = false
+                    _balancesLoaded.value = true
                     _balances.value = result.data
                     _yourBalance.value = result.data.sumOf { it.amount }
                 }
-
-                else -> _balancesLoadFailed.value = true
+                else -> {
+                    // Only mark failed if cache didn't already load balances.
+                    if (!_balancesLoaded.value) _balancesLoadFailed.value = true
+                }
             }
 
             when (val result = membersDeferred.await()) {
@@ -165,12 +203,12 @@ class GroupDetailViewModel @Inject constructor(
                 else -> Unit
             }
 
-            // ✅ Fix 1: mark initial load complete so RESUMED refreshes are now allowed
             initialLoadDone = true
         }
     }
 
     fun refreshExpenses() {
+        if (!initialLoadDone) return
         if (_groupState.value is GroupDetailUiState.Loading &&
             _expensesState.value is ExpensesUiState.Loading
         ) return
@@ -203,10 +241,17 @@ class GroupDetailViewModel @Inject constructor(
                 when (val result = balancesDeferred.await()) {
                     is ApiResult.Success -> {
                         _balancesLoadFailed.value = false
+                        _balancesLoaded.value = true
                         _balances.value = result.data
                         _yourBalance.value = result.data.sumOf { it.amount }
                     }
-                    else -> _balancesLoadFailed.value = true
+                    else -> {
+                        // Only mark failed if no cached balance was already loaded.
+                        // A background refresh failure must not erase a confirmed cached state.
+                        if (!_balancesLoaded.value && _balances.value.isEmpty()) {
+                            _balancesLoadFailed.value = true
+                        }
+                    }
                 }
             }
         }

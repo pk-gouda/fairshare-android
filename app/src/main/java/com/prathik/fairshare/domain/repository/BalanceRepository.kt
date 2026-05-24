@@ -60,4 +60,5 @@ interface BalanceRepository {
      * Used as a stable base for optimistic balance overlay across screens/ViewModels.
      */
     suspend fun getCachedGroupBalance(groupId: String): Double?
+    suspend fun getCachedGroupBalances(groupId: String): List<Balance>
 }
