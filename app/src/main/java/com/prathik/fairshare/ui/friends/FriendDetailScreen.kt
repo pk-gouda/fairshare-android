@@ -156,6 +156,7 @@ fun FriendDetailScreen(
     val pendingDeleteExpenseIds by viewModel.pendingDeleteExpenseIds.collectAsState()
     val balancesLoadFailed by viewModel.balancesLoadFailed.collectAsState()
     val balancesLoaded     by viewModel.balancesLoaded.collectAsState()
+    val manualRefreshing   by viewModel.manualRefreshing.collectAsState()
     val optimisticNetBalance by viewModel.optimisticNetBalance.collectAsState()
     val hasPendingBalanceSync      by viewModel.hasPendingBalanceSync.collectAsState()
     val optimisticBalanceCurrency  by viewModel.optimisticBalanceCurrency.collectAsState()
@@ -635,10 +636,10 @@ fun FriendDetailScreen(
             .fillMaxSize()
             .padding(innerPadding)) {
             PullToRefreshBox(
-                isRefreshing = false,  // silent — no visible pull-refresh spinner
-                onRefresh = { viewModel.refreshExpenses() },
+                isRefreshing = manualRefreshing,  // indicator only for manual pull
+                onRefresh = { viewModel.refreshExpenses(manual = true) },
                 modifier = Modifier.fillMaxSize(),
-                indicator = {},        // hide drag indicator; refresh remains silent
+                // No indicator = {} — default indicator shows for manual pull-to-refresh
             ) {
                 if (friend == null) {
                     // No cached friend data yet — show skeleton instead of spinner
@@ -761,7 +762,11 @@ fun FriendDetailScreen(
                                             }
                                             add(FriendTimelineItem.SettlementItem(s))
                                         }
-                                }.sortedByDescending { it.sortDate }
+                                }.sortedWith(
+                                    compareByDescending<FriendTimelineItem> { it.sortDate }
+                                        .thenByDescending { it.sortTimestamp() }
+                                        .thenBy { it.stableId() }
+                                )
 
                                 if (allItems.isEmpty()) {
                                     item {
@@ -2337,6 +2342,27 @@ fun FriendLinkSheet(
 }
 
 // ── Timeline model ────────────────────────────────────────────────────────────
+
+// ── Stable sort helpers for FriendDetail mixed timeline ──────────────────────
+
+private fun FriendTimelineItem.sortTimestamp(): String =
+    when (this) {
+        is FriendTimelineItem.DirectExpenseItem ->
+            expense.createdAt.ifBlank { expense.updatedAt }
+        is FriendTimelineItem.SettlementItem ->
+            settlement.completedAt?.takeIf { it.isNotBlank() } ?: settlement.createdAt
+        is FriendTimelineItem.FullySettledItem ->
+            settlement.completedAt?.takeIf { it.isNotBlank() } ?: settlement.createdAt
+        is FriendTimelineItem.GroupBalanceItem -> sortDate  // use date — no createdAt available
+    }
+
+private fun FriendTimelineItem.stableId(): String =
+    when (this) {
+        is FriendTimelineItem.DirectExpenseItem -> "ex_${expense.id}"
+        is FriendTimelineItem.SettlementItem -> "st_${settlement.id}"
+        is FriendTimelineItem.FullySettledItem -> "fs_${settlement.id}"
+        is FriendTimelineItem.GroupBalanceItem -> "gb_${balance.groupId}_${balance.currency}"
+    }
 
 sealed class FriendTimelineItem(val sortDate: String) {
     data class GroupBalanceItem(val balance: Balance) :

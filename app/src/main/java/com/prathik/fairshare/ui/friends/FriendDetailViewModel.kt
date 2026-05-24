@@ -122,6 +122,10 @@ class FriendDetailViewModel @Inject constructor(
 
     private var initialLoadDone = false
 
+    /** True only during a user-initiated pull-to-refresh. Drives the visible indicator. */
+    private val _manualRefreshing = MutableStateFlow(false)
+    val manualRefreshing: StateFlow<Boolean> = _manualRefreshing.asStateFlow()
+
     init {
         loadData()
         observeOptimisticBalance()
@@ -142,7 +146,7 @@ class FriendDetailViewModel @Inject constructor(
         val cachedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
         if (cachedExpenses.isNotEmpty()) {
             _expensesState.value = FriendExpensesState.Success(
-                cachedExpenses.sortedByDescending { it.expenseDate }
+                cachedExpenses.stableSortedForTimeline()
             )
         }
         // Cached net balance
@@ -252,7 +256,7 @@ class FriendDetailViewModel @Inject constructor(
             }
 
             _expensesState.value = FriendExpensesState.Success(
-                directExpenses.sortedByDescending { it.expenseDate }
+                directExpenses.stableSortedForTimeline()
             )
 
             initialLoadDone = true
@@ -260,19 +264,20 @@ class FriendDetailViewModel @Inject constructor(
         }
     }
 
-    fun refreshExpenses() {
+    fun refreshExpenses(manual: Boolean = false) {
         if (!initialLoadDone) return
         viewModelScope.launch {
-            // Step 1 — Room-only reads: show cached data immediately with no network wait.
-            val cachedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
-            if (cachedExpenses.isNotEmpty()) {
-                _expensesState.value = FriendExpensesState.Success(
-                    cachedExpenses.sortedByDescending { it.expenseDate }
-                )
-            }
+            if (manual) _manualRefreshing.value = true
+            try {
+                // Step 1 — Room-only read: show cached data immediately with no network wait.
+                val cachedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
+                if (cachedExpenses.isNotEmpty()) {
+                    _expensesState.value = FriendExpensesState.Success(
+                        cachedExpenses.stableSortedForTimeline()
+                    )
+                }
 
-            // Step 2 — Background network sync: update Room, then re-read all scopes.
-            launch {
+                // Step 2 — Network sync (same coroutine so indicator stays until done).
                 syncManager.syncFriendDetail(friendId, SyncReason.MANUAL_REFRESH)
                 when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
                     is ApiResult.Success -> {
@@ -295,13 +300,15 @@ class FriendDetailViewModel @Inject constructor(
                 val refreshedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
                 if (refreshedExpenses.isNotEmpty() || _expensesState.value is FriendExpensesState.Success) {
                     _expensesState.value = FriendExpensesState.Success(
-                        refreshedExpenses.sortedByDescending { it.expenseDate }
+                        refreshedExpenses.stableSortedForTimeline()
                     )
                 }
                 when (val result = getSettlementHistoryUseCase(friendId)) {
                     is ApiResult.Success -> _settlements.value = result.data.filter { it.groupId == null }
                     else -> Unit
                 }
+            } finally {
+                if (manual) _manualRefreshing.value = false
             }
         }
     }
@@ -633,6 +640,19 @@ class FriendDetailViewModel @Inject constructor(
     }
 
 }
+
+// ── Stable timeline sort helpers ─────────────────────────────────────────────
+
+/**
+ * Within the same [expenseDate], sort by [createdAt] (or [updatedAt] as fallback)
+ * so same-day expenses appear in consistent add order. Final tie-breaker: [id] ASC.
+ */
+private fun List<Expense>.stableSortedForTimeline(): List<Expense> =
+    sortedWith(
+        compareByDescending<Expense> { it.expenseDate }
+            .thenByDescending { it.createdAt.ifBlank { it.updatedAt } }
+            .thenBy { it.id }
+    )
 
 sealed class FriendExpensesState {
     object Loading : FriendExpensesState()
