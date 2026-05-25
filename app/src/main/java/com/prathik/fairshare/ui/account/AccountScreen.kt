@@ -57,7 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.ui.components.FsAvatar
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
@@ -89,7 +89,9 @@ fun AccountScreen(
     onLoggedOut              : () -> Unit,
     viewModel                : AccountViewModel = hiltViewModel(),
 ) {
-    val isLoading      by viewModel.isLoading.collectAsState()
+    val isLoading         by viewModel.isLoading.collectAsState()
+    val manualRefreshing  by viewModel.manualRefreshing.collectAsState()
+    val profileLoadFailed by viewModel.profileLoadFailed.collectAsState()
     val profile        by viewModel.profile.collectAsState()
     val actionState    by viewModel.actionState.collectAsState()
     val snackbarHost   = remember { SnackbarHostState() }
@@ -101,7 +103,7 @@ fun AccountScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.loadData()
+            viewModel.refresh()  // silent background refresh
         }
     }
 
@@ -140,14 +142,30 @@ fun AccountScreen(
         },
     ) { innerPadding ->
         PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh    = { viewModel.loadData() },
+            isRefreshing = manualRefreshing,
+            onRefresh    = { viewModel.refresh(manual = true) },
             modifier     = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+            if (profileLoadFailed && profile == null) {
+                // No cached profile + network failed — retry state, no spinner
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Couldn't load account", fontSize = 15.sp,
+                            color = com.prathik.fairshare.ui.theme.TextPrimary)
+                        Text("Check your connection and try again", fontSize = 13.sp,
+                            color = com.prathik.fairshare.ui.theme.TextTertiary)
+                        androidx.compose.material3.TextButton(onClick = { viewModel.loadData() }) {
+                            Text("Retry", color = com.prathik.fairshare.ui.theme.Green400, fontSize = 14.sp)
+                        }
+                    }
+                }
+                return@PullToRefreshBox
+            }
             if (isLoading && profile == null) {
-                FsLoadingScreen()
+                AccountSkeleton()
                 return@PullToRefreshBox
             }
 
@@ -465,5 +483,34 @@ private fun ToggleRow(
                 uncheckedBorderColor = Surface4,
             ),
         )
+    }
+}
+// ── Account screen skeleton placeholder ──────────────────────────────────────
+
+@Composable
+private fun AccountSkeleton() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        // Avatar + name/email row
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            FsSkeletonBlock(height = 56.dp, widthFraction = 0.16f, cornerRadius = 28.dp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FsSkeletonBlock(height = 16.dp, widthFraction = 0.5f)
+                FsSkeletonBlock(height = 12.dp, widthFraction = 0.65f)
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        // Settings card placeholders
+        repeat(4) {
+            FsSkeletonBlock(height = 52.dp, widthFraction = 1f, cornerRadius = 10.dp)
+        }
     }
 }

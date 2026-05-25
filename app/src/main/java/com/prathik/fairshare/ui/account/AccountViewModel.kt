@@ -32,6 +32,14 @@ class AccountViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _manualRefreshing = MutableStateFlow(false)
+    val manualRefreshing: StateFlow<Boolean> = _manualRefreshing.asStateFlow()
+
+    private val _profileLoadFailed = MutableStateFlow(false)
+    val profileLoadFailed: StateFlow<Boolean> = _profileLoadFailed.asStateFlow()
+
+    private var initialLoadDone = false
+
     private val _profile = MutableStateFlow<User?>(null)
     val profile: StateFlow<User?> = _profile.asStateFlow()
 
@@ -45,15 +53,30 @@ class AccountViewModel @Inject constructor(
 
     fun loadData() {
         viewModelScope.launch {
-            // Only show spinner on first load
-            if (_profile.value == null) _isLoading.value = true
+            initialLoadDone = false
 
-            val profileDeferred  = async { getMyProfileUseCase() }
-            val balanceDeferred  = async { getAllBalancesUseCase() }
+            // Show skeleton until a real User profile object exists.
+            // EncryptedTokenStore has userId/fullName but not email/notifications/authProvider —
+            // not enough to safely render AccountScreen without blank/fake fields.
+            if (_profile.value == null) {
+                _isLoading.value = true
+            }
+
+            // Step 2: Network fetch.
+            val profileDeferred = async { getMyProfileUseCase() }
+            val balanceDeferred = async { getAllBalancesUseCase() }
 
             when (val result = profileDeferred.await()) {
-                is ApiResult.Success -> _profile.value = result.data
-                else -> Unit
+                is ApiResult.Success -> {
+                    _profile.value = result.data
+                    _profileLoadFailed.value = false
+                }
+                is ApiResult.NetworkError -> {
+                    if (_profile.value == null) _profileLoadFailed.value = true
+                }
+                else -> {
+                    if (_profile.value == null) _profileLoadFailed.value = true
+                }
             }
             when (val result = balanceDeferred.await()) {
                 is ApiResult.Success -> _balanceSummary.value = buildSummary(result.data)
@@ -61,6 +84,31 @@ class AccountViewModel @Inject constructor(
             }
 
             _isLoading.value = false
+            initialLoadDone = true
+        }
+    }
+
+    fun refresh(manual: Boolean = false) {
+        if (!initialLoadDone) return
+        viewModelScope.launch {
+            if (manual) _manualRefreshing.value = true
+            try {
+                val profileDeferred = async { getMyProfileUseCase() }
+                val balanceDeferred = async { getAllBalancesUseCase() }
+                when (val result = profileDeferred.await()) {
+                    is ApiResult.Success -> {
+                        _profile.value = result.data
+                        _profileLoadFailed.value = false
+                    }
+                    else -> Unit  // keep existing profile visible
+                }
+                when (val result = balanceDeferred.await()) {
+                    is ApiResult.Success -> _balanceSummary.value = buildSummary(result.data)
+                    else -> Unit
+                }
+            } finally {
+                if (manual) _manualRefreshing.value = false
+            }
         }
     }
 
