@@ -19,6 +19,9 @@ class NotificationRepositoryImpl @Inject constructor(
     private val notificationDao    : NotificationDao,
 ) : NotificationRepository {
 
+    override suspend fun getCachedNotifications(): List<Notification> =
+        notificationDao.getAll().map { it.toDomain() }
+
     override suspend fun getAll(): ApiResult<List<Notification>> {
         val result = safeApiCall { notificationService.getAll() }
         if (result is ApiResult.Success) {

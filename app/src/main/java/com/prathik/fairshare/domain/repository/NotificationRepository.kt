@@ -13,6 +13,8 @@ interface NotificationRepository {
      * Fetches all notifications for the current user.
      * Ordered by date descending — most recent first.
      */
+    /** Room-only — never hits the network. */
+    suspend fun getCachedNotifications(): List<Notification>
     suspend fun getAll(): ApiResult<List<Notification>>
 
     /**

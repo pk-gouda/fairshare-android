@@ -7,6 +7,7 @@ import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.Notification
 import com.prathik.fairshare.domain.usecase.group.GetDeletedGroupsUseCase
 import com.prathik.fairshare.domain.usecase.group.RestoreGroupUseCase
+import com.prathik.fairshare.domain.repository.NotificationRepository
 import com.prathik.fairshare.domain.usecase.notification.GetNotificationsUseCase
 import com.prathik.fairshare.domain.usecase.notification.MarkAllReadUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,6 +24,7 @@ enum class ActivityFilter { ALL, EXPENSES, SETTLEMENTS, GROUPS }
 @HiltViewModel
 class ActivityViewModel @Inject constructor(
     private val getNotificationsUseCase: GetNotificationsUseCase,
+    private val notificationRepository: NotificationRepository,
     private val markAllReadUseCase: MarkAllReadUseCase,
     private val getDeletedGroupsUseCase: GetDeletedGroupsUseCase,
     private val restoreGroupUseCase: RestoreGroupUseCase,
@@ -30,6 +32,17 @@ class ActivityViewModel @Inject constructor(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _manualRefreshing = MutableStateFlow(false)
+    val manualRefreshing: StateFlow<Boolean> = _manualRefreshing.asStateFlow()
+
+    private val _activityLoaded = MutableStateFlow(false)
+    val activityLoaded: StateFlow<Boolean> = _activityLoaded.asStateFlow()
+
+    private val _activityLoadFailed = MutableStateFlow(false)
+    val activityLoadFailed: StateFlow<Boolean> = _activityLoadFailed.asStateFlow()
+
+    private var initialLoadDone = false
 
     private val _notifications = MutableStateFlow<List<Notification>>(emptyList())
     val notifications: StateFlow<List<Notification>> = _notifications.asStateFlow()
@@ -51,17 +64,61 @@ class ActivityViewModel @Inject constructor(
 
     fun loadData() {
         viewModelScope.launch {
-            // Only show spinner on first load
-            if (_notifications.value.isEmpty()) _isLoading.value = true
+            initialLoadDone = false
+
+            // Step 1: Render cached notifications immediately.
+            val cached = notificationRepository.getCachedNotifications().stableSorted()
+            if (cached.isNotEmpty()) {
+                _notifications.value = cached
+                _activityLoaded.value = true
+                _activityLoadFailed.value = false
+            } else {
+                _isLoading.value = true
+            }
+
+            // Step 2: Network refresh.
             when (val result = getNotificationsUseCase()) {
-                is ApiResult.Success -> _notifications.value = result.data
-                else -> Unit
+                is ApiResult.Success -> {
+                    _notifications.value = result.data.stableSorted()
+                    _activityLoaded.value = true
+                    _activityLoadFailed.value = false
+                }
+                is ApiResult.NetworkError -> {
+                    if (!_activityLoaded.value) _activityLoadFailed.value = true
+                }
+                else -> {
+                    if (!_activityLoaded.value) _activityLoadFailed.value = true
+                }
             }
             when (val result = getDeletedGroupsUseCase()) {
                 is ApiResult.Success -> _deletedGroups.value = result.data
                 else -> Unit
             }
             _isLoading.value = false
+            initialLoadDone = true
+        }
+    }
+
+    fun refresh(manual: Boolean = false) {
+        if (!initialLoadDone) return
+        viewModelScope.launch {
+            if (manual) _manualRefreshing.value = true
+            try {
+                when (val result = getNotificationsUseCase()) {
+                    is ApiResult.Success -> {
+                        _notifications.value = result.data.stableSorted()
+                        _activityLoaded.value = true
+                        _activityLoadFailed.value = false
+                    }
+                    else -> Unit  // keep cached data visible
+                }
+                when (val result = getDeletedGroupsUseCase()) {
+                    is ApiResult.Success -> _deletedGroups.value = result.data
+                    else -> Unit
+                }
+            } finally {
+                if (manual) _manualRefreshing.value = false
+            }
         }
     }
 
@@ -145,6 +202,15 @@ class ActivityViewModel @Inject constructor(
     val hasUnread: Boolean
         get() = _notifications.value.any { !it.isRead }
 }
+
+// ── Stable sort for activity rows ────────────────────────────────────────────
+
+/** Sort notifications by createdAt DESC then id ASC — deterministic across refreshes. */
+private fun List<Notification>.stableSorted(): List<Notification> =
+    sortedWith(
+        compareByDescending<Notification> { it.createdAt }
+            .thenBy { it.id }
+    )
 
 sealed class ActivityActionState {
     object Idle : ActivityActionState()
