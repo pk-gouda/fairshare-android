@@ -90,8 +90,11 @@ fun ActivityScreen(
     var pendingRestoreGroupId by remember { mutableStateOf<String?>(null) }
     var pendingRestoreGroupName by remember { mutableStateOf("") }
     val selectedFilter by viewModel.selectedFilter.collectAsState()
-    val grouped by remember { derivedStateOf { viewModel.groupedNotifications(selectedFilter) } }
-    val hasUnread by remember { derivedStateOf { viewModel.hasUnread } }
+    val notifications  by viewModel.notifications.collectAsState()
+    val grouped by remember(notifications, selectedFilter) {
+        derivedStateOf { viewModel.groupedNotifications(notifications, selectedFilter) }
+    }
+    val hasUnread = notifications.any { !it.isRead }
     val deletedGroups by viewModel.deletedGroups.collectAsState()
     val showDeletedGroups = selectedFilter == ActivityFilter.ALL ||
             selectedFilter == ActivityFilter.GROUPS

@@ -162,16 +162,24 @@ class ActivityViewModel @Inject constructor(
     /**
      * Groups notifications into Today / Yesterday / Earlier buckets.
      */
-    fun groupedNotifications(filter: ActivityFilter = ActivityFilter.ALL): Map<String, List<Notification>> {
+    /**
+     * Groups a provided notification list into Today / Yesterday / Earlier buckets.
+     * Accepting the list explicitly (rather than reading _notifications.value internally)
+     * lets Compose key recomposition on the list change — avoids stale grouped result.
+     */
+    fun groupedNotifications(
+        notifications: List<Notification>,
+        filter: ActivityFilter = ActivityFilter.ALL,
+    ): Map<String, List<Notification>> {
         val zoneId = java.time.ZoneId.systemDefault()
         val today = java.time.LocalDate.now(zoneId)
         val yesterday = today.minusDays(1)
 
         val filtered = when (filter) {
-            ActivityFilter.ALL -> _notifications.value
-            ActivityFilter.EXPENSES -> _notifications.value.filter { it.type.name.startsWith("EXPENSE") }
-            ActivityFilter.SETTLEMENTS -> _notifications.value.filter { it.type.name.startsWith("SETTLEMENT") }
-            ActivityFilter.GROUPS -> _notifications.value.filter {
+            ActivityFilter.ALL -> notifications
+            ActivityFilter.EXPENSES -> notifications.filter { it.type.name.startsWith("EXPENSE") }
+            ActivityFilter.SETTLEMENTS -> notifications.filter { it.type.name.startsWith("SETTLEMENT") }
+            ActivityFilter.GROUPS -> notifications.filter {
                 it.type.name.startsWith("GROUP") || it.type.name.startsWith("PLACEHOLDER")
             }
         }
@@ -198,9 +206,6 @@ class ActivityViewModel @Inject constructor(
             }
         }
     }
-
-    val hasUnread: Boolean
-        get() = _notifications.value.any { !it.isRead }
 }
 
 // ── Stable sort for activity rows ────────────────────────────────────────────
