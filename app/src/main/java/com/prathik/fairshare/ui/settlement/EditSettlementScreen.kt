@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsDetailSkeleton
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSectionLabel
 import com.prathik.fairshare.ui.components.FsTextField
@@ -80,7 +80,7 @@ fun EditSettlementScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when (val ls = loadState) {
-                is EditSettlementLoadState.Loading -> FsLoadingScreen()
+                is EditSettlementLoadState.Loading -> FsDetailSkeleton()
                 is EditSettlementLoadState.Error   -> FsErrorScreen(message = ls.message)
                 is EditSettlementLoadState.Success -> {
                     val settlement = ls.settlement

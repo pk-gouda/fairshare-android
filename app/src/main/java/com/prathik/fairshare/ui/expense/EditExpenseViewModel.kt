@@ -149,27 +149,57 @@ class EditExpenseViewModel @Inject constructor(
 
     private fun loadExpense() {
         viewModelScope.launch {
-            _loadState.value = EditLoadState.Loading
+            // Step 1: Render from cache immediately — populates form before network.
+            // Only done once at init; we do NOT re-apply on background refresh to avoid
+            // overwriting changes the user has already started making.
+            val cached = expenseRepository.getCachedExpenseWithDetail(expenseId)
+                ?: expenseRepository.getCachedExpense(expenseId)
+            if (cached != null) {
+                _isFromCache.value = cached.payers.isEmpty() && cached.splits.isEmpty()
+                originalParticipantIds = (cached.payers.map { it.userId } +
+                        cached.splits.map { it.userId }).toSet()
+                populateForm(cached)
+                loadMembers(cached)
+                _loadState.value = EditLoadState.Success
+            } else {
+                _loadState.value = EditLoadState.Loading
+            }
+
+            // Step 2: Network fetch — only populates form on cold load (no cache).
+            // If any cached expense was rendered, the form is already visible and
+            // must not be overwritten — the user may have started typing.
             when (val result = getExpenseUseCase(expenseId)) {
                 is ApiResult.Success -> {
                     val expense = result.data
-                    _isFromCache.value = expense.payers.isEmpty() && expense.splits.isEmpty()
-                    // Capture original participants before any edit so removed participants
-                    // get their caches refreshed after an online or offline-synced update.
+                    // Always update participant tracking for correct save/sync behavior.
                     originalParticipantIds = (expense.payers.map { it.userId } +
                             expense.splits.map { it.userId }).toSet()
-                    populateForm(expense)
-                    loadMembers(expense)
+                    if (cached == null) {
+                        // Cold load — populate form from network (user has not seen the form yet).
+                        _isFromCache.value = false
+                        populateForm(expense)
+                        loadMembers(expense)
+                    } else {
+                        // Cached form already rendered — do not overwrite user edits.
+                        // Update _isFromCache only if the cached data had full payer/split detail.
+                        if (cached.payers.isNotEmpty() && cached.splits.isNotEmpty()) {
+                            _isFromCache.value = false
+                        }
+                        // Members may still be missing from basic cache — safe to load.
+                        if (_members.value.isEmpty()) loadMembers(expense)
+                    }
                     _loadState.value = EditLoadState.Success
                 }
-
-                is ApiResult.NetworkError ->
-                    _loadState.value =
-                        EditLoadState.Error("No internet connection.", isNetwork = true)
-
-                else ->
-                    _loadState.value =
-                        EditLoadState.Error("Failed to load expense.", isNetwork = false)
+                is ApiResult.NetworkError -> {
+                    if (_loadState.value !is EditLoadState.Success) {
+                        _loadState.value = EditLoadState.Error("No internet connection.", isNetwork = true)
+                    }
+                }
+                else -> {
+                    if (_loadState.value !is EditLoadState.Success) {
+                        _loadState.value = EditLoadState.Error("Failed to load expense.", isNetwork = false)
+                    }
+                }
             }
         }
     }

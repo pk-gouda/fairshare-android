@@ -74,7 +74,7 @@ import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.SplitType
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsDetailSkeleton
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsTextButton
 import com.prathik.fairshare.ui.components.FsTextField
@@ -193,7 +193,7 @@ fun EditExpenseScreen(
     ) { innerPadding ->
 
         when (loadState) {
-            is EditLoadState.Loading -> { FsLoadingScreen(); return@Scaffold }
+            is EditLoadState.Loading -> { FsDetailSkeleton(); return@Scaffold }
             is EditLoadState.Error -> {
                 val err = loadState as EditLoadState.Error
                 FsErrorScreen(message = err.message, isNetwork = err.isNetwork, onRetry = { onBack() })
@@ -276,11 +276,13 @@ fun EditExpenseScreen(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier
                         .clip(RoundedCornerShape(Radius.lg))
-                        .background(Green400)
-                        .clickable { viewModel.save() }
+                        .background(if (isSaving) com.prathik.fairshare.ui.theme.Surface2 else Green400)
+                        .then(if (!isSaving) Modifier.clickable { viewModel.save() } else Modifier)
                         .padding(horizontal = Spacing.md, vertical = 8.dp),
                 ) {
-                    Text("Save", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Surface0)
+                    Text(if (isSaving) "Saving…" else "Save",
+                        fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        color = if (isSaving) com.prathik.fairshare.ui.theme.TextTertiary else Surface0)
                 }
             }
 

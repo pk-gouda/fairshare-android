@@ -44,19 +44,42 @@ class EditSettlementViewModel @Inject constructor(
 
     private fun load() {
         viewModelScope.launch {
+            // Step 1: Render from cache immediately — no network wait.
+            val cached = settlementRepository.getCachedSettlement(settlementId)
+            if (cached != null) {
+                originalSettlement   = cached
+                _amount.value        = cached.amount.toBigDecimal().stripTrailingZeros().toPlainString()
+                _notes.value         = cached.notes ?: ""
+                _paymentMethod.value = cached.paymentMethod ?: "Cash"
+                _loadState.value     = EditSettlementLoadState.Success(cached)
+            }
+            // Step 2: Network fetch — updates form only if cache was absent
+            // (never overwrites after the form is shown, to avoid losing user edits).
             when (val result = settlementRepository.getSettlementById(settlementId)) {
                 is ApiResult.Success -> {
                     val s = result.data
-                    originalSettlement = s
-                    _amount.value        = s.amount.toBigDecimal().stripTrailingZeros().toPlainString()
-                    _notes.value         = s.notes ?: ""
-                    _paymentMethod.value = s.paymentMethod ?: "Cash"
-                    _loadState.value     = EditSettlementLoadState.Success(s)
+                    if (cached == null) {
+                        // First cold load — populate form from network
+                        originalSettlement   = s
+                        _amount.value        = s.amount.toBigDecimal().stripTrailingZeros().toPlainString()
+                        _notes.value         = s.notes ?: ""
+                        _paymentMethod.value = s.paymentMethod ?: "Cash"
+                    } else {
+                        // Cache already populated — only refresh originalSettlement ref silently
+                        originalSettlement = s
+                    }
+                    _loadState.value = EditSettlementLoadState.Success(s)
                 }
-                is ApiResult.NetworkError ->
-                    _loadState.value = EditSettlementLoadState.Error("No internet connection.")
-                else ->
-                    _loadState.value = EditSettlementLoadState.Error("Failed to load settlement.")
+                is ApiResult.NetworkError -> {
+                    if (_loadState.value !is EditSettlementLoadState.Success) {
+                        _loadState.value = EditSettlementLoadState.Error("No internet connection.")
+                    }
+                }
+                else -> {
+                    if (_loadState.value !is EditSettlementLoadState.Success) {
+                        _loadState.value = EditSettlementLoadState.Error("Failed to load settlement.")
+                    }
+                }
             }
         }
     }
