@@ -58,6 +58,12 @@ object NetworkModule {
         tokenRefreshInterceptor: TokenRefreshInterceptor,
     ): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
+            // Redact sensitive headers — values must never appear in logcat
+            // even in debug (device logs can be read by other apps on rooted devices).
+            redactHeader("Authorization")
+            redactHeader("Cookie")
+            redactHeader("Set-Cookie")
+            redactHeader("Idempotency-Key")
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BODY
             } else {
