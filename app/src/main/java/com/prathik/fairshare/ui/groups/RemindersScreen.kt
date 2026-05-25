@@ -59,7 +59,8 @@ import com.prathik.fairshare.domain.model.ReminderFrequency
 import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsIconButton
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Radius
@@ -202,7 +203,7 @@ fun RemindersScreen(
         },
     ) { innerPadding ->
         when (val s = state) {
-            is RemindersUiState.Loading -> FsLoadingScreen()
+            is RemindersUiState.Loading -> RemindersSkeleton(Modifier.padding(innerPadding))
             is RemindersUiState.Error   -> FsErrorScreen(message = s.message, onRetry = { viewModel.load() })
             is RemindersUiState.Success -> {
                 if (s.reminders.isEmpty()) {
@@ -301,4 +302,18 @@ private fun ReminderRow(
 private fun dayName(dayOfWeek: Int): String = when (dayOfWeek) {
     1 -> "Monday" ; 2 -> "Tuesday" ; 3 -> "Wednesday" ; 4 -> "Thursday"
     5 -> "Friday" ; 6 -> "Saturday" ; 7 -> "Sunday" ; else -> ""
+}
+
+// ── Reminders skeleton ────────────────────────────────────────────────────────
+
+@androidx.compose.runtime.Composable
+private fun RemindersSkeleton(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(4) { com.prathik.fairshare.ui.components.FsSkeletonTimelineRow() }
+    }
 }

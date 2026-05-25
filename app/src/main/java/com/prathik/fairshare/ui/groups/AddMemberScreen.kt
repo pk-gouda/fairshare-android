@@ -46,7 +46,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
@@ -103,7 +104,7 @@ fun AddMemberScreen(
     ) { innerPadding ->
 
         if (isLoading) {
-            FsLoadingScreen()
+            AddMemberSkeleton(Modifier.padding(innerPadding))
             return@Scaffold
         }
 
@@ -311,5 +312,20 @@ private fun FriendRow(
                 }
             }
         }
+    }
+}
+
+// ── AddMember skeleton ────────────────────────────────────────────────────────
+
+@androidx.compose.runtime.Composable
+private fun AddMemberSkeleton(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    ) {
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 14.dp, widthFraction = 0.4f, cornerRadius = 4.dp)
+        repeat(4) { com.prathik.fairshare.ui.components.FsSkeletonTimelineRow() }
     }
 }

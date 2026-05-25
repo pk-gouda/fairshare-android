@@ -34,7 +34,8 @@ import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.usecase.group.GetGroupMembersUseCase
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Radius
@@ -102,7 +103,7 @@ fun GroupMembersScreen(
         topBar         = { FsTopBar(title = "Members", onBack = onBack) },
     ) { innerPadding ->
         when (val s = state) {
-            is GroupMembersUiState.Loading -> FsLoadingScreen()
+            is GroupMembersUiState.Loading -> GroupMembersSkeleton(Modifier.padding(innerPadding))
             is GroupMembersUiState.Error   -> FsErrorScreen(
                 message = s.message,
                 onRetry = { viewModel.load() }
@@ -180,5 +181,20 @@ private fun MemberRow(member: GroupMember) {
         if (joined != null) {
             Text(text = joined, fontSize = 11.sp, color = TextTertiary)
         }
+    }
+}
+
+// ── GroupMembers skeleton ─────────────────────────────────────────────────────
+
+@androidx.compose.runtime.Composable
+private fun GroupMembersSkeleton(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    ) {
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 14.dp, widthFraction = 0.3f, cornerRadius = 4.dp)
+        repeat(5) { com.prathik.fairshare.ui.components.FsSkeletonTimelineRow() }
     }
 }

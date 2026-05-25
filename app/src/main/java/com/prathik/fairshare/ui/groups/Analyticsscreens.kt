@@ -53,7 +53,8 @@ import com.prathik.fairshare.data.network.api.AnalyticsApiService
 import com.prathik.fairshare.data.network.safeApiCall
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.util.MoneyUtils
@@ -260,7 +261,7 @@ fun GroupAnalyticsScreen(
         topBar = { FsTopBar(title = "Analytics", onBack = onBack) },
     ) { innerPadding ->
         when (val state = chartState) {
-            is GroupChartState.Loading -> FsLoadingScreen()
+            is GroupChartState.Loading -> AnalyticsSkeleton(Modifier.padding(innerPadding))
             is GroupChartState.Error   -> FsErrorScreen(message = state.message, onRetry = { viewModel.load() })
             is GroupChartState.Success -> {
                 Column(
@@ -675,7 +676,7 @@ fun MyAnalyticsScreen(
         topBar         = { FsTopBar(title = "My analytics", onBack = onBack) },
     ) { innerPadding ->
         when (summaryState) {
-            is AnalyticsObjectState.Loading -> FsLoadingScreen()
+            is AnalyticsObjectState.Loading -> AnalyticsSkeleton(Modifier.padding(innerPadding))
             is AnalyticsObjectState.Error   -> FsErrorScreen(
                 message = (summaryState as AnalyticsObjectState.Error).message,
                 onRetry = { viewModel.load() }
@@ -857,7 +858,7 @@ fun FriendAnalyticsScreen(
         topBar         = { FsTopBar(title = "Spending trends", onBack = onBack) },
     ) { innerPadding ->
         when (val state = chartState) {
-            is FriendChartState.Loading -> FsLoadingScreen()
+            is FriendChartState.Loading -> AnalyticsSkeleton(Modifier.padding(innerPadding))
             is FriendChartState.Error   -> FsErrorScreen(message = state.message, onRetry = { viewModel.load() })
             is FriendChartState.Success -> {
                 Column(
@@ -1059,5 +1060,22 @@ private fun AnalyticsChip(
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
             color      = if (isSelected) Surface0 else TextSecondary,
         )
+    }
+}
+
+// ── Analytics skeleton ────────────────────────────────────────────────────────
+
+@androidx.compose.runtime.Composable
+private fun AnalyticsSkeleton(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+    ) {
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 200.dp, widthFraction = 1f, cornerRadius = 12.dp)
+        repeat(3) {
+            com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 60.dp, widthFraction = 1f, cornerRadius = 10.dp)
+        }
     }
 }

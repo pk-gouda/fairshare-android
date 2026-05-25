@@ -66,7 +66,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.domain.model.ExpenseItem
 import com.prathik.fairshare.domain.model.GroupMember
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.AvatarColors
 import com.prathik.fairshare.ui.theme.Orange400
@@ -130,7 +131,7 @@ fun ItemAssignmentScreen(
         },
     ) { pad ->
 
-        if (isLoading) { FsLoadingScreen(); return@Scaffold }
+        if (isLoading) { ItemAssignmentSkeleton(Modifier.padding(pad)); return@Scaffold }
 
         if (items.isEmpty()) {
             EmptyState(onSkip = { onDone(emptyMap()); onNavigateToReview() })
@@ -995,5 +996,21 @@ private fun EmptyState(onSkip: () -> Unit) {
                 Text("Continue without itemizing", color = Color.Black)
             }
         }
+    }
+}
+
+// ── ItemAssignment skeleton ───────────────────────────────────────────────────
+
+@androidx.compose.runtime.Composable
+private fun ItemAssignmentSkeleton(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    ) {
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 48.dp, widthFraction = 1f, cornerRadius = 10.dp)
+        repeat(5) { com.prathik.fairshare.ui.components.FsSkeletonTimelineRow() }
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 44.dp, widthFraction = 1f, cornerRadius = 8.dp)
     }
 }

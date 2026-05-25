@@ -48,7 +48,8 @@ import com.prathik.fairshare.domain.repository.ExpenseRepository
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.ui.components.FsEmptyState
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -308,7 +309,7 @@ fun RecurringExpensesScreen(
         topBar         = { FsTopBar(title = "Recurring expenses", onBack = onBack) },
     ) { innerPadding ->
         when (val s = state) {
-            is RecurringExpensesUiState.Loading -> FsLoadingScreen()
+            is RecurringExpensesUiState.Loading -> RecurringExpensesSkeleton(Modifier.padding(innerPadding))
             is RecurringExpensesUiState.Error   -> FsErrorScreen(message = s.message, onRetry = { viewModel.load() })
             is RecurringExpensesUiState.Success -> {
                 if (s.expenses.isEmpty()) {
@@ -386,5 +387,21 @@ private fun RecurringExpenseRow(
             fontSize = 12.sp,
             color    = TextTertiary,
         )
+    }
+}
+
+// ── RecurringExpenses skeleton ────────────────────────────────────────────────
+
+@androidx.compose.runtime.Composable
+private fun RecurringExpensesSkeleton(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp),
+    ) {
+        repeat(4) {
+            com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 72.dp, widthFraction = 1f, cornerRadius = 10.dp)
+        }
     }
 }

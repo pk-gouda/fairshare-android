@@ -76,7 +76,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.Green400
@@ -290,7 +290,7 @@ private fun MyCodeTab(
     onRetry      : () -> Unit,
     onRegenerate : () -> Unit,
 ) {
-    if (isLoading) { FsLoadingScreen(); return }
+    if (isLoading) { QrCodeSkeleton(modifier); return }
 
     if (friendCode.isNullOrBlank()) {
         com.prathik.fairshare.ui.components.FsErrorScreen(
@@ -482,4 +482,22 @@ private fun generateQrBitmap(content: String, size: Int): Bitmap? {
         }
         bmp
     } catch (e: Exception) { null }
+}
+
+// ── QrCode skeleton ───────────────────────────────────────────────────────────
+
+@androidx.compose.runtime.Composable
+private fun QrCodeSkeleton(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 32.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(20.dp),
+    ) {
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 200.dp, widthFraction = 0.6f, cornerRadius = 12.dp)
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 18.dp, widthFraction = 0.4f)
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 14.dp, widthFraction = 0.55f, cornerRadius = 4.dp)
+        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 44.dp, widthFraction = 0.8f, cornerRadius = 8.dp)
+    }
 }
