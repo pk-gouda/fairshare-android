@@ -6,6 +6,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,7 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
@@ -72,7 +74,7 @@ fun GroupBalancesScreen(
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when (val s = state) {
                 is GroupBalancesUiState.Loading ->
-                    FsLoadingScreen()
+                    GroupBalancesSkeleton()
 
                 is GroupBalancesUiState.Error ->
                     FsErrorScreen(message = s.message, onRetry = { viewModel.load() })
@@ -268,5 +270,22 @@ private fun MemberBalanceRow(
                 }
             }
         }
+    }
+}
+// ── GroupBalances skeleton placeholder ───────────────────────────────────────
+
+@Composable
+private fun GroupBalancesSkeleton() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Summary header placeholder
+        FsSkeletonBlock(height = 56.dp, widthFraction = 1f, cornerRadius = 10.dp)
+        Spacer(modifier = Modifier.height(4.dp))
+        // Member balance row placeholders
+        repeat(5) { FsSkeletonTimelineRow() }
     }
 }

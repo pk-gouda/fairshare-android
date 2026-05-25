@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.prathik.fairshare.data.local.EncryptedTokenStore
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Balance
+import com.prathik.fairshare.domain.repository.BalanceRepository
 import com.prathik.fairshare.domain.repository.GroupRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class GroupBalancesViewModel @Inject constructor(
     private val groupRepository: GroupRepository,
+    private val balanceRepository: BalanceRepository,
     private val tokenStore: EncryptedTokenStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -29,9 +31,23 @@ class GroupBalancesViewModel @Inject constructor(
 
     init { load() }
 
-    fun load() {
+    private var balancesLoaded = false
+
+    fun load(silent: Boolean = false) {
         viewModelScope.launch {
-            _state.value = GroupBalancesUiState.Loading
+            // Step 1: Render cached balances immediately — no network wait.
+            val cached = balanceRepository.getCachedGroupBalances(groupId)
+            if (cached.isNotEmpty()) {
+                _state.value = GroupBalancesUiState.Success(
+                    allBalances = cached,
+                    memberNets  = computeMemberNets(cached),
+                )
+                balancesLoaded = true
+            } else if (!silent && !balancesLoaded) {
+                _state.value = GroupBalancesUiState.Loading
+            }
+
+            // Step 2: Network fetch.
             when (val result = groupRepository.getAllGroupBalances(groupId)) {
                 is ApiResult.Success -> {
                     val balances = result.data
@@ -43,11 +59,14 @@ class GroupBalancesViewModel @Inject constructor(
                         allBalances = balances,
                         memberNets  = memberNets,
                     )
+                    balancesLoaded = true
                 }
-                is ApiResult.NetworkError ->
-                    _state.value = GroupBalancesUiState.Error("No internet connection.")
-                else ->
-                    _state.value = GroupBalancesUiState.Error("Failed to load balances.")
+                is ApiResult.NetworkError -> {
+                    if (!balancesLoaded) _state.value = GroupBalancesUiState.Error("No internet connection.")
+                }
+                else -> {
+                    if (!balancesLoaded) _state.value = GroupBalancesUiState.Error("Failed to load balances.")
+                }
             }
         }
     }
