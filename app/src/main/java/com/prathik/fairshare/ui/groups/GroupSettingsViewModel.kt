@@ -58,11 +58,17 @@ class GroupSettingsViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _groupLoadFailed = MutableStateFlow(false)
+    val groupLoadFailed: StateFlow<Boolean> = _groupLoadFailed.asStateFlow()
+
     private val _actionState = MutableStateFlow<GroupSettingsActionState>(GroupSettingsActionState.Idle)
     val actionState: StateFlow<GroupSettingsActionState> = _actionState.asStateFlow()
 
     private val _friends = MutableStateFlow<List<Friend>>(emptyList())
     val friends: StateFlow<List<Friend>> = _friends.asStateFlow()
+
+    private val _friendsLoaded = MutableStateFlow(false)
+    val friendsLoaded: StateFlow<Boolean> = _friendsLoaded.asStateFlow()
 
     private val _claimState = MutableStateFlow<ClaimActionState>(ClaimActionState.Idle)
     val claimState: StateFlow<ClaimActionState> = _claimState.asStateFlow()
@@ -87,9 +93,21 @@ class GroupSettingsViewModel @Inject constructor(
 
     fun refreshFriends() {
         viewModelScope.launch {
+            // Pre-populate from cache immediately — no network wait.
+            val cached = friendRepository.getCachedFriends()
+            if (cached.isNotEmpty() && _friends.value.isEmpty()) {
+                _friends.value = cached
+                _friendsLoaded.value = true
+            }
             when (val r = friendRepository.getFriends()) {
-                is ApiResult.Success -> _friends.value = r.data
-                else -> Unit
+                is ApiResult.Success -> {
+                    _friends.value = r.data
+                    _friendsLoaded.value = true
+                }
+                else -> {
+                    // Network failed — mark loaded so the sheet doesn't show skeleton forever
+                    if (_friends.value.isEmpty()) _friendsLoaded.value = true
+                }
             }
         }
     }
@@ -101,15 +119,35 @@ class GroupSettingsViewModel @Inject constructor(
     }
 
     private suspend fun loadDataInternal() {
-        _isLoading.value = true
+        // Step 1: Render cached group immediately — prevents full-screen spinner on reopen.
+        if (_group.value == null) {
+            groupRepository.getCachedGroup(groupId)?.let { cachedGroup ->
+                _group.value = cachedGroup
+                _editName.value = cachedGroup.name
+                _simplifyDebts.value = cachedGroup.simplifyDebts
+                _defaultCurrency.value = cachedGroup.defaultCurrency
+            }
+        }
+        val hadCachedGroup = _group.value != null
+        // Only show full loading if we have no group at all
+        if (!hadCachedGroup) _isLoading.value = true
+
+        // Step 2: Network fetch — updates all state.
         val groupResult   = getGroupUseCase(groupId)
         val membersResult = getMembersUseCase(groupId)
         val balanceResult = getGroupBalancesUseCase(groupId)
         if (groupResult is ApiResult.Success) {
+            _groupLoadFailed.value = false
             _group.value = groupResult.data
-            _editName.value = groupResult.data.name
-            _simplifyDebts.value = groupResult.data.simplifyDebts
-            _defaultCurrency.value = groupResult.data.defaultCurrency
+            // Only overwrite editable fields on cold load — avoid overwriting user edits
+            // that may have started while network was in-flight.
+            if (!hadCachedGroup) {
+                _editName.value = groupResult.data.name
+                _simplifyDebts.value = groupResult.data.simplifyDebts
+                _defaultCurrency.value = groupResult.data.defaultCurrency
+            }
+        } else if (!hadCachedGroup) {
+            _groupLoadFailed.value = true
         }
         if (membersResult is ApiResult.Success) {
             _members.value = membersResult.data

@@ -69,7 +69,8 @@ import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.GroupType
 import com.prathik.fairshare.ui.components.FsAvatar
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.theme.AvatarColors
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
@@ -110,8 +111,10 @@ fun GroupSettingsScreen(
     val group            by viewModel.group.collectAsState()
     val members          by viewModel.members.collectAsState()
     val isLoading        by viewModel.isLoading.collectAsState()
+    val groupLoadFailed  by viewModel.groupLoadFailed.collectAsState()
     val actionState      by viewModel.actionState.collectAsState()
     val friends          by viewModel.friends.collectAsState()
+    val friendsLoaded    by viewModel.friendsLoaded.collectAsState()
     val claimState       by viewModel.claimState.collectAsState()
     val yourGroupBalances by viewModel.yourGroupBalances.collectAsState()
     val editName         by viewModel.editName.collectAsState()
@@ -441,17 +444,11 @@ fun GroupSettingsScreen(
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                 val realMemberIds = members.filter { !it.email.startsWith("placeholder+") }.map { it.userId }.toSet()
                 val assignable    = friends.filter { it.id !in realMemberIds }
-                if (friends.isEmpty()) {
-                    // Friends still loading — show spinner
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            color    = Green400,
-                            modifier = Modifier.size(28.dp),
-                            strokeWidth = 2.dp,
-                        )
+                if (!friendsLoaded && friends.isEmpty()) {
+                    // Friends still loading — show skeleton rows
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        repeat(3) { FsSkeletonTimelineRow() }
                     }
                 } else if (assignable.isNotEmpty()) {
                     assignable.forEach { friend ->
@@ -512,8 +509,23 @@ fun GroupSettingsScreen(
         },
     ) { innerPadding ->
 
+        if (groupLoadFailed && group == null) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Couldn't load group settings", fontSize = 15.sp,
+                        color = com.prathik.fairshare.ui.theme.TextPrimary)
+                    Text("Check your connection and try again", fontSize = 13.sp,
+                        color = com.prathik.fairshare.ui.theme.TextTertiary)
+                    androidx.compose.material3.TextButton(onClick = { viewModel.loadData() }) {
+                        Text("Retry", color = com.prathik.fairshare.ui.theme.Green400, fontSize = 14.sp)
+                    }
+                }
+            }
+            return@Scaffold
+        }
         if (isLoading && group == null) {
-            FsLoadingScreen()
+            GroupSettingsSkeleton()
             return@Scaffold
         }
 
@@ -1251,4 +1263,37 @@ private fun coverEmoji(type: GroupType): String = when (type) {
     GroupType.EVENT     -> "🎉"
     GroupType.APARTMENT -> "🏢"
     GroupType.OTHER     -> "💰"
+}
+// ── GroupSettings skeleton placeholder ───────────────────────────────────────
+
+@Composable
+private fun GroupSettingsSkeleton() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        // Group avatar + name placeholder
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            FsSkeletonBlock(height = 56.dp, widthFraction = 0.16f, cornerRadius = 28.dp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FsSkeletonBlock(height = 16.dp, widthFraction = 0.5f)
+                FsSkeletonBlock(height = 12.dp, widthFraction = 0.3f)
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        // Settings card placeholders
+        repeat(3) {
+            FsSkeletonBlock(height = 52.dp, widthFraction = 1f, cornerRadius = 10.dp)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        // Members section placeholder
+        FsSkeletonBlock(height = 14.dp, widthFraction = 0.25f, cornerRadius = 4.dp)
+        repeat(3) { FsSkeletonTimelineRow() }
+    }
 }
