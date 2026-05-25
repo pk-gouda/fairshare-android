@@ -115,6 +115,16 @@ class SettleUpViewModel @Inject constructor(
         if (overridePayerName != null) _payerName.value = overridePayerName
         // When direction is manually overridden, start with 0.00 immediately
         if (overridePayerId != null) _balanceAmount.value = 0.0
+        viewModelScope.launch {
+            // Pre-populate names from cached friends immediately — no network wait
+            val cachedFriends = friendRepository.getCachedFriends()
+            val otherName = cachedFriends.find { it.id == otherUserId }?.fullName
+            if (!otherName.isNullOrBlank()) _otherUserName.value = otherName
+            if (overridePayerId != null && overridePayerId != currentUserId && overridePayerName == null) {
+                val pName = cachedFriends.find { it.id == overridePayerId }?.fullName
+                if (!pName.isNullOrBlank()) _payerName.value = pName
+            }
+        }
         loadBalance()
     }
 
@@ -176,13 +186,27 @@ class SettleUpViewModel @Inject constructor(
     }
 
     private suspend fun loadNamesFromFriends() {
+        // Use cached friends first for instant name resolution — no network needed
+        val cachedFriends = friendRepository.getCachedFriends()
+        if (cachedFriends.isNotEmpty()) {
+            val otherName = cachedFriends.find { it.id == otherUserId }?.fullName
+            if (!otherName.isNullOrBlank()) _otherUserName.value = otherName
+
+            if (overridePayerId != null && overridePayerId != currentUserId) {
+                val pName = cachedFriends.find { it.id == overridePayerId }?.fullName
+                if (!pName.isNullOrBlank()) _payerName.value = pName
+            }
+            // If cache had what we need, skip network
+            val needsOtherName = _otherUserName.value.isBlank()
+            val needsPayerName = overridePayerId != null && overridePayerId != currentUserId && _payerName.value.isBlank()
+            if (!needsOtherName && !needsPayerName) return
+        }
+        // Fall back to network if cache was empty or missing needed names
         when (val friends = friendRepository.getFriends()) {
             is ApiResult.Success -> {
-                // Always load otherUserName (fills in if balance didn't return it)
                 val otherName = friends.data.find { it.id == otherUserId }?.fullName
                 if (!otherName.isNullOrBlank()) _otherUserName.value = otherName
 
-                // Always load payerName when override is a different user
                 if (overridePayerId != null && overridePayerId != currentUserId) {
                     val pName = friends.data.find { it.id == overridePayerId }?.fullName
                     if (!pName.isNullOrBlank()) _payerName.value = pName
