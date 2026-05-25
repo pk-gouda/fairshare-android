@@ -49,7 +49,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
 import com.prathik.fairshare.ui.theme.Radius
@@ -189,16 +190,25 @@ fun GlobalSearchScreen(
         },
     ) { innerPadding ->
 
-        if (isLoading) {
-            FsLoadingScreen()
-            return@Scaffold
-        }
-
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+
+            // Show skeleton rows during initial data load (before any results exist)
+            if (isLoading && results.isEmpty()) {
+                item {
+                    FsSkeletonBlock(
+                        height = 14.dp,
+                        widthFraction = 0.35f,
+                        cornerRadius = 4.dp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
+                }
+                items(6) { FsSkeletonTimelineRow() }
+                return@LazyColumn
+            }
 
             // Results count header
             item {
@@ -216,7 +226,7 @@ fun GlobalSearchScreen(
                 )
             }
 
-            if (results.isEmpty() && !isLoading) {
+            if (results.isEmpty() && !isLoading && query.isNotBlank()) {
                 item {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
