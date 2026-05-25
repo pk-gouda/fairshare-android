@@ -78,6 +78,9 @@ class SettlementRepositoryImpl @Inject constructor(
         return settlementDao.getDirectBetween(currentUserId, otherUserId).map { it.toDomain() }
     }
 
+    override suspend fun getCachedSettlement(settlementId: String): com.prathik.fairshare.domain.model.Settlement? =
+        settlementDao.getById(settlementId)?.toDomain()
+
     override suspend fun getHistory(otherUserId: String): ApiResult<List<Settlement>> {
         val currentUserId = tokenStore.getUserId()
         val networkResult = safeApiCall { settlementService.getHistory(otherUserId) }
@@ -140,12 +143,14 @@ class SettlementRepositoryImpl @Inject constructor(
     override suspend fun getSettlementById(settlementId: String): ApiResult<Settlement> {
         val result = safeApiCall { settlementService.getSettlementById(settlementId) }
             .mapSuccess { it.toDomain() }
-        if (result !is ApiResult.Success) {
-            val cached = settlementDao.getById(settlementId)
-            if (cached != null) {
-                android.util.Log.d("SettlementCache", "getSettlementById offline: $settlementId")
-                return ApiResult.Success(cached.toDomain())
-            }
+        if (result is ApiResult.Success) {
+            settlementDao.insertAll(listOf(result.data.toEntity()))
+            return result
+        }
+        val cached = settlementDao.getById(settlementId)
+        if (cached != null) {
+            android.util.Log.d("SettlementCache", "getSettlementById offline: $settlementId")
+            return ApiResult.Success(cached.toDomain())
         }
         return result
     }

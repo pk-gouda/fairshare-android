@@ -57,7 +57,7 @@ import com.prathik.fairshare.domain.model.SettlementStatus
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsIconButton
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsDetailSkeleton
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
@@ -93,7 +93,7 @@ fun SettlementDetailScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.load()
+            viewModel.refreshSilently()
         }
     }
 
@@ -158,7 +158,7 @@ fun SettlementDetailScreen(
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when (val s = state) {
                 is SettlementDetailUiState.Loading ->
-                    FsLoadingScreen()
+                    FsDetailSkeleton()
                 is SettlementDetailUiState.Error ->
                     FsErrorScreen(message = s.message, onRetry = { viewModel.load() })
                 is SettlementDetailUiState.NotFound,

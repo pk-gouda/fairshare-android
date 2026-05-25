@@ -53,6 +53,8 @@ interface SettlementRepository {
      * and another user, ordered by date descending.
      */
     suspend fun getCachedDirectSettlements(otherUserId: String): List<Settlement>
+    /** Room-only — returns null if not cached. */
+    suspend fun getCachedSettlement(settlementId: String): Settlement?
     suspend fun getHistory(otherUserId: String): ApiResult<List<Settlement>>
 
     /**

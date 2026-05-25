@@ -43,9 +43,18 @@ class SettlementDetailViewModel @Inject constructor(
 
     init { load() }
 
-    fun load() {
+    fun load(silent: Boolean = false) {
         viewModelScope.launch {
-            if (!hasLoadedOnce) _state.value = SettlementDetailUiState.Loading
+            // Step 1: Render from Room immediately — no network wait.
+            val cached = settlementRepository.getCachedSettlement(settlementId)
+            if (cached != null) {
+                _state.value = SettlementDetailUiState.Success(cached)
+                hasLoadedOnce = true
+            } else if (!silent && !hasLoadedOnce) {
+                _state.value = SettlementDetailUiState.Loading
+            }
+
+            // Step 2: Network fetch — updates state only on success.
             when (val result = settlementRepository.getSettlementById(settlementId)) {
                 is ApiResult.Success -> {
                     _state.value = SettlementDetailUiState.Success(result.data)
@@ -55,7 +64,9 @@ class SettlementDetailViewModel @Inject constructor(
                         else -> Unit
                     }
                 }
-                is ApiResult.NotFound -> _state.value = SettlementDetailUiState.NotFound
+                is ApiResult.NotFound -> {
+                    if (!hasLoadedOnce) _state.value = SettlementDetailUiState.NotFound
+                }
                 is ApiResult.NetworkError -> {
                     if (!hasLoadedOnce) _state.value = SettlementDetailUiState.Error("No internet connection.")
                 }
@@ -64,6 +75,15 @@ class SettlementDetailViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Silent resume refresh — does not reset hasLoadedOnce, does not flash Loading.
+     * Guards against racing the init load.
+     */
+    fun refreshSilently() {
+        if (!hasLoadedOnce && _state.value is SettlementDetailUiState.Loading) return
+        load(silent = true)
     }
 
     /**
