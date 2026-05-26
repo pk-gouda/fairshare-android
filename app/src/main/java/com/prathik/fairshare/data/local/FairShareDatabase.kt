@@ -39,7 +39,7 @@ import com.prathik.fairshare.data.local.PendingBalanceImpactEntity
         PendingBalanceImpactEntity::class,
         SettlementEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = false,
 )
 abstract class FairShareDatabase : RoomDatabase() {
@@ -268,6 +268,21 @@ abstract class FairShareDatabase : RoomDatabase() {
          * 16 → 17: Add settlements table for offline-first settlement timeline.
          * Replaces pure-network settlement loading with Room-backed fallback.
          */
+
+        /**
+         * 17 → 18: Add authProvider column to users table.
+         * Distinguishes LOCAL / GOOGLE / APPLE sign-in for correct UI gating
+         * (e.g. CloseAccountScreen password dialog is only shown to LOCAL users).
+         * Default is 'LOCAL' so existing cached rows remain valid.
+         */
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE users ADD COLUMN authProvider TEXT NOT NULL DEFAULT 'LOCAL'"
+                )
+            }
+        }
+
         val MIGRATION_16_17 = object : Migration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""

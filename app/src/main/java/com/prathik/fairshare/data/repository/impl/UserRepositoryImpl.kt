@@ -170,6 +170,7 @@ class UserRepositoryImpl @Inject constructor(
         isActive            = isActive,
         friendCode          = friendCode,
         timezone            = timezone,
+        authProvider        = authProvider,  // persisted in Room v18
     )
 
     private fun UserEntity.toDomain() = User(
@@ -183,5 +184,6 @@ class UserRepositoryImpl @Inject constructor(
         notificationEnabled = notificationEnabled,
         isActive            = isActive,
         friendCode          = friendCode,
+        authProvider        = authProvider,  // now read from Room v18 column
     )
 }

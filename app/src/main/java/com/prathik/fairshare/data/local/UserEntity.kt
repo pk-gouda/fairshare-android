@@ -20,5 +20,6 @@ data class UserEntity(
     val isActive: Boolean,
     val friendCode: String? = null,
     val timezone: String = "UTC",
+    val authProvider: String = "LOCAL",  // "LOCAL", "GOOGLE", "APPLE" — Room v18
     val cachedAt: Long = System.currentTimeMillis(),
 )
