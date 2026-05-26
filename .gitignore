@@ -17,3 +17,6 @@ local.properties
 *.keystore
 *.pem
 google-services.json
+keystore.properties
+*.aab
+*.apk
