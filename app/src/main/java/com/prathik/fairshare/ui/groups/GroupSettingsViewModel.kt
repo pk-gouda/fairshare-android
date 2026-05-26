@@ -82,6 +82,14 @@ class GroupSettingsViewModel @Inject constructor(
 
     private val _descriptionDirty = MutableStateFlow(false)
 
+    private val _tripStartDate = MutableStateFlow<String?>(null)
+    val tripStartDate: StateFlow<String?> = _tripStartDate.asStateFlow()
+
+    private val _tripEndDate = MutableStateFlow<String?>(null)
+    val tripEndDate: StateFlow<String?> = _tripEndDate.asStateFlow()
+
+    private val _tripDatesDirty = MutableStateFlow(false)
+
     private val _simplifyDebts = MutableStateFlow(false)
     val simplifyDebts: StateFlow<Boolean> = _simplifyDebts.asStateFlow()
 
@@ -130,6 +138,8 @@ class GroupSettingsViewModel @Inject constructor(
                 _group.value = cachedGroup
                 _editName.value = cachedGroup.name
                 _editDescription.value = cachedGroup.groupNotes ?: ""
+                _tripStartDate.value = cachedGroup.tripStartDate
+                _tripEndDate.value = cachedGroup.tripEndDate
                 _simplifyDebts.value = cachedGroup.simplifyDebts
                 _defaultCurrency.value = cachedGroup.defaultCurrency
             }
@@ -150,11 +160,17 @@ class GroupSettingsViewModel @Inject constructor(
             if (!hadCachedGroup) {
                 _editName.value = groupResult.data.name
                 _editDescription.value = groupResult.data.groupNotes ?: ""
+                _tripStartDate.value = groupResult.data.tripStartDate
+                _tripEndDate.value = groupResult.data.tripEndDate
                 _simplifyDebts.value = groupResult.data.simplifyDebts
                 _defaultCurrency.value = groupResult.data.defaultCurrency
             } else if (!_descriptionDirty.value) {
                 // Not actively editing notes — safe to sync to latest server value
                 _editDescription.value = groupResult.data.groupNotes ?: ""
+            }
+            if (!_tripDatesDirty.value) {
+                _tripStartDate.value = groupResult.data.tripStartDate
+                _tripEndDate.value = groupResult.data.tripEndDate
             }
         } else if (!hadCachedGroup) {
             _groupLoadFailed.value = true
@@ -174,6 +190,39 @@ class GroupSettingsViewModel @Inject constructor(
         _editDescription.value = value
         _descriptionDirty.value = true
     }
+
+    fun onTripStartDateChanged(isoDate: String?) {
+        _tripStartDate.value = isoDate
+        _tripDatesDirty.value = true
+    }
+
+    fun onTripEndDateChanged(isoDate: String?) {
+        _tripEndDate.value = isoDate
+        _tripDatesDirty.value = true
+    }
+
+    fun saveTripDates() {
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (val result = updateGroupUseCase(
+                groupId       = groupId,
+                name          = null,
+                description   = _editDescription.value.trim().ifBlank { null },
+                simplifyDebts = null,
+                tripStartDate = _tripStartDate.value,
+                tripEndDate   = _tripEndDate.value,
+            )) {
+                is ApiResult.Success -> {
+                    _group.value = result.data
+                    _tripStartDate.value = result.data.tripStartDate
+                    _tripEndDate.value = result.data.tripEndDate
+                    _tripDatesDirty.value = false
+                    _actionState.value = GroupSettingsActionState.Success("Trip dates updated")
+                }
+                else -> _actionState.value = GroupSettingsActionState.Error("Failed to update trip dates")
+            }
+        }
+    }
     fun onSimplifyDebtsToggled()     { _simplifyDebts.value = !_simplifyDebts.value }
 
     fun saveDefaultCurrency(currency: String) {
@@ -186,6 +235,8 @@ class GroupSettingsViewModel @Inject constructor(
                 description     = _editDescription.value.trim().ifBlank { null },
                 simplifyDebts   = null,
                 defaultCurrency = currency,
+                tripStartDate   = _tripStartDate.value,
+                tripEndDate     = _tripEndDate.value,
             )
         }
     }
@@ -224,6 +275,8 @@ class GroupSettingsViewModel @Inject constructor(
                 name          = name,
                 description   = _editDescription.value.trim().ifBlank { null },
                 simplifyDebts = null,
+                tripStartDate = _tripStartDate.value,
+                tripEndDate   = _tripEndDate.value,
             )) {
                 is ApiResult.Success -> {
                     _group.value = result.data
@@ -243,6 +296,8 @@ class GroupSettingsViewModel @Inject constructor(
                 name          = null,
                 description   = _editDescription.value.trim().ifBlank { null },
                 simplifyDebts = value,
+                tripStartDate = _tripStartDate.value,
+                tripEndDate   = _tripEndDate.value,
             )
             when (result) {
                 is ApiResult.Success -> {

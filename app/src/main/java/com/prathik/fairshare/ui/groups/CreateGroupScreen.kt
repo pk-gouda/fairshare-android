@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.AlertDialog
+import com.prathik.fairshare.ui.components.FsTextButton
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -117,6 +119,10 @@ fun CreateGroupScreen(
     val name              by viewModel.name.collectAsState()
     val description       by viewModel.description.collectAsState()
     val selectedType      by viewModel.selectedType.collectAsState()
+    val tripStartDate     by viewModel.tripStartDate.collectAsState()
+    val tripEndDate       by viewModel.tripEndDate.collectAsState()
+    val addTripDates      by viewModel.addTripDates.collectAsState()
+    val showTripDateDialog by viewModel.showTripDateDialog.collectAsState()
     val showAllTypes      by viewModel.showAllTypes.collectAsState()
     val nameError         by viewModel.nameError.collectAsState()
     val isLoading         by viewModel.isLoading.collectAsState()
@@ -180,18 +186,50 @@ fun CreateGroupScreen(
 
             if (step == 1) {
                 Step1Content(
-                    name          = name,
-                    description   = description,
-                    selectedType  = selectedType,
-                    showAllTypes  = showAllTypes,
-                    nameError     = nameError,
-                    isLoading     = isLoading,
-                    onNameChanged = { viewModel.onNameChanged(it) },
-                    onDescChanged = { viewModel.onDescriptionChanged(it) },
-                    onTypeSelected = { viewModel.onTypeSelected(it) },
-                    onToggleTypes = { viewModel.toggleShowAllTypes() },
-                    onContinue    = { viewModel.proceed() },
+                    name               = name,
+                    description        = description,
+                    selectedType       = selectedType,
+                    tripStartDate      = tripStartDate,
+                    tripEndDate        = tripEndDate,
+                    addTripDates       = addTripDates,
+                    showAllTypes       = showAllTypes,
+                    nameError          = nameError,
+                    isLoading          = isLoading,
+                    onNameChanged      = { viewModel.onNameChanged(it) },
+                    onDescChanged      = { viewModel.onDescriptionChanged(it) },
+                    onTypeSelected     = { viewModel.onTypeSelected(it) },
+                    onToggleTypes      = { viewModel.toggleShowAllTypes() },
+                    onAddTripDates     = { viewModel.onAddTripDatesChanged(it) },
+                    onStartDateChanged = { viewModel.onTripStartDateChanged(it) },
+                    onEndDateChanged   = { viewModel.onTripEndDateChanged(it) },
+                    onContinue         = { viewModel.proceed() },
                 )
+
+                // "No end date" confirmation dialog
+                if (showTripDateDialog) {
+                    AlertDialog(
+                        onDismissRequest  = { viewModel.dismissTripDateDialog() },
+                        title             = { Text("Turn off trip dates?", fontWeight = FontWeight.Bold) },
+                        text              = {
+                            Text("If you still want trip dates, go back and select an end date.")
+                        },
+                        confirmButton     = {
+                            FsTextButton(
+                                text    = "Turn off and save",
+                                onClick = { viewModel.confirmTurnOffDatesAndCreate() },
+                            )
+                        },
+                        dismissButton     = {
+                            FsTextButton(
+                                text    = "Go back",
+                                onClick = { viewModel.dismissTripDateDialog() },
+                            )
+                        },
+                        containerColor    = Surface2,
+                        titleContentColor = TextPrimary,
+                        textContentColor  = TextSecondary,
+                    )
+                }
             } else {
                 Step2Content(
                     groupName         = createdGroup?.name ?: name,
@@ -225,17 +263,23 @@ fun CreateGroupScreen(
 
 @Composable
 private fun Step1Content(
-    name          : String,
-    description   : String,
-    selectedType  : GroupType,
-    showAllTypes  : Boolean,
-    nameError     : String?,
-    isLoading     : Boolean,
-    onNameChanged : (String) -> Unit,
-    onDescChanged : (String) -> Unit,
-    onTypeSelected: (GroupType) -> Unit,
-    onToggleTypes : () -> Unit,
-    onContinue    : () -> Unit,
+    name               : String,
+    description        : String,
+    selectedType       : GroupType,
+    tripStartDate      : String?,
+    tripEndDate        : String?,
+    addTripDates       : Boolean,
+    showAllTypes       : Boolean,
+    nameError          : String?,
+    isLoading          : Boolean,
+    onNameChanged      : (String) -> Unit,
+    onDescChanged      : (String) -> Unit,
+    onTypeSelected     : (GroupType) -> Unit,
+    onToggleTypes      : () -> Unit,
+    onAddTripDates     : (Boolean) -> Unit,
+    onStartDateChanged : (String?) -> Unit,
+    onEndDateChanged   : (String?) -> Unit,
+    onContinue         : () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -321,6 +365,76 @@ private fun Step1Content(
                 fontSize = 14.sp,
                 color    = Green400,
             )
+        }
+
+        // ── Trip dates (shown only for TRIP type) ─────────────────────────────
+        if (selectedType == GroupType.TRIP) {
+            Spacer(modifier = Modifier.height(Spacing.md))
+
+            // Add trip dates toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radius.lg))
+                    .background(Surface2)
+                    .padding(horizontal = Spacing.md, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Add trip dates", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                    Text("Optional start and end date", fontSize = 12.sp, color = TextTertiary)
+                }
+                androidx.compose.material3.Switch(
+                    checked         = addTripDates,
+                    onCheckedChange = onAddTripDates,
+                    colors          = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor  = Surface0,
+                        checkedTrackColor  = Green400,
+                        uncheckedThumbColor = TextTertiary,
+                    ),
+                )
+            }
+
+            // Date rows — only visible when toggle is ON
+            if (addTripDates) {
+                Spacer(modifier = Modifier.height(Spacing.sm))
+
+                val context = androidx.compose.ui.platform.LocalContext.current
+
+                val endBeforeStart = tripStartDate != null && tripEndDate != null &&
+                        runCatching {
+                            java.time.LocalDate.parse(tripEndDate) < java.time.LocalDate.parse(tripStartDate)
+                        }.getOrDefault(false)
+
+                CreateDateRow(
+                    label    = "Start date",
+                    display  = tripStartDate?.let { formatCreateTripDate(it) } ?: "Today",
+                    context  = context,
+                    current  = tripStartDate,
+                    maxDate  = tripEndDate,
+                    onPicked = onStartDateChanged,
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+
+                CreateDateRow(
+                    label    = "End date",
+                    display  = tripEndDate?.let { formatCreateTripDate(it) } ?: "Not set",
+                    context  = context,
+                    current  = tripEndDate,
+                    minDate  = tripStartDate,
+                    onPicked = onEndDateChanged,
+                )
+
+                if (endBeforeStart) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "End date must be on or after start date",
+                        fontSize = 12.sp,
+                        color    = com.prathik.fairshare.ui.theme.Negative,
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(Spacing.md))
@@ -782,3 +896,72 @@ private fun groupTypeLabel(type: GroupType): String = when (type) {
     GroupType.EVENT     -> "Event"
     GroupType.OTHER     -> "Other"
 }
+// ── Create Group trip date helpers ────────────────────────────────────────────
+
+@Suppress("DEPRECATION")
+@Composable
+private fun CreateDateRow(
+    label   : String,
+    display : String,
+    context : android.content.Context,
+    current : String?,
+    minDate : String? = null,
+    maxDate : String? = null,
+    onPicked: (String?) -> Unit,
+) {
+    val calendar = java.util.Calendar.getInstance()
+    current?.let { s ->
+        runCatching { java.time.LocalDate.parse(s) }.getOrNull()?.let {
+            calendar.set(it.year, it.monthValue - 1, it.dayOfMonth)
+        }
+    }
+    val dialog = android.app.DatePickerDialog(
+        context,
+        { _, y, m, d ->
+            onPicked(java.time.LocalDate.of(y, m + 1, d).format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE))
+        },
+        calendar.get(java.util.Calendar.YEAR),
+        calendar.get(java.util.Calendar.MONTH),
+        calendar.get(java.util.Calendar.DAY_OF_MONTH),
+    )
+    minDate?.let { s -> runCatching { java.time.LocalDate.parse(s) }.getOrNull()?.let {
+        val c = java.util.Calendar.getInstance(); c.set(it.year, it.monthValue - 1, it.dayOfMonth)
+        dialog.datePicker.minDate = c.timeInMillis
+    }}
+    maxDate?.let { s -> runCatching { java.time.LocalDate.parse(s) }.getOrNull()?.let {
+        val c = java.util.Calendar.getInstance(); c.set(it.year, it.monthValue - 1, it.dayOfMonth)
+        dialog.datePicker.maxDate = c.timeInMillis
+    }}
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Spacing.sm))
+            .background(com.prathik.fairshare.ui.theme.Surface2)
+            .clickable { dialog.show() }
+            .padding(horizontal = Spacing.md, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, fontSize = 14.sp, color = com.prathik.fairshare.ui.theme.TextSecondary)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            Text(display, fontSize = 14.sp, color = com.prathik.fairshare.ui.theme.TextPrimary)
+            if (current != null) {
+                Text(
+                    text     = "Clear",
+                    fontSize = 12.sp,
+                    color    = com.prathik.fairshare.ui.theme.TextTertiary,
+                    modifier = Modifier.clickable { onPicked(null) },
+                )
+            }
+        }
+    }
+}
+
+private fun formatCreateTripDate(isoDate: String): String = runCatching {
+    val d = java.time.LocalDate.parse(isoDate, java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+    d.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", java.util.Locale.getDefault()))
+}.getOrDefault(isoDate)

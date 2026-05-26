@@ -16,6 +16,8 @@ class CreateGroupUseCase @Inject constructor(
         name: String,
         type: String,
         description: String?,
+        tripStartDate: String? = null,
+        tripEndDate: String? = null,
     ): ApiResult<Group> {
         if (name.isBlank()) {
             return ApiResult.ValidationError("Group name cannot be empty")
@@ -27,9 +29,11 @@ class CreateGroupUseCase @Inject constructor(
             return ApiResult.ValidationError("Group name cannot exceed 50 characters")
         }
         return groupRepository.createGroup(
-            name        = name.trim(),
-            type        = type,
-            description = description?.trim(),
+            name          = name.trim(),
+            type          = type,
+            description   = description?.trim(),
+            tripStartDate = tripStartDate,
+            tripEndDate   = tripEndDate,
         )
     }
 }

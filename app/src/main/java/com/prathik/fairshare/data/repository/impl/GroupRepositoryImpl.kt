@@ -90,13 +90,17 @@ class GroupRepositoryImpl @Inject constructor(
         name: String,
         type: String,
         description: String?,
+        tripStartDate: String?,
+        tripEndDate: String?,
     ): ApiResult<Group> =
         safeApiCall {
             groupService.createGroup(
                 CreateGroupRequest(
-                    name = name,
-                    type = type.toGroupTypeSafe(),
-                    description = description,
+                    name          = name,
+                    type          = type.toGroupTypeSafe(),
+                    description   = description,
+                    tripStartDate = tripStartDate,
+                    tripEndDate   = tripEndDate,
                 )
             )
         }.mapSuccess { it.toDomain() }
@@ -114,9 +118,11 @@ class GroupRepositoryImpl @Inject constructor(
         description: String?,
         simplifyDebts: Boolean?,
         defaultCurrency: String?,
+        tripStartDate: String?,
+        tripEndDate: String?,
     ): ApiResult<Group> {
         val raw = safeApiCall {
-            groupService.updateGroup(groupId, UpdateGroupRequest(name, description, simplifyDebts, defaultCurrency))
+            groupService.updateGroup(groupId, UpdateGroupRequest(name, description, simplifyDebts, defaultCurrency, tripStartDate, tripEndDate))
         }
         if (raw is ApiResult.Success) {
             groupDao.insert(raw.data.toGroupEntity())

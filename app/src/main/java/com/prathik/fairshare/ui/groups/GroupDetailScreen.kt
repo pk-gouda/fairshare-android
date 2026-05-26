@@ -913,6 +913,26 @@ private fun GroupCoverHeader(
                         .padding(horizontal = Spacing.sm),
                 )
             }
+
+            // Trip dates — shown only for TRIP groups with at least one date
+            if (group.type == GroupType.TRIP &&
+                (!group.tripStartDate.isNullOrBlank() || !group.tripEndDate.isNullOrBlank())) {
+                Spacer(Modifier.height(Spacing.sm))
+                val dateText = when {
+                    !group.tripStartDate.isNullOrBlank() && !group.tripEndDate.isNullOrBlank() ->
+                        "✈️  ${formatTripDateDisplay(group.tripStartDate)} – ${formatTripDateDisplay(group.tripEndDate)}"
+                    !group.tripStartDate.isNullOrBlank() ->
+                        "✈️  From ${formatTripDateDisplay(group.tripStartDate)}"
+                    else ->
+                        "✈️  Until ${formatTripDateDisplay(group.tripEndDate!!)}"
+                }
+                Text(
+                    text     = dateText,
+                    fontSize = 13.sp,
+                    color    = Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier.padding(horizontal = Spacing.sm),
+                )
+            }
         }
     }
 }
@@ -1592,3 +1612,9 @@ private fun TimelineItem.stableId(): String =
         is TimelineItem.ExpenseItem -> "e_${expense.id}"
         is TimelineItem.SettlementItem -> "s_${settlement.id}"
     }
+// ── Trip date display helper ──────────────────────────────────────────────────
+
+private fun formatTripDateDisplay(isoDate: String): String = runCatching {
+    val d = java.time.LocalDate.parse(isoDate, java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+    d.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", java.util.Locale.getDefault()))
+}.getOrDefault(isoDate)

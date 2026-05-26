@@ -18,6 +18,8 @@ class UpdateGroupUseCase @Inject constructor(
         description: String?,
         simplifyDebts: Boolean?,
         defaultCurrency: String? = null,
+        tripStartDate: String? = null,
+        tripEndDate: String? = null,
     ): ApiResult<Group> {
         if (groupId.isBlank()) {
             return ApiResult.ValidationError("Group ID cannot be empty")
@@ -34,6 +36,8 @@ class UpdateGroupUseCase @Inject constructor(
             description   = description?.trim(),
             simplifyDebts = simplifyDebts,
             defaultCurrency = defaultCurrency,
+            tripStartDate = tripStartDate,
+            tripEndDate   = tripEndDate,
         )
     }
 }

@@ -69,6 +69,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.GroupType
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsSkeletonBlock
 import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
@@ -120,6 +123,8 @@ fun GroupSettingsScreen(
     val yourGroupBalances by viewModel.yourGroupBalances.collectAsState()
     val editName         by viewModel.editName.collectAsState()
     val editDescription  by viewModel.editDescription.collectAsState()
+    val tripStartDate    by viewModel.tripStartDate.collectAsState()
+    val tripEndDate      by viewModel.tripEndDate.collectAsState()
     val simplifyDebts    by viewModel.simplifyDebts.collectAsState()
     val muteNotifications by viewModel.muteNotifications.collectAsState()
 
@@ -727,7 +732,8 @@ fun GroupSettingsScreen(
                             androidx.compose.foundation.layout.Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = Spacing.md, bottom = Spacing.sm),
+                                    .padding(horizontal = Spacing.md)
+                                    .padding(bottom = Spacing.sm),
                                 horizontalArrangement = Arrangement.End,
                             ) {
                                 Text(
@@ -738,6 +744,20 @@ fun GroupSettingsScreen(
                                 )
                             }
                         }
+                        HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                    }
+
+                    // ── Trip dates (TRIP groups only) ─────────────────────────
+                    if (group?.type == GroupType.TRIP && isMember) {
+                        TripDateSection(
+                            tripStartDate        = tripStartDate,
+                            tripEndDate          = tripEndDate,
+                            onStartDateChanged   = { viewModel.onTripStartDateChanged(it) },
+                            onEndDateChanged     = { viewModel.onTripEndDateChanged(it) },
+                            onSave               = { viewModel.saveTripDates() },
+                            currentStart         = group?.tripStartDate,
+                            currentEnd           = group?.tripEndDate,
+                        )
                         HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                     }
 
@@ -1355,3 +1375,158 @@ private fun GroupSettingsSkeleton() {
         repeat(3) { FsSkeletonTimelineRow() }
     }
 }
+// ── Trip Date Section (TRIP groups only) ──────────────────────────────────────
+
+@androidx.compose.runtime.Composable
+private fun TripDateSection(
+    tripStartDate      : String?,
+    tripEndDate        : String?,
+    onStartDateChanged : (String?) -> Unit,
+    onEndDateChanged   : (String?) -> Unit,
+    onSave             : () -> Unit,
+    currentStart       : String?,
+    currentEnd         : String?,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val startDisplay = tripStartDate?.let { formatTripDate(it) } ?: "Set start date"
+    val endDisplay   = tripEndDate?.let { formatTripDate(it) }   ?: "Set end date"
+
+    val datesChanged = tripStartDate != currentStart || tripEndDate != currentEnd
+
+    // Validate: end must not be before start
+    val endBeforeStart = tripStartDate != null && tripEndDate != null &&
+            runCatching { LocalDate.parse(tripEndDate) < LocalDate.parse(tripStartDate) }.getOrDefault(false)
+
+    androidx.compose.foundation.layout.Column(
+        modifier = androidx.compose.ui.Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        androidx.compose.material3.Text(
+            "Trip dates",
+            fontSize = 12.sp,
+            color = TextTertiary,
+        )
+
+        // Start date row
+        DatePickerRow(
+            label    = "Start date",
+            display  = startDisplay,
+            context  = context,
+            current  = tripStartDate,
+            minDate  = null,
+            maxDate  = tripEndDate,
+            onPicked = onStartDateChanged,
+        )
+
+        // End date row
+        DatePickerRow(
+            label    = "End date",
+            display  = endDisplay,
+            context  = context,
+            current  = tripEndDate,
+            minDate  = tripStartDate,
+            maxDate  = null,
+            onPicked = onEndDateChanged,
+        )
+
+        if (endBeforeStart) {
+            androidx.compose.material3.Text(
+                "End date must be on or after start date",
+                fontSize = 12.sp,
+                color = com.prathik.fairshare.ui.theme.Negative,
+            )
+        }
+
+        if (datesChanged && !endBeforeStart) {
+            androidx.compose.foundation.layout.Row(
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                androidx.compose.material3.Text(
+                    text     = "Save dates",
+                    fontSize = 13.sp,
+                    color    = Green400,
+                    modifier = androidx.compose.ui.Modifier.clickable { onSave() },
+                )
+            }
+        }
+    }
+}
+
+@Suppress("DEPRECATION")
+@androidx.compose.runtime.Composable
+private fun DatePickerRow(
+    label   : String,
+    display : String,
+    context : android.content.Context,
+    current : String?,
+    minDate : String?,
+    maxDate : String?,
+    onPicked: (String?) -> Unit,
+) {
+    val calendar = java.util.Calendar.getInstance()
+    current?.let { s ->
+        runCatching { LocalDate.parse(s) }.getOrNull()?.let {
+            calendar.set(it.year, it.monthValue - 1, it.dayOfMonth)
+        }
+    }
+
+    val dialog = android.app.DatePickerDialog(
+        context,
+        { _, y, m, d ->
+            val picked = LocalDate.of(y, m + 1, d)
+            onPicked(picked.format(DateTimeFormatter.ISO_LOCAL_DATE))
+        },
+        calendar.get(java.util.Calendar.YEAR),
+        calendar.get(java.util.Calendar.MONTH),
+        calendar.get(java.util.Calendar.DAY_OF_MONTH),
+    )
+
+    minDate?.let { s ->
+        runCatching { LocalDate.parse(s) }.getOrNull()?.let {
+            val min = java.util.Calendar.getInstance()
+            min.set(it.year, it.monthValue - 1, it.dayOfMonth)
+            dialog.datePicker.minDate = min.timeInMillis
+        }
+    }
+    maxDate?.let { s ->
+        runCatching { LocalDate.parse(s) }.getOrNull()?.let {
+            val max = java.util.Calendar.getInstance()
+            max.set(it.year, it.monthValue - 1, it.dayOfMonth)
+            dialog.datePicker.maxDate = max.timeInMillis
+        }
+    }
+
+    androidx.compose.foundation.layout.Row(
+        modifier = androidx.compose.ui.Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(Spacing.sm))
+            .background(Surface3)
+            .clickable { dialog.show() }
+            .padding(horizontal = Spacing.md, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.Text(label, fontSize = 14.sp, color = TextSecondary)
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            androidx.compose.material3.Text(display, fontSize = 14.sp, color = TextPrimary)
+            if (current != null) {
+                androidx.compose.material3.Text(
+                    text     = "Clear",
+                    fontSize = 12.sp,
+                    color    = TextTertiary,
+                    modifier = androidx.compose.ui.Modifier.clickable { onPicked(null) },
+                )
+            }
+        }
+    }
+}
+
+private fun formatTripDate(isoDate: String): String = runCatching {
+    val d = LocalDate.parse(isoDate, DateTimeFormatter.ISO_LOCAL_DATE)
+    d.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
+}.getOrDefault(isoDate)
