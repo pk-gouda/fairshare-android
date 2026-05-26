@@ -188,6 +188,7 @@ fun AccountScreen(
                         FsAvatar(
                             name     = profile?.fullName ?: "",
                             userId   = profile?.id ?: "",
+                            imageUrl = profile?.profilePictureUrl,
                             size     = ComponentSize.avatarLg,
                         )
                         Spacer(modifier = Modifier.width(Spacing.md))

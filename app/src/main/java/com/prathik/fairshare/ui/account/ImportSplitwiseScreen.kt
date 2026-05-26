@@ -718,6 +718,7 @@ fun ImportSplitwiseScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             FsAvatar(name = friend.fullName, userId = friend.id,
+                                imageUrl = friend.profilePictureUrl,
                                 size = ComponentSize.avatarMd)
                             Spacer(modifier = Modifier.width(Spacing.md))
                             Text(friend.fullName, fontSize = 15.sp,
@@ -809,6 +810,7 @@ fun ImportSplitwiseScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         FsAvatar(name = friend.fullName, userId = friend.id,
+                            imageUrl = friend.profilePictureUrl,
                             size = ComponentSize.avatarMd)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(friend.fullName, fontSize = 15.sp,
@@ -1030,6 +1032,7 @@ fun ImportSplitwiseScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     FsAvatar(name = member.fullName, userId = member.userId,
+                                        imageUrl = member.profilePictureUrl,
                                         size = ComponentSize.avatarMd)
                                     Spacer(modifier = Modifier.width(Spacing.md))
                                     Column(modifier = Modifier.weight(1f)) {

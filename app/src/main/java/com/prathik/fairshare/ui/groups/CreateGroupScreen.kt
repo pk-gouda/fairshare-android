@@ -23,7 +23,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddCircle
-import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Search
@@ -44,12 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -253,53 +248,6 @@ private fun Step1Content(
             fontSize = 13.sp,
             color = TextSecondary,
             modifier = Modifier.padding(bottom = Spacing.xl),
-        )
-
-        // ── Photo picker ──────────────────────────────────────────────────────
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(90.dp)
-                .align(Alignment.CenterHorizontally)
-                .drawBehind {
-                    drawRoundRect(
-                        color       = TextTertiary.copy(alpha = 0.4f),
-                        style       = Stroke(
-                            width      = 1.5.dp.toPx(),
-                            pathEffect = PathEffect.dashPathEffect(
-                                floatArrayOf(10f, 8f), 0f
-                            ),
-                        ),
-                        cornerRadius = CornerRadius(Radius.xl.toPx()),
-                    )
-                },
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.CameraAlt,
-                contentDescription = "Add photo",
-                tint   = Color(0xFF4A6FE8),
-                modifier = Modifier.size(32.dp),
-            )
-            // + badge
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(22.dp)
-                    .align(Alignment.BottomEnd)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4A6FE8)),
-            ) {
-                Text("+", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Bold)
-            }
-        }
-
-        Text(
-            text     = "Add group photo",
-            fontSize = 12.sp,
-            color    = TextSecondary,
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(top = Spacing.sm, bottom = Spacing.xl),
         )
 
         // ── Group name ────────────────────────────────────────────────────────
@@ -682,6 +630,7 @@ private fun FriendSelectRow(
         FsAvatar(
             name   = friend.fullName,
             userId = friend.id,
+            imageUrl = friend.profilePictureUrl,
             size   = ComponentSize.avatarLg,
         )
         Spacer(modifier = Modifier.width(Spacing.md))

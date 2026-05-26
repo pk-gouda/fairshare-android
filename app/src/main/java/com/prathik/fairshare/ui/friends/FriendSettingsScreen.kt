@@ -451,7 +451,7 @@ fun FriendSettingsScreen(
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FsAvatar(name = friend?.fullName ?: "", userId = friend?.id ?: "", size = 56.dp)
+                FsAvatar(name = friend?.fullName ?: "", userId = friend?.id ?: "", imageUrl = friend?.profilePictureUrl, size = 56.dp)
                 Spacer(modifier = Modifier.width(Spacing.md))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

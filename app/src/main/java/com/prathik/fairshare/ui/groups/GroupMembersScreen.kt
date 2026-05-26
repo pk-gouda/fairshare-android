@@ -157,7 +157,7 @@ private fun MemberRow(member: GroupMember) {
             .padding(horizontal = Spacing.md, vertical = Spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarMd)
+        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarMd)
         Spacer(modifier = Modifier.width(Spacing.md))
         Column(modifier = Modifier.weight(1f)) {
             Text(

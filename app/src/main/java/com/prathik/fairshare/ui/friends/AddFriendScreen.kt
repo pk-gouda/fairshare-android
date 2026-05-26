@@ -295,6 +295,7 @@ fun AddFriendScreen(
                                 FsAvatar(
                                     name = user.fullName,
                                     userId = user.id,
+                                    imageUrl = user.profilePictureUrl,
                                     size = ComponentSize.avatarLg
                                 )
                                 Spacer(modifier = Modifier.width(Spacing.md))

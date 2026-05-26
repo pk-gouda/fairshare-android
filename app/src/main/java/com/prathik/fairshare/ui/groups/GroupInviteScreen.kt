@@ -83,6 +83,7 @@ fun GroupInviteScreen(
 ) {
     val inviteCode  by viewModel.inviteCode.collectAsState()
     val groupName   by viewModel.groupName.collectAsState()
+    val groupImage  by viewModel.groupImage.collectAsState()
     val isLoading   by viewModel.isLoading.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
@@ -169,6 +170,31 @@ fun GroupInviteScreen(
                     }
 
                     Spacer(Modifier.height(Spacing.lg))
+
+                    // Group image — show photo if available, fallback to emoji on error
+                    if (!groupImage.isNullOrBlank()) {
+                        var imageLoadFailed by remember(groupImage) { mutableStateOf(false) }
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                                .background(Surface2),
+                        ) {
+                            if (!imageLoadFailed) {
+                                coil.compose.AsyncImage(
+                                    model              = groupImage,
+                                    contentDescription = groupName,
+                                    contentScale       = androidx.compose.ui.layout.ContentScale.Crop,
+                                    onError            = { imageLoadFailed = true },
+                                    modifier           = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                Text("👥", fontSize = 28.sp)
+                            }
+                        }
+                        Spacer(Modifier.height(Spacing.md))
+                    }
 
                     // Group name
                     groupName?.let { name ->

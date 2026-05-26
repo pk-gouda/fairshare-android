@@ -26,6 +26,9 @@ class EditProfileViewModel @Inject constructor(
     private val _fullName    = MutableStateFlow("")
     val fullName: StateFlow<String> = _fullName.asStateFlow()
 
+    private val _profilePictureUrl = MutableStateFlow<String?>(null)
+    val profilePictureUrl: StateFlow<String?> = _profilePictureUrl.asStateFlow()
+
     private val _phoneNumber = MutableStateFlow("")
     val phoneNumber: StateFlow<String> = _phoneNumber.asStateFlow()
 
@@ -63,6 +66,7 @@ class EditProfileViewModel @Inject constructor(
                     _fullName.value    = result.data.fullName
                     _phoneNumber.value = result.data.phoneNumber ?: ""
                     _email.value       = result.data.email
+                    _profilePictureUrl.value = result.data.profilePictureUrl
                 }
                 else -> Unit
             }

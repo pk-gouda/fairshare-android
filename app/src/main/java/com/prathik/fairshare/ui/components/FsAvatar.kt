@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,14 +55,36 @@ fun FsAvatar(
     }
 
     if (!imageUrl.isNullOrBlank()) {
-        AsyncImage(
-            model              = imageUrl,
-            contentDescription = name,
-            contentScale       = ContentScale.Crop,
-            modifier           = modifier
-                .size(size)
-                .clip(CircleShape),
-        )
+        // Track image load state so we can fall back to initials on error
+        var imageLoadFailed by remember(imageUrl) { mutableStateOf(false) }
+        if (!imageLoadFailed) {
+            AsyncImage(
+                model              = imageUrl,
+                contentDescription = name,
+                contentScale       = ContentScale.Crop,
+                onError            = { imageLoadFailed = true },
+                modifier           = modifier
+                    .size(size)
+                    .clip(CircleShape),
+            )
+        } else {
+            // URL was non-blank but image failed to load — fall back to initials
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = modifier
+                    .size(size)
+                    .clip(CircleShape)
+                    .background(color),
+            ) {
+                Text(
+                    text       = initials,
+                    color      = TextPrimary,
+                    fontSize   = fontSize,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines   = 1,
+                )
+            }
+        }
     } else {
         Box(
             contentAlignment = Alignment.Center,

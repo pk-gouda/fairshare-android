@@ -52,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
@@ -815,17 +816,17 @@ private fun AvatarRow(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(if (isSel) avatarCol else Color(0xFF2A2A2A))
                         .then(
                             if (isSel) Modifier.border(2.dp, Accent, CircleShape) else Modifier
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text       = initials,
-                        fontSize   = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color      = if (isSel) Color.White else TextTertiary,
+                    com.prathik.fairshare.ui.components.FsAvatar(
+                        name     = member.fullName,
+                        userId   = member.userId,
+                        imageUrl = member.profilePictureUrl,
+                        size     = 44.dp,
+                        modifier = Modifier.alpha(if (isSel) 1f else 0.5f),
                     )
                 }
                 Spacer(Modifier.height(4.dp))

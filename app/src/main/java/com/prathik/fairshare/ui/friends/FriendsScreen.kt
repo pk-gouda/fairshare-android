@@ -520,6 +520,7 @@ private fun FriendCard(
             arcColor  = arcColor,
             isSettled = isSettled,
             isPending = isPending,
+            imageUrl  = friend.profilePictureUrl,
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -622,6 +623,7 @@ private fun PendingFriendCard(friend: Friend, balance: Double?, currency: String
             arcColor  = arcColor,
             isSettled = false,
             isPending = isPending || friend.isInvited,
+            imageUrl  = friend.profilePictureUrl,
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -676,6 +678,7 @@ private fun FriendProgressRing(
     arcColor : Color,
     isSettled: Boolean,
     isPending: Boolean,
+    imageUrl : String? = null,
 ) {
     // Avatar background color from userId hash — same treatment for all states
     val avatarBg = if (isSettled) {
@@ -723,29 +726,56 @@ private fun FriendProgressRing(
             }
         }
 
-        // Center avatar
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(36.dp)
-                .align(Alignment.Center)
-                .clip(RoundedCornerShape(8.dp))
-                .background(avatarBg),
-        ) {
-            if (isSettled) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = Surface0,
-                    modifier = Modifier.size(18.dp),
+        // Center avatar — show photo if available, otherwise initials
+        if (!imageUrl.isNullOrBlank()) {
+            var imageLoadFailed by remember(imageUrl) { mutableStateOf(false) }
+            if (!imageLoadFailed) {
+                coil.compose.AsyncImage(
+                    model              = imageUrl,
+                    contentDescription = name,
+                    contentScale       = androidx.compose.ui.layout.ContentScale.Crop,
+                    onError            = { imageLoadFailed = true },
+                    modifier           = Modifier
+                        .size(36.dp)
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(8.dp)),
                 )
             } else {
-                Text(
-                    text       = initial,
-                    fontSize   = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color      = Surface0,
-                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(avatarBg),
+                ) {
+                    Text(initial, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Surface0)
+                }
+            }
+        } else {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(36.dp)
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(avatarBg),
+            ) {
+                if (isSettled) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = null,
+                        tint = Surface0,
+                        modifier = Modifier.size(18.dp),
+                    )
+                } else {
+                    Text(
+                        text       = initial,
+                        fontSize   = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = Surface0,
+                    )
+                }
             }
         }
 

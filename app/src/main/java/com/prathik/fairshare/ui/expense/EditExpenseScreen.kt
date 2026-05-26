@@ -429,7 +429,7 @@ fun EditExpenseScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            FsAvatar(name = member.fullName, userId = member.userId, size = 22.dp)
+                            FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = 22.dp)
                             Text(
                                 text       = name,
                                 fontSize   = 13.sp,
@@ -530,7 +530,7 @@ fun EditExpenseScreen(
                             }
                             Spacer(modifier = Modifier.width(Spacing.md))
                         }
-                        FsAvatar(name = member.fullName, userId = member.userId, size = 32.dp)
+                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = 32.dp)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         when (splitType) {
                             SplitType.EQUAL -> {
@@ -819,7 +819,7 @@ private fun EditPayerBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
+                            FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
                             Spacer(modifier = Modifier.width(Spacing.md))
                             Text(name,
                                 color      = if (selected) Green400 else TextPrimary,
@@ -866,7 +866,7 @@ private fun EditPayerBottomSheet(
                             .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
+                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(name, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                         Text(MoneyUtils.getSymbol(currency), fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(end = 4.dp))
@@ -1026,7 +1026,7 @@ private fun EditSplitBottomSheet(
                         if (isIncluded) Text("✓", fontSize = 12.sp, color = Surface0, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.width(Spacing.sm))
-                    FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
+                    FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
                     Spacer(modifier = Modifier.width(Spacing.sm))
                     Text(name, fontSize = 14.sp, color = if (isIncluded) TextPrimary else TextSecondary,
                         modifier = Modifier.weight(1f))

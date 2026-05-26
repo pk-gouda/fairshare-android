@@ -26,6 +26,9 @@ class GroupInviteViewModel @Inject constructor(
     private val _groupName    = MutableStateFlow<String?>(null)
     val groupName: StateFlow<String?> = _groupName.asStateFlow()
 
+    private val _groupImage   = MutableStateFlow<String?>(null)
+    val groupImage: StateFlow<String?> = _groupImage.asStateFlow()
+
     private val _isLoading    = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -41,6 +44,7 @@ class GroupInviteViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     _inviteCode.value = result.data.inviteCode
                     _groupName.value  = result.data.name
+                    _groupImage.value = result.data.groupImage
                 }
                 else -> _actionState.value = GroupInviteActionState.Error("Failed to load invite code")
             }

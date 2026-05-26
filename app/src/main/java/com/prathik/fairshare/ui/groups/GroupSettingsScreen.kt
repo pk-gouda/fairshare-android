@@ -464,7 +464,7 @@ fun GroupSettingsScreen(
                                 .padding(horizontal = Spacing.lg, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            FsAvatar(name = friend.fullName, userId = friend.id, size = ComponentSize.avatarMd)
+                            FsAvatar(name = friend.fullName, userId = friend.id, imageUrl = friend.profilePictureUrl, size = ComponentSize.avatarMd)
                             Spacer(modifier = Modifier.width(Spacing.md))
                             Text(friend.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.weight(1f))
                         }
@@ -543,7 +543,7 @@ fun GroupSettingsScreen(
                         verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                     ) {
-                        // Emoji tile — tappable for any member (change photo)
+                        // Emoji tile — shows groupImage if set, otherwise group type emoji
                         Box(modifier = Modifier.size(56.dp)) {
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -554,7 +554,22 @@ fun GroupSettingsScreen(
                                     .border(1.dp, Surface4, RoundedCornerShape(16.dp))
                                     .then(if (isMember) Modifier.clickable { showNameDialog = true } else Modifier),
                             ) {
-                                Text(coverEmoji(g.type), fontSize = 26.sp)
+                                if (!g.groupImage.isNullOrBlank()) {
+                                    var imageLoadFailed by remember(g.groupImage) { mutableStateOf(false) }
+                                    if (!imageLoadFailed) {
+                                        coil.compose.AsyncImage(
+                                            model              = g.groupImage,
+                                            contentDescription = g.name,
+                                            contentScale       = androidx.compose.ui.layout.ContentScale.Crop,
+                                            onError            = { imageLoadFailed = true },
+                                            modifier           = Modifier.fillMaxSize(),
+                                        )
+                                    } else {
+                                        Text(coverEmoji(g.type), fontSize = 26.sp)
+                                    }
+                                } else {
+                                    Text(coverEmoji(g.type), fontSize = 26.sp)
+                                }
                             }
                             if (isMember) {
                                 Box(

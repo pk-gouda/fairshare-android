@@ -73,6 +73,7 @@ fun EditProfileScreen(
     val currentPassword  by viewModel.currentPassword.collectAsState()
     val isLoading        by viewModel.isLoading.collectAsState()
     val actionState      by viewModel.actionState.collectAsState()
+    val profilePictureUrl by viewModel.profilePictureUrl.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
 
     LaunchedEffect(actionState) {
@@ -99,15 +100,16 @@ fun EditProfileScreen(
 
             // ── Avatar ────────────────────────────────────────────────────────
             FsAvatar(
-                name   = fullName,
-                userId = email,
-                size   = 72.dp,
+                name     = fullName,
+                userId   = email,
+                imageUrl = profilePictureUrl,
+                size     = 72.dp,
             )
             Spacer(modifier = Modifier.height(Spacing.sm))
             Text(
-                text     = "Change photo",
+                text     = "Change photo · coming soon",
                 fontSize = 12.sp,
-                color    = Green400,
+                color    = com.prathik.fairshare.ui.theme.TextTertiary,
             )
 
             Spacer(modifier = Modifier.height(Spacing.xl))

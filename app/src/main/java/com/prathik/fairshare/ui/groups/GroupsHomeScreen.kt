@@ -494,12 +494,13 @@ private fun GroupCard(
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Ring + emoji
+        // Ring + emoji/photo
         GroupProgressRing(
-            emoji     = groupTypeEmoji(group.type),
-            fraction  = fraction,
-            arcColor  = arcColor,
-            isSettled = isSettled,
+            emoji      = groupTypeEmoji(group.type),
+            fraction   = fraction,
+            arcColor   = arcColor,
+            isSettled  = isSettled,
+            groupImage = group.groupImage,
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -606,6 +607,7 @@ private fun GroupProgressRing(
     fraction : Float,     // 0..1; 0 = no arc drawn (no expenses)
     arcColor : Color,     // ring color (green/red/gold)
     isSettled: Boolean,   // true → full gold ring, no % badge
+    groupImage: String? = null,   // custom group photo URL — shown in ring center when set
 ) {
     Box(modifier = Modifier.size(52.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -642,7 +644,7 @@ private fun GroupProgressRing(
             }
         }
 
-        // Center emoji tile
+        // Center tile — group photo if available, otherwise type emoji
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -651,7 +653,22 @@ private fun GroupProgressRing(
                 .clip(RoundedCornerShape(8.dp))
                 .background(Surface3),
         ) {
-            Text(emoji, fontSize = 18.sp)
+            if (!groupImage.isNullOrBlank()) {
+                var imageLoadFailed by remember(groupImage) { mutableStateOf(false) }
+                if (!imageLoadFailed) {
+                    coil.compose.AsyncImage(
+                        model              = groupImage,
+                        contentDescription = null,
+                        contentScale       = androidx.compose.ui.layout.ContentScale.Crop,
+                        onError            = { imageLoadFailed = true },
+                        modifier           = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Text(emoji, fontSize = 18.sp)
+                }
+            } else {
+                Text(emoji, fontSize = 18.sp)
+            }
         }
 
         // % badge (bottom-right, only when there's an active balance)

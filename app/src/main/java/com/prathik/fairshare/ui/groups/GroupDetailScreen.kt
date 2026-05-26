@@ -662,7 +662,7 @@ fun GroupDetailScreen(
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarMd)
+                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarMd)
                         Spacer(Modifier.width(Spacing.md))
                         Text(member.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.weight(1f))
                     }
@@ -691,7 +691,7 @@ fun GroupDetailScreen(
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarMd,
+                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarMd,
                             modifier = Modifier.alpha(if (isPayer) 0.35f else 1f))
                         Spacer(Modifier.width(Spacing.md))
                         Column(Modifier.weight(1f)) {
