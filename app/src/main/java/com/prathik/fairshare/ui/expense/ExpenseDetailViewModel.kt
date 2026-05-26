@@ -17,6 +17,7 @@ import com.prathik.fairshare.data.sync.SyncWorker
 import com.prathik.fairshare.domain.model.ApiResult
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseChangeLog
+import com.prathik.fairshare.domain.model.ExpenseComment
 import com.prathik.fairshare.domain.model.ExpenseItem
 import com.prathik.fairshare.domain.usecase.expense.DeleteExpenseUseCase
 import com.prathik.fairshare.domain.usecase.expense.GetExpenseUseCase
@@ -77,6 +78,23 @@ class ExpenseDetailViewModel @Inject constructor(
     private val _changeLogLoading = MutableStateFlow(false)
     val changeLogLoading: StateFlow<Boolean> = _changeLogLoading.asStateFlow()
 
+    // ── Comments ──────────────────────────────────────────────────────────────
+
+    private val _comments = MutableStateFlow<List<ExpenseComment>>(emptyList())
+    val comments: StateFlow<List<ExpenseComment>> = _comments.asStateFlow()
+
+    private val _commentsLoading = MutableStateFlow(false)
+    val commentsLoading: StateFlow<Boolean> = _commentsLoading.asStateFlow()
+
+    private val _commentsError = MutableStateFlow(false)
+    val commentsError: StateFlow<Boolean> = _commentsError.asStateFlow()
+
+    private val _commentText = MutableStateFlow("")
+    val commentText: StateFlow<String> = _commentText.asStateFlow()
+
+    private val _commentPosting = MutableStateFlow(false)
+    val commentPosting: StateFlow<Boolean> = _commentPosting.asStateFlow()
+
     /**
      * Wave 2D-4: live pending operation for this expense.
      * Null when no active (non-SYNCED/CANCELLED) operation exists.
@@ -120,7 +138,7 @@ class ExpenseDetailViewModel @Inject constructor(
         }
     }
 
-    init { loadExpense() }
+    init { loadExpense(); loadComments() }
 
     private var hasLoadedOnce = false
 
@@ -171,6 +189,7 @@ class ExpenseDetailViewModel @Inject constructor(
         // and state is Loading — the init load will handle it).
         if (!hasLoadedOnce && _expenseState.value is ExpenseDetailUiState.Loading) return
         loadExpense(silent = true)
+        loadComments()
     }
 
     fun loadItems() {
@@ -363,6 +382,54 @@ class ExpenseDetailViewModel @Inject constructor(
     }
 
     fun resetActionState() { _actionState.value = ExpenseActionState.Idle }
+
+    // ── Comment methods ───────────────────────────────────────────────────────
+
+    fun loadComments() {
+        viewModelScope.launch {
+            _commentsLoading.value = true
+            _commentsError.value   = false
+            when (val result = expenseRepository.getExpenseComments(expenseId)) {
+                is ApiResult.Success    -> {
+                    _comments.value      = result.data.sortedBy { it.createdAt }
+                    _commentsError.value = false
+                }
+                else                    -> _commentsError.value = true
+            }
+            _commentsLoading.value = false
+        }
+    }
+
+    fun onCommentTextChanged(text: String) {
+        _commentText.value = text
+    }
+
+    fun postComment() {
+        val text = _commentText.value.trim()
+        if (text.isBlank() || _commentPosting.value) return
+        viewModelScope.launch {
+            _commentPosting.value = true
+            when (val result = expenseRepository.addExpenseComment(expenseId, text)) {
+                is ApiResult.Success -> {
+                    _comments.value    = (_comments.value + result.data).sortedBy { it.createdAt }
+                    _commentText.value = ""
+                }
+                else -> { /* keep text, let user retry */ }
+            }
+            _commentPosting.value = false
+        }
+    }
+
+    fun deleteComment(commentId: String) {
+        viewModelScope.launch {
+            when (expenseRepository.deleteExpenseComment(commentId)) {
+                is ApiResult.Success -> {
+                    _comments.value = _comments.value.filter { it.id != commentId }
+                }
+                else -> { /* non-blocking: leave comment visible */ }
+            }
+        }
+    }
 }
 
 sealed class ExpenseDetailUiState {

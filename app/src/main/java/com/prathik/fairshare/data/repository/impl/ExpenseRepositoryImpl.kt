@@ -667,6 +667,28 @@ class ExpenseRepositoryImpl @Inject constructor(
         expenseDao.updateLocalDeletedStatus(expenseId, isDeleted)
     }
 
+    // ── Comments ──────────────────────────────────────────────────────────────
+
+    override suspend fun getExpenseComments(expenseId: String): ApiResult<List<ExpenseComment>> =
+        safeApiCall { expenseService.getComments(expenseId) }
+            .mapSuccess { list -> list.map { it.toDomain() } }
+
+    override suspend fun addExpenseComment(expenseId: String, comment: String): ApiResult<ExpenseComment> =
+        safeApiCall { expenseService.addComment(expenseId, AddCommentRequest(comment)) }
+            .mapSuccess { it.toDomain() }
+
+    override suspend fun deleteExpenseComment(commentId: String): ApiResult<Unit> =
+        safeApiCall { expenseService.deleteComment(commentId) }
+
+    private fun com.prathik.fairshare.data.model.response.ExpenseCommentResponse.toDomain() =
+        com.prathik.fairshare.domain.model.ExpenseComment(
+            id           = id,
+            userId       = userId,
+            userFullName = userFullName,
+            comment      = comment,
+            createdAt    = createdAt,
+        )
+
     // ── Payer / split entity helpers ──────────────────────────────────────────
 
     private fun com.prathik.fairshare.data.model.response.ExpenseResponse.PayerDetail.toPayerEntity(

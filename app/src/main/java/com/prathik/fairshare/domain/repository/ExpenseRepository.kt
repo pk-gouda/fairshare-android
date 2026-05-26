@@ -1,6 +1,7 @@
 package com.prathik.fairshare.domain.repository
 
 import com.prathik.fairshare.domain.model.ApiResult
+import com.prathik.fairshare.domain.model.ExpenseComment
 import com.prathik.fairshare.domain.model.Expense
 import com.prathik.fairshare.domain.model.ExpenseCategory
 import com.prathik.fairshare.domain.model.SplitType
@@ -210,6 +211,17 @@ interface ExpenseRepository {
      * server-confirmed expense ([toId]).
      */
     suspend fun propagateOtherUserId(fromId: String, toId: String)
+
+    // ── Comments ──────────────────────────────────────────────────────────────
+
+    /** Fetch all comments for an expense from the network. */
+    suspend fun getExpenseComments(expenseId: String): ApiResult<List<ExpenseComment>>
+
+    /** Post a new comment on an expense. */
+    suspend fun addExpenseComment(expenseId: String, comment: String): ApiResult<ExpenseComment>
+
+    /** Delete a comment by ID. */
+    suspend fun deleteExpenseComment(commentId: String): ApiResult<Unit>
 }
 
 /** Lightweight snapshot of cached expense context for SyncWorker refresh. */
