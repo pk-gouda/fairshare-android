@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -58,7 +59,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsSkeletonBlock
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -130,7 +131,7 @@ fun GroupInviteScreen(
     ) { innerPadding ->
 
         when {
-            isLoading       -> FsLoadingScreen()
+            isLoading       -> GroupInviteSkeleton(Modifier.padding(innerPadding))
             inviteCode == null -> FsErrorScreen(
                 message = "Could not load invite link",
                 onRetry = { viewModel.retryLoad() },
@@ -300,4 +301,26 @@ private fun generateGroupQrBitmap(content: String, size: Int): Bitmap? {
         }
         bmp
     } catch (e: Exception) { null }
+}
+// ── GroupInvite skeleton placeholder ─────────────────────────────────────────
+
+@Composable
+private fun GroupInviteSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        // Group name placeholder
+        FsSkeletonBlock(height = 18.dp, widthFraction = 0.5f, cornerRadius = 6.dp)
+        // QR code square placeholder
+        FsSkeletonBlock(height = 220.dp, widthFraction = 0.7f, cornerRadius = 12.dp)
+        // Invite link placeholder
+        FsSkeletonBlock(height = 14.dp, widthFraction = 0.8f, cornerRadius = 4.dp)
+        // Action button placeholders
+        FsSkeletonBlock(height = 44.dp, widthFraction = 1f, cornerRadius = 8.dp)
+        FsSkeletonBlock(height = 44.dp, widthFraction = 1f, cornerRadius = 8.dp)
+    }
 }

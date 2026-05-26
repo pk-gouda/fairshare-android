@@ -27,7 +27,7 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.CircularProgressIndicator
+import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -501,13 +501,16 @@ private fun Step2Content(
             }
 
             if (friendsLoading) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier         = Modifier
+                // Skeleton rows while suggested friends load — no inline spinner
+                Column(
+                    modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = Spacing.xl),
+                        .padding(vertical = Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    CircularProgressIndicator(color = Green400, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    repeat(3) {
+                        FsSkeletonTimelineRow()
+                    }
                 }
             } else {
                 // Friend rows
