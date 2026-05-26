@@ -3,7 +3,7 @@ package com.prathik.fairshare.ui.navigation
 import android.net.Uri
 
 /**
- * Defines all 39 navigation routes in one place.
+ * Defines app navigation routes in one place.
  *
  * Every screen is a sealed object — no hardcoded route strings anywhere else.
  * Screens with arguments define a route() function for type-safe navigation.
@@ -49,17 +49,11 @@ sealed class Screen(val route: String) {
         fun route(groupId: String) = "group/$groupId/add_member"
     }
 
-    object WhoOwesWho : Screen("group/{groupId}/who_owes_who") {
-        fun route(groupId: String) = "group/$groupId/who_owes_who"
-    }
 
     object GroupBalances : Screen("group/{groupId}/balances") {
         fun route(groupId: String) = "group/$groupId/balances"
     }
 
-    object TotalsSheet : Screen("group/{groupId}/totals") {
-        fun route(groupId: String) = "group/$groupId/totals"
-    }
 
     object GroupInvite : Screen("group/{groupId}/invite") {
         fun route(groupId: String) = "group/$groupId/invite"
@@ -92,9 +86,6 @@ sealed class Screen(val route: String) {
         fun route(expenseId: String) = "expense/$expenseId"
     }
 
-    object ReceiptScan : Screen("receipt_scan/{expenseId}") {
-        fun route(expenseId: String) = "receipt_scan/$expenseId"
-    }
 
     object ItemAssignment : Screen("item_assignment/{receiptId}") {
         fun route(receiptId: String) = "item_assignment/$receiptId"
@@ -115,15 +106,7 @@ sealed class Screen(val route: String) {
                     "&payerName=${Uri.encode(payerName ?: "")}&currency=${Uri.encode(currency ?: "")}"
     }
 
-    object PartialSettle : Screen("settle/{otherUserId}/partial?groupId={groupId}") {
-        fun route(otherUserId: String, groupId: String? = null) =
-            if (groupId != null) "settle/$otherUserId/partial?groupId=$groupId"
-            else "settle/$otherUserId/partial"
-    }
 
-    object SettlementHistory : Screen("settle/{otherUserId}/history") {
-        fun route(otherUserId: String) = "settle/$otherUserId/history"
-    }
 
     object SettlementDetail : Screen("settlement/{settlementId}") {
         fun route(settlementId: String) = "settlement/$settlementId"

@@ -77,7 +77,6 @@ import com.prathik.fairshare.ui.groups.CreateGroupScreen
 import com.prathik.fairshare.ui.groups.JoinGroupScreen
 import com.prathik.fairshare.ui.groups.AddMemberScreen
 import com.prathik.fairshare.ui.search.GlobalSearchScreen
-import com.prathik.fairshare.ui.navigation.PlaceholderScreen
 import com.prathik.fairshare.ui.groups.GroupMembersScreen
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.ui.groups.RemindersScreen
@@ -734,11 +733,6 @@ fun MainShell(
             }
 
             composable(
-                route = Screen.WhoOwesWho.route,
-                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Who Owes Who") }
-
-            composable(
                 route = Screen.GroupBalances.route,
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType }),
             ) { backStackEntry ->
@@ -757,11 +751,6 @@ fun MainShell(
             ) {
                 GroupInviteScreen(onBack = { shellNavController.popBackStack() })
             }
-
-            composable(
-                route = Screen.TotalsSheet.route,
-                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Totals Sheet") }
 
             composable(
                 route = Screen.GroupAnalytics.route,
@@ -980,11 +969,6 @@ fun MainShell(
                     onDeleted = { shellNavController.popBackStack() },
                 )
             }
-
-            composable(
-                route = Screen.ReceiptScan.route,
-                arguments = listOf(navArgument("expenseId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Receipt Scan") }
 
             composable(
                 route = Screen.ItemAssignment.route,
@@ -1239,23 +1223,6 @@ fun MainShell(
                     onSuccess = { shellNavController.popBackStack() },
                 )
             }
-
-            composable(
-                route = Screen.PartialSettle.route,
-                arguments = listOf(
-                    navArgument("otherUserId") { type = NavType.StringType },
-                    navArgument("groupId") {
-                        type = NavType.StringType
-                        nullable = true
-                        defaultValue = null
-                    }
-                )
-            ) { PlaceholderScreen("Partial Settle") }
-
-            composable(
-                route = Screen.SettlementHistory.route,
-                arguments = listOf(navArgument("otherUserId") { type = NavType.StringType })
-            ) { PlaceholderScreen("Settlement History") }
 
             composable(
                 route = Screen.SettlementDetail.route,
