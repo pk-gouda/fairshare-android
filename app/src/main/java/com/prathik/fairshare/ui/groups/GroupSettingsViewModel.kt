@@ -77,6 +77,11 @@ class GroupSettingsViewModel @Inject constructor(
     private val _editName = MutableStateFlow("")
     val editName: StateFlow<String> = _editName.asStateFlow()
 
+    private val _editDescription = MutableStateFlow<String>("")
+    val editDescription: StateFlow<String> = _editDescription.asStateFlow()
+
+    private val _descriptionDirty = MutableStateFlow(false)
+
     private val _simplifyDebts = MutableStateFlow(false)
     val simplifyDebts: StateFlow<Boolean> = _simplifyDebts.asStateFlow()
 
@@ -124,6 +129,7 @@ class GroupSettingsViewModel @Inject constructor(
             groupRepository.getCachedGroup(groupId)?.let { cachedGroup ->
                 _group.value = cachedGroup
                 _editName.value = cachedGroup.name
+                _editDescription.value = cachedGroup.groupNotes ?: ""
                 _simplifyDebts.value = cachedGroup.simplifyDebts
                 _defaultCurrency.value = cachedGroup.defaultCurrency
             }
@@ -143,8 +149,12 @@ class GroupSettingsViewModel @Inject constructor(
             // that may have started while network was in-flight.
             if (!hadCachedGroup) {
                 _editName.value = groupResult.data.name
+                _editDescription.value = groupResult.data.groupNotes ?: ""
                 _simplifyDebts.value = groupResult.data.simplifyDebts
                 _defaultCurrency.value = groupResult.data.defaultCurrency
+            } else if (!_descriptionDirty.value) {
+                // Not actively editing notes — safe to sync to latest server value
+                _editDescription.value = groupResult.data.groupNotes ?: ""
             }
         } else if (!hadCachedGroup) {
             _groupLoadFailed.value = true
@@ -160,6 +170,10 @@ class GroupSettingsViewModel @Inject constructor(
     }
 
     fun onNameChanged(value: String) { _editName.value = value }
+    fun onDescriptionChanged(value: String) {
+        _editDescription.value = value
+        _descriptionDirty.value = true
+    }
     fun onSimplifyDebtsToggled()     { _simplifyDebts.value = !_simplifyDebts.value }
 
     fun saveDefaultCurrency(currency: String) {
@@ -169,13 +183,36 @@ class GroupSettingsViewModel @Inject constructor(
             updateGroupUseCase(
                 groupId         = groupId,
                 name            = null,
-                description     = null,
+                description     = _editDescription.value.trim().ifBlank { null },
                 simplifyDebts   = null,
                 defaultCurrency = currency,
             )
         }
     }
     fun onMuteNotificationsToggled() { _muteNotifications.value = !_muteNotifications.value }
+
+    fun saveDescription() {
+        val desc = _editDescription.value.trim()
+        // Only save if changed from current group notes
+        if (desc == (_group.value?.groupNotes ?: "").trim()) return
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (val result = updateGroupUseCase(
+                groupId       = groupId,
+                name          = null,
+                description   = desc.ifBlank { null },
+                simplifyDebts = null,
+            )) {
+                is ApiResult.Success -> {
+                    _group.value = result.data
+                    _editDescription.value = result.data.groupNotes ?: desc
+                    _descriptionDirty.value = false
+                    _actionState.value = GroupSettingsActionState.Success("Group notes updated")
+                }
+                else -> _actionState.value = GroupSettingsActionState.Error("Failed to update notes")
+            }
+        }
+    }
 
     fun saveGroupName() {
         val name = _editName.value.trim()
@@ -185,7 +222,7 @@ class GroupSettingsViewModel @Inject constructor(
             when (val result = updateGroupUseCase(
                 groupId       = groupId,
                 name          = name,
-                description   = null,
+                description   = _editDescription.value.trim().ifBlank { null },
                 simplifyDebts = null,
             )) {
                 is ApiResult.Success -> {
@@ -204,7 +241,7 @@ class GroupSettingsViewModel @Inject constructor(
             val result = updateGroupUseCase(
                 groupId       = groupId,
                 name          = null,
-                description   = null,
+                description   = _editDescription.value.trim().ifBlank { null },
                 simplifyDebts = value,
             )
             when (result) {

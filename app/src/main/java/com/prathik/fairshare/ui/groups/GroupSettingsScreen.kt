@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -118,6 +119,7 @@ fun GroupSettingsScreen(
     val claimState       by viewModel.claimState.collectAsState()
     val yourGroupBalances by viewModel.yourGroupBalances.collectAsState()
     val editName         by viewModel.editName.collectAsState()
+    val editDescription  by viewModel.editDescription.collectAsState()
     val simplifyDebts    by viewModel.simplifyDebts.collectAsState()
     val muteNotifications by viewModel.muteNotifications.collectAsState()
 
@@ -698,6 +700,47 @@ fun GroupSettingsScreen(
                         .background(Surface2)
                         .border(1.dp, Surface4, RoundedCornerShape(Radius.xl)),
                 ) {
+                    // ── Group notes ───────────────────────────────────────────
+                    if (isMember) {
+                        OutlinedTextField(
+                            value         = editDescription,
+                            onValueChange = { if (it.length <= 100) viewModel.onDescriptionChanged(it) },
+                            placeholder   = { Text("Group notes (optional)…", fontSize = 14.sp, color = TextTertiary) },
+                            label         = { Text("Group notes", fontSize = 12.sp) },
+                            maxLines      = 4,
+                            modifier      = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                            colors        = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor    = Green400,
+                                unfocusedBorderColor  = Surface4,
+                                focusedLabelColor     = Green400,
+                                unfocusedLabelColor   = TextTertiary,
+                                focusedTextColor      = TextPrimary,
+                                unfocusedTextColor    = TextPrimary,
+                                focusedContainerColor = Surface2,
+                                unfocusedContainerColor = Surface2,
+                            ),
+                        )
+                        val descChanged = editDescription.trim() != (group?.groupNotes ?: "").trim()
+                        if (descChanged) {
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = Spacing.md, bottom = Spacing.sm),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                Text(
+                                    text     = "Save notes",
+                                    fontSize = 13.sp,
+                                    color    = Green400,
+                                    modifier = Modifier.clickable { viewModel.saveDescription() },
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = Surface4, thickness = 0.5.dp)
+                    }
+
                     // ── Simplify debts toggle ─────────────────────────────────
                     Row(
                         modifier = Modifier

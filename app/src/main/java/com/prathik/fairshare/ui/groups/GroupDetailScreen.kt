@@ -900,6 +900,19 @@ private fun GroupCoverHeader(
                     )
                 }
             }
+
+            // Group notes — shown only if present, no card if blank
+            if (!group.groupNotes.isNullOrBlank()) {
+                Spacer(Modifier.height(Spacing.sm))
+                Text(
+                    text     = group.groupNotes,
+                    fontSize = 13.sp,
+                    color    = Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.sm),
+                )
+            }
         }
     }
 }
