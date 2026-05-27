@@ -1,7 +1,6 @@
 package com.prathik.fairshare.ui.shell
 import com.prathik.fairshare.ui.components.FsErrorDialog
 import com.prathik.fairshare.ui.components.FsErrorDialogState
-import com.prathik.fairshare.ui.components.apiErrorDialogState
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -62,6 +61,7 @@ import com.prathik.fairshare.ui.expense.SaveState
 import com.prathik.fairshare.ui.expense.ReviewSubmitScreen
 import com.prathik.fairshare.ui.groups.GroupBalancesScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
+import com.prathik.fairshare.ui.groups.CustomizeGroupScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsViewModel
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
@@ -703,6 +703,9 @@ fun MainShell(
                 GroupSettingsScreen(
                     onBack = { shellNavController.popBackStack() },
                     defaultCurrency = defaultCurrency,
+                    onNavigateToCustomize = { groupId: String ->
+                        shellNavController.navigate(Screen.CustomizeGroup.route(groupId))
+                    },
                     onNavigateToAddMember = { gId ->
                         shellNavController.navigate(Screen.AddMember.route(gId))
                     },
@@ -727,6 +730,21 @@ fun MainShell(
                     onNavigateToCurrency = { _ ->
                         shellNavController.navigate(Screen.CurrencySelect.route)
                     },
+                    viewModel = groupSettingsVm,
+                )
+            }
+
+            composable(
+                route = Screen.CustomizeGroup.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val parentEntry = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.GroupSettings.route)
+                }
+                val customizeVm = hiltViewModel<GroupSettingsViewModel>(parentEntry)
+                CustomizeGroupScreen(
+                    onBack    = { shellNavController.popBackStack() },
+                    viewModel = customizeVm,
                 )
             }
 

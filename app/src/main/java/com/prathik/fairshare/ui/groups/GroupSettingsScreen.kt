@@ -89,7 +89,7 @@ import com.prathik.fairshare.ui.theme.TextTertiary
 
 /**
  * Group Settings Screen — two states:
- *  • Admin  — edit pencil in top bar, Add member button, Archive + Leave + Delete in danger zone
+ *  • Admin  — Add member button, Archive + Leave + Delete in danger zone (edit via CustomizeGroup)
  *  • Member — no edit pencil, no Add button, only Leave in danger zone
  *
  * Both states show: group header, balance card, members list, danger zone.
@@ -97,9 +97,10 @@ import com.prathik.fairshare.ui.theme.TextTertiary
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupSettingsScreen(
-    onBack               : () -> Unit,
-    onNavigateToAddMember: (String) -> Unit,
-    onGroupDeleted       : () -> Unit,
+    onBack                : () -> Unit,
+    onNavigateToAddMember : (String) -> Unit,
+    onGroupDeleted        : () -> Unit,
+    onNavigateToCustomize : (String) -> Unit = {},
     onNavigateToSettleUp : (groupId: String) -> Unit = {},
     onNavigateToMembers  : (String) -> Unit = {},
     onNavigateToAnalytics: (String) -> Unit = {},
@@ -128,7 +129,6 @@ fun GroupSettingsScreen(
     var showDeleteDialog   by remember { mutableStateOf(false) }
     var deleteConfirmText  by remember { mutableStateOf("") }
     var showRemoveDialog  by remember { mutableStateOf<GroupMember?>(null) }
-    var showNameDialog    by remember { mutableStateOf(false) }
     var showLeaveDialog   by remember { mutableStateOf(false) }
     var showArchiveDialog   by remember { mutableStateOf(false) }
     var showUnarchiveDialog by remember { mutableStateOf(false) }
@@ -389,34 +389,6 @@ fun GroupSettingsScreen(
     }
 
     // ── Edit group name dialog ────────────────────────────────────────────────
-    if (showNameDialog) {
-        AlertDialog(
-            onDismissRequest = { showNameDialog = false },
-            containerColor   = Surface2,
-            title = { Text("Edit group name", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-            text  = {
-                com.prathik.fairshare.ui.components.FsTextField(
-                    value         = editName,
-                    onValueChange = { viewModel.onNameChanged(it) },
-                    label         = "Group name",
-                    modifier      = androidx.compose.ui.Modifier.fillMaxWidth(),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (editName.isNotBlank()) {
-                        showNameDialog = false
-                        viewModel.saveGroupName()
-                    }
-                }) {
-                    Text("Save", color = Green400, fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNameDialog = false }) { Text("Cancel", color = TextSecondary) }
-            },
-        )
-    }
 
     // ── Assign sheet ──────────────────────────────────────────────────────────
     showAssignSheet?.let { member ->
@@ -513,13 +485,6 @@ fun GroupSettingsScreen(
             com.prathik.fairshare.ui.components.FsTopBar(
                 title  = "Group Settings",
                 onBack = onBack,
-                actions = if (isCreator) {
-                    {
-                        androidx.compose.material3.IconButton(onClick = { showNameDialog = true }) {
-                            Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = TextSecondary)
-                        }
-                    }
-                } else null,
             )
         },
     ) { innerPadding ->
@@ -540,10 +505,14 @@ fun GroupSettingsScreen(
             group?.let { g ->
                 Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
                     Row(
-                        verticalAlignment = Alignment.Top,
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (isMember) Modifier.clickable { onNavigateToCustomize(g.id) } else Modifier)
+                            .padding(Spacing.sm),
                     ) {
-                        // Emoji tile — tappable for any member (change photo)
+                        // Emoji tile — tapping whole row navigates to CustomizeGroup
                         Box(modifier = Modifier.size(56.dp)) {
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -552,7 +521,6 @@ fun GroupSettingsScreen(
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(Surface2)
                                     .border(1.dp, Surface4, RoundedCornerShape(16.dp))
-                                    .then(if (isMember) Modifier.clickable { showNameDialog = true } else Modifier),
                             ) {
                                 Text(coverEmoji(g.type), fontSize = 26.sp)
                             }
@@ -598,6 +566,15 @@ fun GroupSettingsScreen(
                                 Text("·", fontSize = 12.sp, color = TextTertiary)
                                 Text(g.createdAt.toShortDate(), fontSize = 12.sp, color = TextTertiary)
                             }
+                        }
+                        // Trailing chevron for members
+                        if (isMember) {
+                            Icon(
+                                imageVector        = Icons.Default.ChevronRight,
+                                contentDescription = "Customize group",
+                                tint               = TextTertiary,
+                                modifier           = Modifier.size(20.dp),
+                            )
                         }
                     }
 
