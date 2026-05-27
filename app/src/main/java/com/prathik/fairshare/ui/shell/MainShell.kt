@@ -61,6 +61,7 @@ import com.prathik.fairshare.ui.groups.GroupBalancesScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsViewModel
+import com.prathik.fairshare.ui.groups.CustomizeGroupScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.friends.FriendsScreen
 import com.prathik.fairshare.ui.friends.AddFriendScreen
@@ -689,6 +690,9 @@ fun MainShell(
                 GroupSettingsScreen(
                     onBack = { shellNavController.popBackStack() },
                     defaultCurrency = defaultCurrency,
+                    onNavigateToCustomize = { gId ->
+                        shellNavController.navigate(Screen.CustomizeGroup.route(gId))
+                    },
                     onNavigateToAddMember = { gId ->
                         shellNavController.navigate(Screen.AddMember.route(gId))
                     },
@@ -713,6 +717,22 @@ fun MainShell(
                     onNavigateToCurrency = { _ ->
                         shellNavController.navigate(Screen.CurrencySelect.route)
                     },
+                )
+            }
+
+            composable(
+                route = Screen.CustomizeGroup.route,
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val gId = backStackEntry.arguments?.getString("groupId") ?: return@composable
+                // Reuse the GroupSettingsViewModel scoped to GroupSettings backstack entry
+                val parentEntry = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.GroupSettings.route)
+                }
+                val customizeVm = hiltViewModel<GroupSettingsViewModel>(parentEntry)
+                CustomizeGroupScreen(
+                    onBack    = { shellNavController.popBackStack() },
+                    viewModel = customizeVm,
                 )
             }
 

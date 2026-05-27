@@ -34,7 +34,11 @@ class CreateGroupViewModel @Inject constructor(
     private val _description = MutableStateFlow("")
     val description: StateFlow<String> = _description.asStateFlow()
 
-    private val _tripStartDate = MutableStateFlow<String?>(null)
+    private fun todayIso(): String =
+        java.time.LocalDate.now()
+            .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+
+    private val _tripStartDate = MutableStateFlow<String?>(todayIso())
     val tripStartDate: StateFlow<String?> = _tripStartDate.asStateFlow()
 
     private val _tripEndDate = MutableStateFlow<String?>(null)
@@ -97,10 +101,7 @@ class CreateGroupViewModel @Inject constructor(
         _selectedType.value = type
         if (type == GroupType.TRIP) {
             _addTripDates.value = true
-            if (_tripStartDate.value == null) {
-                _tripStartDate.value = java.time.LocalDate.now()
-                    .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
-            }
+            if (_tripStartDate.value == null) _tripStartDate.value = todayIso()
         } else {
             _addTripDates.value = false
             _tripStartDate.value = null
@@ -110,13 +111,8 @@ class CreateGroupViewModel @Inject constructor(
 
     fun onAddTripDatesChanged(enabled: Boolean) {
         _addTripDates.value = enabled
-        if (enabled && _tripStartDate.value == null) {
-            _tripStartDate.value = java.time.LocalDate.now()
-                .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
-        } else if (!enabled) {
-            _tripStartDate.value = null
-            _tripEndDate.value = null
-        }
+        if (enabled && _tripStartDate.value == null) _tripStartDate.value = todayIso()
+        else if (!enabled) { _tripStartDate.value = null; _tripEndDate.value = null }
     }
 
     fun dismissTripDateDialog() { _showTripDateDialog.value = false }

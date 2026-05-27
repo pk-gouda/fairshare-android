@@ -137,7 +137,7 @@ class GroupSettingsViewModel @Inject constructor(
             groupRepository.getCachedGroup(groupId)?.let { cachedGroup ->
                 _group.value = cachedGroup
                 _editName.value = cachedGroup.name
-                _editDescription.value = cachedGroup.groupNotes ?: ""
+                _editDescription.value = userVisibleGroupNote(cachedGroup.groupNotes)
                 _tripStartDate.value = cachedGroup.tripStartDate
                 _tripEndDate.value = cachedGroup.tripEndDate
                 _simplifyDebts.value = cachedGroup.simplifyDebts
@@ -159,14 +159,14 @@ class GroupSettingsViewModel @Inject constructor(
             // that may have started while network was in-flight.
             if (!hadCachedGroup) {
                 _editName.value = groupResult.data.name
-                _editDescription.value = groupResult.data.groupNotes ?: ""
+                _editDescription.value = userVisibleGroupNote(groupResult.data.groupNotes)
                 _tripStartDate.value = groupResult.data.tripStartDate
                 _tripEndDate.value = groupResult.data.tripEndDate
                 _simplifyDebts.value = groupResult.data.simplifyDebts
                 _defaultCurrency.value = groupResult.data.defaultCurrency
             } else if (!_descriptionDirty.value) {
                 // Not actively editing notes — safe to sync to latest server value
-                _editDescription.value = groupResult.data.groupNotes ?: ""
+                _editDescription.value = userVisibleGroupNote(groupResult.data.groupNotes)
             }
             if (!_tripDatesDirty.value) {
                 _tripStartDate.value = groupResult.data.tripStartDate
@@ -201,13 +201,36 @@ class GroupSettingsViewModel @Inject constructor(
         _tripDatesDirty.value = true
     }
 
+    /**
+     * Returns the correct description value for update calls.
+     * If the user explicitly edited notes (_descriptionDirty), send the typed value.
+     * Otherwise pass the raw server value so system/import notes are not wiped.
+     */
+    private fun descriptionForUpdate(): String? =
+        if (_descriptionDirty.value) _editDescription.value.trim().ifBlank { null }
+        else _group.value?.groupNotes
+
+    /** Returns true if end date is set and is before start date. */
+    private fun tripDatesInvalid(): Boolean {
+        val start = _tripStartDate.value
+        val end   = _tripEndDate.value
+        if (start.isNullOrBlank() || end.isNullOrBlank()) return false
+        return runCatching {
+            java.time.LocalDate.parse(end) < java.time.LocalDate.parse(start)
+        }.getOrDefault(false)
+    }
+
     fun saveTripDates() {
+        if (tripDatesInvalid()) {
+            _actionState.value = GroupSettingsActionState.Error("End date must be on or after start date")
+            return
+        }
         viewModelScope.launch {
             _actionState.value = GroupSettingsActionState.Loading
             when (val result = updateGroupUseCase(
                 groupId       = groupId,
                 name          = null,
-                description   = _editDescription.value.trim().ifBlank { null },
+                description   = descriptionForUpdate(),
                 simplifyDebts = null,
                 tripStartDate = _tripStartDate.value,
                 tripEndDate   = _tripEndDate.value,
@@ -232,7 +255,7 @@ class GroupSettingsViewModel @Inject constructor(
             updateGroupUseCase(
                 groupId         = groupId,
                 name            = null,
-                description     = _editDescription.value.trim().ifBlank { null },
+                description     = descriptionForUpdate(),
                 simplifyDebts   = null,
                 defaultCurrency = currency,
                 tripStartDate   = _tripStartDate.value,
@@ -273,7 +296,7 @@ class GroupSettingsViewModel @Inject constructor(
             when (val result = updateGroupUseCase(
                 groupId       = groupId,
                 name          = name,
-                description   = _editDescription.value.trim().ifBlank { null },
+                description   = descriptionForUpdate(),
                 simplifyDebts = null,
                 tripStartDate = _tripStartDate.value,
                 tripEndDate   = _tripEndDate.value,
@@ -294,7 +317,7 @@ class GroupSettingsViewModel @Inject constructor(
             val result = updateGroupUseCase(
                 groupId       = groupId,
                 name          = null,
-                description   = _editDescription.value.trim().ifBlank { null },
+                description   = descriptionForUpdate(),
                 simplifyDebts = value,
                 tripStartDate = _tripStartDate.value,
                 tripEndDate   = _tripEndDate.value,
@@ -431,6 +454,48 @@ class GroupSettingsViewModel @Inject constructor(
 
     fun resetClaimState() { _claimState.value = ClaimActionState.Idle }
     fun resetActionState() { _actionState.value = GroupSettingsActionState.Idle }
+
+    /**
+     * Save name + notes + trip dates in a single call.
+     * Used by CustomizeGroupScreen so all identity fields save together.
+     * Notes: only sends user-visible value. Raw system notes are never re-sent
+     * (they stay on the server; we only overwrite if user actually typed something).
+     * If _descriptionDirty is false, preserve raw server notes so import/system notes are not wiped.
+     */
+    fun saveGroupIdentity() {
+        val name = _editName.value.trim()
+        if (name.isBlank() || name.length < 2) {
+            _actionState.value = GroupSettingsActionState.Error("Group name must be at least 2 characters")
+            return
+        }
+        if (tripDatesInvalid()) {
+            _actionState.value = GroupSettingsActionState.Error("End date must be on or after start date")
+            return
+        }
+        viewModelScope.launch {
+            _actionState.value = GroupSettingsActionState.Loading
+            when (val result = updateGroupUseCase(
+                groupId       = groupId,
+                name          = name,
+                description   = descriptionForUpdate(),
+                simplifyDebts = null,
+                tripStartDate = if (_tripDatesDirty.value) _tripStartDate.value else _group.value?.tripStartDate,
+                tripEndDate   = if (_tripDatesDirty.value) _tripEndDate.value else _group.value?.tripEndDate,
+            )) {
+                is ApiResult.Success -> {
+                    _group.value           = result.data
+                    _editName.value        = result.data.name
+                    _editDescription.value = userVisibleGroupNote(result.data.groupNotes)
+                    _descriptionDirty.value = false
+                    _tripStartDate.value   = result.data.tripStartDate
+                    _tripEndDate.value     = result.data.tripEndDate
+                    _tripDatesDirty.value  = false
+                    _actionState.value     = GroupSettingsActionState.Success("Group updated")
+                }
+                else -> _actionState.value = GroupSettingsActionState.Error("Failed to save changes")
+            }
+        }
+    }
 }
 
 sealed class GroupSettingsActionState {
@@ -446,4 +511,15 @@ sealed class ClaimActionState {
     object Loading : ClaimActionState()
     data class Success(val message: String) : ClaimActionState()
     data class Error(val message: String)   : ClaimActionState()
+}
+// ── System-note helpers (file-level) ─────────────────────────────────────────
+
+fun isSystemGeneratedGroupNote(note: String?): Boolean {
+    val trimmed = note?.trim().orEmpty()
+    return trimmed.startsWith("Imported from Splitwise on", ignoreCase = true)
+}
+
+fun userVisibleGroupNote(note: String?): String {
+    val trimmed = note?.trim().orEmpty()
+    return if (isSystemGeneratedGroupNote(trimmed)) "" else trimmed
 }

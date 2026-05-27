@@ -99,18 +99,19 @@ import com.prathik.fairshare.ui.theme.TextTertiary
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupSettingsScreen(
-    onBack               : () -> Unit,
-    onNavigateToAddMember: (String) -> Unit,
-    onGroupDeleted       : () -> Unit,
-    onNavigateToSettleUp : (groupId: String) -> Unit = {},
-    onNavigateToMembers  : (String) -> Unit = {},
-    onNavigateToAnalytics: (String) -> Unit = {},
-    onNavigateToRecurring: (String) -> Unit = {},
-    onNavigateToReminders: (String) -> Unit = {},
-    onNavigateToInvite   : (groupId: String) -> Unit = {},
-    defaultCurrency      : String = "USD",
-    onNavigateToCurrency : (currentCurrency: String) -> Unit = {},
-    viewModel            : GroupSettingsViewModel = hiltViewModel(),
+    onBack                : () -> Unit,
+    onNavigateToAddMember : (String) -> Unit,
+    onGroupDeleted        : () -> Unit,
+    onNavigateToCustomize : (String) -> Unit = {},
+    onNavigateToSettleUp  : (groupId: String) -> Unit = {},
+    onNavigateToMembers   : (String) -> Unit = {},
+    onNavigateToAnalytics : (String) -> Unit = {},
+    onNavigateToRecurring : (String) -> Unit = {},
+    onNavigateToReminders : (String) -> Unit = {},
+    onNavigateToInvite    : (groupId: String) -> Unit = {},
+    defaultCurrency       : String = "USD",
+    onNavigateToCurrency  : (currentCurrency: String) -> Unit = {},
+    viewModel             : GroupSettingsViewModel = hiltViewModel(),
 ) {
     val group            by viewModel.group.collectAsState()
     val members          by viewModel.members.collectAsState()
@@ -122,9 +123,6 @@ fun GroupSettingsScreen(
     val claimState       by viewModel.claimState.collectAsState()
     val yourGroupBalances by viewModel.yourGroupBalances.collectAsState()
     val editName         by viewModel.editName.collectAsState()
-    val editDescription  by viewModel.editDescription.collectAsState()
-    val tripStartDate    by viewModel.tripStartDate.collectAsState()
-    val tripEndDate      by viewModel.tripEndDate.collectAsState()
     val simplifyDebts    by viewModel.simplifyDebts.collectAsState()
     val muteNotifications by viewModel.muteNotifications.collectAsState()
 
@@ -134,7 +132,6 @@ fun GroupSettingsScreen(
     var showDeleteDialog   by remember { mutableStateOf(false) }
     var deleteConfirmText  by remember { mutableStateOf("") }
     var showRemoveDialog  by remember { mutableStateOf<GroupMember?>(null) }
-    var showNameDialog    by remember { mutableStateOf(false) }
     var showLeaveDialog   by remember { mutableStateOf(false) }
     var showArchiveDialog   by remember { mutableStateOf(false) }
     var showUnarchiveDialog by remember { mutableStateOf(false) }
@@ -395,34 +392,6 @@ fun GroupSettingsScreen(
     }
 
     // ── Edit group name dialog ────────────────────────────────────────────────
-    if (showNameDialog) {
-        AlertDialog(
-            onDismissRequest = { showNameDialog = false },
-            containerColor   = Surface2,
-            title = { Text("Edit group name", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-            text  = {
-                com.prathik.fairshare.ui.components.FsTextField(
-                    value         = editName,
-                    onValueChange = { viewModel.onNameChanged(it) },
-                    label         = "Group name",
-                    modifier      = androidx.compose.ui.Modifier.fillMaxWidth(),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (editName.isNotBlank()) {
-                        showNameDialog = false
-                        viewModel.saveGroupName()
-                    }
-                }) {
-                    Text("Save", color = Green400, fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNameDialog = false }) { Text("Cancel", color = TextSecondary) }
-            },
-        )
-    }
 
     // ── Assign sheet ──────────────────────────────────────────────────────────
     showAssignSheet?.let { member ->
@@ -505,13 +474,6 @@ fun GroupSettingsScreen(
             com.prathik.fairshare.ui.components.FsTopBar(
                 title  = "Group Settings",
                 onBack = onBack,
-                actions = if (isCreator) {
-                    {
-                        androidx.compose.material3.IconButton(onClick = { showNameDialog = true }) {
-                            Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = TextSecondary)
-                        }
-                    }
-                } else null,
             )
         },
     ) { innerPadding ->
@@ -547,10 +509,15 @@ fun GroupSettingsScreen(
             group?.let { g ->
                 Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
                     Row(
-                        verticalAlignment = Alignment.Top,
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.lg))
+                            .then(if (isMember) Modifier.clickable { onNavigateToCustomize(g.id) } else Modifier)
+                            .padding(Spacing.sm),
                     ) {
-                        // Emoji tile — shows groupImage if set, otherwise group type emoji
+                        // Emoji / group photo tile
                         Box(modifier = Modifier.size(56.dp)) {
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -559,7 +526,6 @@ fun GroupSettingsScreen(
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(Surface2)
                                     .border(1.dp, Surface4, RoundedCornerShape(16.dp))
-                                    .then(if (isMember) Modifier.clickable { showNameDialog = true } else Modifier),
                             ) {
                                 if (!g.groupImage.isNullOrBlank()) {
                                     var imageLoadFailed by remember(g.groupImage) { mutableStateOf(false) }
@@ -620,6 +586,15 @@ fun GroupSettingsScreen(
                                 Text("·", fontSize = 12.sp, color = TextTertiary)
                                 Text(g.createdAt.toShortDate(), fontSize = 12.sp, color = TextTertiary)
                             }
+                        }
+                        // Chevron for members who can customize
+                        if (isMember) {
+                            Icon(
+                                imageVector        = Icons.Default.ChevronRight,
+                                contentDescription = "Customize group",
+                                tint               = TextTertiary,
+                                modifier           = Modifier.size(20.dp),
+                            )
                         }
                     }
 
@@ -705,62 +680,6 @@ fun GroupSettingsScreen(
                         .background(Surface2)
                         .border(1.dp, Surface4, RoundedCornerShape(Radius.xl)),
                 ) {
-                    // ── Group notes ───────────────────────────────────────────
-                    if (isMember) {
-                        OutlinedTextField(
-                            value         = editDescription,
-                            onValueChange = { if (it.length <= 100) viewModel.onDescriptionChanged(it) },
-                            placeholder   = { Text("Group notes (optional)…", fontSize = 14.sp, color = TextTertiary) },
-                            label         = { Text("Group notes", fontSize = 12.sp) },
-                            maxLines      = 4,
-                            modifier      = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                            colors        = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor    = Green400,
-                                unfocusedBorderColor  = Surface4,
-                                focusedLabelColor     = Green400,
-                                unfocusedLabelColor   = TextTertiary,
-                                focusedTextColor      = TextPrimary,
-                                unfocusedTextColor    = TextPrimary,
-                                focusedContainerColor = Surface2,
-                                unfocusedContainerColor = Surface2,
-                            ),
-                        )
-                        val descChanged = editDescription.trim() != (group?.groupNotes ?: "").trim()
-                        if (descChanged) {
-                            androidx.compose.foundation.layout.Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = Spacing.md)
-                                    .padding(bottom = Spacing.sm),
-                                horizontalArrangement = Arrangement.End,
-                            ) {
-                                Text(
-                                    text     = "Save notes",
-                                    fontSize = 13.sp,
-                                    color    = Green400,
-                                    modifier = Modifier.clickable { viewModel.saveDescription() },
-                                )
-                            }
-                        }
-                        HorizontalDivider(color = Surface4, thickness = 0.5.dp)
-                    }
-
-                    // ── Trip dates (TRIP groups only) ─────────────────────────
-                    if (group?.type == GroupType.TRIP && isMember) {
-                        TripDateSection(
-                            tripStartDate        = tripStartDate,
-                            tripEndDate          = tripEndDate,
-                            onStartDateChanged   = { viewModel.onTripStartDateChanged(it) },
-                            onEndDateChanged     = { viewModel.onTripEndDateChanged(it) },
-                            onSave               = { viewModel.saveTripDates() },
-                            currentStart         = group?.tripStartDate,
-                            currentEnd           = group?.tripEndDate,
-                        )
-                        HorizontalDivider(color = Surface4, thickness = 0.5.dp)
-                    }
-
                     // ── Simplify debts toggle ─────────────────────────────────
                     Row(
                         modifier = Modifier
@@ -1375,158 +1294,3 @@ private fun GroupSettingsSkeleton() {
         repeat(3) { FsSkeletonTimelineRow() }
     }
 }
-// ── Trip Date Section (TRIP groups only) ──────────────────────────────────────
-
-@androidx.compose.runtime.Composable
-private fun TripDateSection(
-    tripStartDate      : String?,
-    tripEndDate        : String?,
-    onStartDateChanged : (String?) -> Unit,
-    onEndDateChanged   : (String?) -> Unit,
-    onSave             : () -> Unit,
-    currentStart       : String?,
-    currentEnd         : String?,
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    val startDisplay = tripStartDate?.let { formatTripDate(it) } ?: "Set start date"
-    val endDisplay   = tripEndDate?.let { formatTripDate(it) }   ?: "Set end date"
-
-    val datesChanged = tripStartDate != currentStart || tripEndDate != currentEnd
-
-    // Validate: end must not be before start
-    val endBeforeStart = tripStartDate != null && tripEndDate != null &&
-            runCatching { LocalDate.parse(tripEndDate) < LocalDate.parse(tripStartDate) }.getOrDefault(false)
-
-    androidx.compose.foundation.layout.Column(
-        modifier = androidx.compose.ui.Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-    ) {
-        androidx.compose.material3.Text(
-            "Trip dates",
-            fontSize = 12.sp,
-            color = TextTertiary,
-        )
-
-        // Start date row
-        DatePickerRow(
-            label    = "Start date",
-            display  = startDisplay,
-            context  = context,
-            current  = tripStartDate,
-            minDate  = null,
-            maxDate  = tripEndDate,
-            onPicked = onStartDateChanged,
-        )
-
-        // End date row
-        DatePickerRow(
-            label    = "End date",
-            display  = endDisplay,
-            context  = context,
-            current  = tripEndDate,
-            minDate  = tripStartDate,
-            maxDate  = null,
-            onPicked = onEndDateChanged,
-        )
-
-        if (endBeforeStart) {
-            androidx.compose.material3.Text(
-                "End date must be on or after start date",
-                fontSize = 12.sp,
-                color = com.prathik.fairshare.ui.theme.Negative,
-            )
-        }
-
-        if (datesChanged && !endBeforeStart) {
-            androidx.compose.foundation.layout.Row(
-                modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                androidx.compose.material3.Text(
-                    text     = "Save dates",
-                    fontSize = 13.sp,
-                    color    = Green400,
-                    modifier = androidx.compose.ui.Modifier.clickable { onSave() },
-                )
-            }
-        }
-    }
-}
-
-@Suppress("DEPRECATION")
-@androidx.compose.runtime.Composable
-private fun DatePickerRow(
-    label   : String,
-    display : String,
-    context : android.content.Context,
-    current : String?,
-    minDate : String?,
-    maxDate : String?,
-    onPicked: (String?) -> Unit,
-) {
-    val calendar = java.util.Calendar.getInstance()
-    current?.let { s ->
-        runCatching { LocalDate.parse(s) }.getOrNull()?.let {
-            calendar.set(it.year, it.monthValue - 1, it.dayOfMonth)
-        }
-    }
-
-    val dialog = android.app.DatePickerDialog(
-        context,
-        { _, y, m, d ->
-            val picked = LocalDate.of(y, m + 1, d)
-            onPicked(picked.format(DateTimeFormatter.ISO_LOCAL_DATE))
-        },
-        calendar.get(java.util.Calendar.YEAR),
-        calendar.get(java.util.Calendar.MONTH),
-        calendar.get(java.util.Calendar.DAY_OF_MONTH),
-    )
-
-    minDate?.let { s ->
-        runCatching { LocalDate.parse(s) }.getOrNull()?.let {
-            val min = java.util.Calendar.getInstance()
-            min.set(it.year, it.monthValue - 1, it.dayOfMonth)
-            dialog.datePicker.minDate = min.timeInMillis
-        }
-    }
-    maxDate?.let { s ->
-        runCatching { LocalDate.parse(s) }.getOrNull()?.let {
-            val max = java.util.Calendar.getInstance()
-            max.set(it.year, it.monthValue - 1, it.dayOfMonth)
-            dialog.datePicker.maxDate = max.timeInMillis
-        }
-    }
-
-    androidx.compose.foundation.layout.Row(
-        modifier = androidx.compose.ui.Modifier
-            .fillMaxWidth()
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(Spacing.sm))
-            .background(Surface3)
-            .clickable { dialog.show() }
-            .padding(horizontal = Spacing.md, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-    ) {
-        androidx.compose.material3.Text(label, fontSize = 14.sp, color = TextSecondary)
-        androidx.compose.foundation.layout.Row(
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-        ) {
-            androidx.compose.material3.Text(display, fontSize = 14.sp, color = TextPrimary)
-            if (current != null) {
-                androidx.compose.material3.Text(
-                    text     = "Clear",
-                    fontSize = 12.sp,
-                    color    = TextTertiary,
-                    modifier = androidx.compose.ui.Modifier.clickable { onPicked(null) },
-                )
-            }
-        }
-    }
-}
-
-private fun formatTripDate(isoDate: String): String = runCatching {
-    val d = LocalDate.parse(isoDate, DateTimeFormatter.ISO_LOCAL_DATE)
-    d.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
-}.getOrDefault(isoDate)

@@ -901,11 +901,12 @@ private fun GroupCoverHeader(
                 }
             }
 
-            // Group notes — shown only if present, no card if blank
-            if (!group.groupNotes.isNullOrBlank()) {
+            // Group notes — shown only if present AND not system-generated
+            val visibleNote = com.prathik.fairshare.ui.groups.userVisibleGroupNote(group.groupNotes)
+            if (visibleNote.isNotBlank()) {
                 Spacer(Modifier.height(Spacing.sm))
                 Text(
-                    text     = group.groupNotes,
+                    text     = visibleNote,
                     fontSize = 13.sp,
                     color    = Color.White.copy(alpha = 0.75f),
                     modifier = Modifier

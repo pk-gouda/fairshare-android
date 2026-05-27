@@ -408,12 +408,13 @@ private fun Step1Content(
                         }.getOrDefault(false)
 
                 CreateDateRow(
-                    label    = "Start date",
-                    display  = tripStartDate?.let { formatCreateTripDate(it) } ?: "Today",
-                    context  = context,
-                    current  = tripStartDate,
-                    maxDate  = tripEndDate,
-                    onPicked = onStartDateChanged,
+                    label      = "Start date",
+                    display    = tripStartDate?.let { formatCreateTripDate(it) } ?: "Today",
+                    context    = context,
+                    current    = tripStartDate,
+                    maxDate    = tripEndDate,
+                    allowClear = false,
+                    onPicked   = onStartDateChanged,
                 )
                 Spacer(modifier = Modifier.height(Spacing.sm))
 
@@ -907,6 +908,7 @@ private fun CreateDateRow(
     current : String?,
     minDate : String? = null,
     maxDate : String? = null,
+    allowClear: Boolean = true,
     onPicked: (String?) -> Unit,
 ) {
     val calendar = java.util.Calendar.getInstance()
@@ -949,7 +951,7 @@ private fun CreateDateRow(
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
             Text(display, fontSize = 14.sp, color = com.prathik.fairshare.ui.theme.TextPrimary)
-            if (current != null) {
+            if (allowClear && current != null) {
                 Text(
                     text     = "Clear",
                     fontSize = 12.sp,
