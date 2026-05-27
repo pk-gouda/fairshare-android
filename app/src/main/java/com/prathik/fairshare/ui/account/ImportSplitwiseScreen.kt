@@ -57,6 +57,9 @@ import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSecondaryButton
 import com.prathik.fairshare.ui.components.FsTextField
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -83,6 +86,7 @@ fun ImportSplitwiseScreen(
     val friends         by viewModel.friends.collectAsState()
     val claimState      by viewModel.claimState.collectAsState()
     val snackbarHost    = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
 
     // Import type selection
     var importType          by remember { mutableStateOf<ImportType?>(null) }
@@ -364,7 +368,7 @@ fun ImportSplitwiseScreen(
     LaunchedEffect(claimState) {
         when (val s = claimState) {
             is ClaimState.Done  -> { snackbarHost.showSnackbar("Member linked ✓"); viewModel.resetClaimState() }
-            is ClaimState.Error -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
+            is ClaimState.Error -> { errorDialog = apiErrorDialogState(s.message); viewModel.resetClaimState() }
             else -> Unit
         }
     }
@@ -718,7 +722,6 @@ fun ImportSplitwiseScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             FsAvatar(name = friend.fullName, userId = friend.id,
-                                imageUrl = friend.profilePictureUrl,
                                 size = ComponentSize.avatarMd)
                             Spacer(modifier = Modifier.width(Spacing.md))
                             Text(friend.fullName, fontSize = 15.sp,
@@ -810,7 +813,6 @@ fun ImportSplitwiseScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         FsAvatar(name = friend.fullName, userId = friend.id,
-                            imageUrl = friend.profilePictureUrl,
                             size = ComponentSize.avatarMd)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(friend.fullName, fontSize = 15.sp,
@@ -833,6 +835,14 @@ fun ImportSplitwiseScreen(
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         topBar         = { FsTopBar(title = "Import from Splitwise", onBack = onBack) },
@@ -1032,7 +1042,6 @@ fun ImportSplitwiseScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     FsAvatar(name = member.fullName, userId = member.userId,
-                                        imageUrl = member.profilePictureUrl,
                                         size = ComponentSize.avatarMd)
                                     Spacer(modifier = Modifier.width(Spacing.md))
                                     Column(modifier = Modifier.weight(1f)) {

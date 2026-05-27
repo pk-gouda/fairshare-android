@@ -23,10 +23,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Search
-import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -39,12 +40,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +65,9 @@ import com.prathik.fairshare.domain.model.GroupType
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.AvatarColors
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
@@ -128,6 +138,7 @@ fun CreateGroupScreen(
     val friendsLoading    by viewModel.friendsLoading.collectAsState()
 
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     val context = LocalContext.current
 
     // Pre-select friend if navigated from FriendSettings "Create group with X"
@@ -139,13 +150,21 @@ fun CreateGroupScreen(
         when (val s = actionState) {
             is CreateGroupActionState.Success -> onGroupCreated(s.groupId)
             is CreateGroupActionState.Error   -> {
-                snackbarHost.showSnackbar(s.message)
+                errorDialog = apiErrorDialogState(s.message)
                 viewModel.resetActionState()
             }
             else -> Unit
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
@@ -250,6 +269,53 @@ private fun Step1Content(
             modifier = Modifier.padding(bottom = Spacing.xl),
         )
 
+        // ── Photo picker ──────────────────────────────────────────────────────
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(90.dp)
+                .align(Alignment.CenterHorizontally)
+                .drawBehind {
+                    drawRoundRect(
+                        color       = TextTertiary.copy(alpha = 0.4f),
+                        style       = Stroke(
+                            width      = 1.5.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(
+                                floatArrayOf(10f, 8f), 0f
+                            ),
+                        ),
+                        cornerRadius = CornerRadius(Radius.xl.toPx()),
+                    )
+                },
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.CameraAlt,
+                contentDescription = "Add photo",
+                tint   = Color(0xFF4A6FE8),
+                modifier = Modifier.size(32.dp),
+            )
+            // + badge
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(22.dp)
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(Color(0xFF4A6FE8)),
+            ) {
+                Text("+", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Text(
+            text     = "Add group photo",
+            fontSize = 12.sp,
+            color    = TextSecondary,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = Spacing.sm, bottom = Spacing.xl),
+        )
+
         // ── Group name ────────────────────────────────────────────────────────
         CountedField(
             label       = "GROUP NAME",
@@ -322,7 +388,6 @@ private fun Step1Content(
                 color    = Green400,
             )
         }
-
 
         Spacer(modifier = Modifier.height(Spacing.md))
 
@@ -450,16 +515,13 @@ private fun Step2Content(
             }
 
             if (friendsLoading) {
-                // Skeleton rows while suggested friends load — no inline spinner
-                Column(
-                    modifier = Modifier
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = Spacing.sm),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                        .padding(vertical = Spacing.xl),
                 ) {
-                    repeat(3) {
-                        FsSkeletonTimelineRow()
-                    }
+                    CircularProgressIndicator(color = Green400, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 }
             } else {
                 // Friend rows
@@ -631,7 +693,6 @@ private fun FriendSelectRow(
         FsAvatar(
             name   = friend.fullName,
             userId = friend.id,
-            imageUrl = friend.profilePictureUrl,
             size   = ComponentSize.avatarLg,
         )
         Spacer(modifier = Modifier.width(Spacing.md))

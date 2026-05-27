@@ -24,6 +24,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,11 +36,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsDetailSkeleton
+import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSectionLabel
 import com.prathik.fairshare.ui.components.FsTextField
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
@@ -61,18 +66,27 @@ fun EditSettlementScreen(
     val notes        by viewModel.notes.collectAsState()
     val paymentMethod by viewModel.paymentMethod.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
 
     LaunchedEffect(saveState) {
         when (val s = saveState) {
             is EditSettlementSaveState.Saved -> { onSaved(); viewModel.resetSaveState() }
             is EditSettlementSaveState.Error -> {
-                snackbarHost.showSnackbar(s.message)
+                errorDialog = apiErrorDialogState(s.message)
                 viewModel.resetSaveState()
             }
             else -> Unit
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
@@ -80,7 +94,7 @@ fun EditSettlementScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when (val ls = loadState) {
-                is EditSettlementLoadState.Loading -> FsDetailSkeleton()
+                is EditSettlementLoadState.Loading -> FsLoadingScreen()
                 is EditSettlementLoadState.Error   -> FsErrorScreen(message = ls.message)
                 is EditSettlementLoadState.Success -> {
                     val settlement = ls.settlement

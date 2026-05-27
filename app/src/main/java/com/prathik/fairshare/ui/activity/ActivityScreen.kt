@@ -3,7 +3,6 @@ package com.prathik.fairshare.ui.activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,11 +51,13 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Group
 import com.prathik.fairshare.domain.model.Notification
 import com.prathik.fairshare.domain.model.NotificationType
-import com.prathik.fairshare.ui.components.FsSkeletonBlock
-import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
+import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsTextButton
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
@@ -79,22 +80,20 @@ fun ActivityScreen(
     onNotMember: (groupName: String) -> Unit = {},
     viewModel: ActivityViewModel = hiltViewModel(),
 ) {
-    val isLoading           by viewModel.isLoading.collectAsState()
-    val manualRefreshing    by viewModel.manualRefreshing.collectAsState()
-    val activityLoaded      by viewModel.activityLoaded.collectAsState()
-    val activityLoadFailed  by viewModel.activityLoadFailed.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     val coroutineScope = rememberCoroutineScope()
     var showRestoreDialog by remember { mutableStateOf(false) }
     var pendingRestoreGroupId by remember { mutableStateOf<String?>(null) }
     var pendingRestoreGroupName by remember { mutableStateOf("") }
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val notifications  by viewModel.notifications.collectAsState()
-    val grouped by remember(notifications, selectedFilter) {
+    val grouped        = remember(notifications, selectedFilter) {
         derivedStateOf { viewModel.groupedNotifications(notifications, selectedFilter) }
-    }
-    val hasUnread = notifications.any { !it.isRead }
+    }.value
+    val hasUnread      = notifications.any { !it.isRead }
     val deletedGroups by viewModel.deletedGroups.collectAsState()
     val showDeletedGroups = selectedFilter == ActivityFilter.ALL ||
             selectedFilter == ActivityFilter.GROUPS
@@ -102,7 +101,7 @@ fun ActivityScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.refresh()  // silent background refresh; manual=false
+            viewModel.loadData()
         }
     }
 
@@ -117,7 +116,7 @@ fun ActivityScreen(
             }
 
             is ActivityActionState.Error -> {
-                snackbarHost.showSnackbar(state.message); viewModel.resetActionState()
+                errorDialog = apiErrorDialogState(state.message); viewModel.resetActionState()
             }
 
             else -> Unit
@@ -150,6 +149,14 @@ fun ActivityScreen(
         )
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost = { SnackbarHost(snackbarHost) },
@@ -214,29 +221,15 @@ fun ActivityScreen(
             HorizontalDivider(color = Surface4, thickness = 0.5.dp)
 
             PullToRefreshBox(
-                isRefreshing = manualRefreshing,
-                onRefresh = { viewModel.refresh(manual = true) },
+                isRefreshing = isLoading,
+                onRefresh = { viewModel.loadData() },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 if (isLoading) {
-                    ActivitySkeleton(); return@PullToRefreshBox
-                }
-                if (activityLoadFailed && grouped.isEmpty() && (!showDeletedGroups || deletedGroups.isEmpty())) {
-                    // No cache + network failed — show retry, not fake empty
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Couldn't load activity", fontSize = 15.sp, color = TextPrimary)
-                            Text("Check your connection and try again", fontSize = 13.sp, color = TextTertiary)
-                            androidx.compose.material3.TextButton(onClick = { viewModel.loadData() }) {
-                                Text("Retry", color = Green400, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                    return@PullToRefreshBox
+                    FsLoadingScreen(); return@PullToRefreshBox
                 }
 
-                if (grouped.isEmpty() && (!showDeletedGroups || deletedGroups.isEmpty()) && activityLoaded) {
+                if (grouped.isEmpty() && (!showDeletedGroups || deletedGroups.isEmpty())) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(text = "🔔", fontSize = 36.sp)
@@ -280,7 +273,7 @@ fun ActivityScreen(
                                     val alreadyRestored = deletedGroups.none { group -> group.id == groupId }
                                     if (alreadyRestored) {
                                         coroutineScope.launch {
-                                            snackbarHost.showSnackbar("'$groupName' has already been restored")
+                                            errorDialog = FsErrorDialogState("Already restored", "'$groupName' has already been restored on this device.")
                                         }
                                         onNavigateToGroup(groupId)
                                     } else {
@@ -611,25 +604,5 @@ private fun String.toRelativeTime(): String {
         }
     } catch (e: Exception) {
         this
-    }
-}
-// ── Activity screen skeleton placeholder ─────────────────────────────────────
-
-@Composable
-private fun ActivitySkeleton() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp),
-    ) {
-        // Section header placeholder
-        FsSkeletonBlock(
-            height = 12.dp,
-            widthFraction = 0.2f,
-            modifier = Modifier.padding(vertical = 10.dp),
-            cornerRadius = 4.dp,
-        )
-        repeat(5) { FsSkeletonTimelineRow() }
     }
 }

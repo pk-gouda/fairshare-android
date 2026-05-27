@@ -57,8 +57,11 @@ import com.prathik.fairshare.domain.model.SettlementStatus
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsErrorScreen
 import com.prathik.fairshare.ui.components.FsIconButton
-import com.prathik.fairshare.ui.components.FsDetailSkeleton
+import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -87,13 +90,14 @@ fun SettlementDetailScreen(
     val actionState  by viewModel.actionState.collectAsState()
     val changeLog    by viewModel.changeLog.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     var showCancelDialog  by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.refreshSilently()
+            viewModel.load()
         }
     }
 
@@ -110,7 +114,7 @@ fun SettlementDetailScreen(
                 viewModel.resetActionState()
             }
             is SettlementDetailActionState.Error -> {
-                snackbarHost.showSnackbar(s.message)
+                errorDialog = apiErrorDialogState(s.message)
                 viewModel.resetActionState()
             }
             else -> Unit
@@ -123,6 +127,14 @@ fun SettlementDetailScreen(
     val isCancelled    = settlement?.status == SettlementStatus.CANCELLED
     val canAct         = settlement != null && viewModel.isParticipant(settlement)
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
@@ -158,7 +170,7 @@ fun SettlementDetailScreen(
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when (val s = state) {
                 is SettlementDetailUiState.Loading ->
-                    FsDetailSkeleton()
+                    FsLoadingScreen()
                 is SettlementDetailUiState.Error ->
                     FsErrorScreen(message = s.message, onRetry = { viewModel.load() })
                 is SettlementDetailUiState.NotFound,

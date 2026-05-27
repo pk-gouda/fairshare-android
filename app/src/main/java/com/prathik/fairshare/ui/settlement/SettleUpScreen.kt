@@ -67,6 +67,9 @@ import com.prathik.fairshare.ui.auth.BiometricHelper
 import com.prathik.fairshare.ui.components.FsTopBar
 import com.prathik.fairshare.ui.auth.BiometricResult
 import com.prathik.fairshare.ui.components.FsAvatar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
 import com.prathik.fairshare.ui.theme.Radius
@@ -101,6 +104,7 @@ fun SettleUpScreen(
 
     val previewState    by viewModel.previewState.collectAsState()
     val snackbarHost    = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     val scope           = rememberCoroutineScope()
     val context         = LocalContext.current
     val activity        = context as? FragmentActivity
@@ -159,7 +163,7 @@ fun SettleUpScreen(
                     is BiometricResult.Success   -> settleAction()
                     is BiometricResult.Cancelled -> Unit
                     is BiometricResult.Error     -> scope.launch {
-                        snackbarHost.showSnackbar("Biometric auth failed. Try again.")
+                        errorDialog = FsErrorDialogState("Biometric failed", "Authentication failed. Please try again or use your PIN.")
                     }
                 }
             }
@@ -171,7 +175,7 @@ fun SettleUpScreen(
     LaunchedEffect(uiState) {
         when (val s = uiState) {
             is SettleUpUiState.Success -> { onSuccess(); viewModel.resetUiState() }
-            is SettleUpUiState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetUiState() }
+            is SettleUpUiState.Error   -> { errorDialog = apiErrorDialogState(s.message); viewModel.resetUiState() }
             else -> Unit
         }
     }
@@ -260,6 +264,14 @@ fun SettleUpScreen(
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },

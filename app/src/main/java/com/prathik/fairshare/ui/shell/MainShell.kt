@@ -1,4 +1,7 @@
 package com.prathik.fairshare.ui.shell
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -61,7 +64,6 @@ import com.prathik.fairshare.ui.groups.GroupBalancesScreen
 import com.prathik.fairshare.ui.groups.GroupDetailScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsScreen
 import com.prathik.fairshare.ui.groups.GroupSettingsViewModel
-import com.prathik.fairshare.ui.groups.CustomizeGroupScreen
 import com.prathik.fairshare.ui.groups.GroupsHomeScreen
 import com.prathik.fairshare.ui.friends.FriendsScreen
 import com.prathik.fairshare.ui.friends.AddFriendScreen
@@ -188,6 +190,7 @@ fun MainShell(
     val shellNavController = rememberNavController()
     val coroutineScope     = rememberCoroutineScope()
     val snackbarHostState  = remember { androidx.compose.material3.SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     // Pending friend add via QR
     var pendingFriendCode by remember { mutableStateOf<String?>(null) }
     var pendingFriend     by remember { mutableStateOf<Friend?>(null) }
@@ -254,8 +257,8 @@ fun MainShell(
             delay(350L)
             when (val result = resultDeferred.await()) {
                 is ApiResult.Success  -> { pendingFriendCode = friendDeepLink; pendingFriend = result.data }
-                is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
-                else                  -> snackbarHostState.showSnackbar("Could not look up this code")
+                is ApiResult.NotFound -> errorDialog = FsErrorDialogState("Invalid code", "That friend code was not found. Please check and try again.")
+                else                  -> errorDialog = FsErrorDialogState("Something went wrong", "We couldn't look up that code. Please try again.")
             }
         }
     }
@@ -341,9 +344,9 @@ fun MainShell(
                                     }
                                     snackbarHostState.showSnackbar("1 friend added!")
                                 }
-                                is ApiResult.Conflict -> snackbarHostState.showSnackbar("You're already friends with ${capturedFriend.fullName}")
-                                is ApiResult.NotFound -> snackbarHostState.showSnackbar("User not found")
-                                else                  -> snackbarHostState.showSnackbar("Something went wrong")
+                                is ApiResult.Conflict -> errorDialog = FsErrorDialogState("Already friends", "You're already friends with ${capturedFriend.fullName}.")
+                                is ApiResult.NotFound -> errorDialog = FsErrorDialogState("User not found", "That user could not be found. They may have deleted their account.")
+                                else                  -> errorDialog = FsErrorDialogState("Something went wrong", "We couldn't add that friend right now. Please try again.")
                             }
                         }
                     },
@@ -394,9 +397,9 @@ fun MainShell(
                                     }
                                     snackbarHostState.showSnackbar("Joined $capturedGroupName!")
                                 }
-                                is ApiResult.Conflict -> snackbarHostState.showSnackbar("You're already in $capturedGroupName")
-                                is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid invite code")
-                                else                  -> snackbarHostState.showSnackbar("Something went wrong")
+                                is ApiResult.Conflict -> errorDialog = FsErrorDialogState("Already a member", "You're already a member of $capturedGroupName.")
+                                is ApiResult.NotFound -> errorDialog = FsErrorDialogState("Invalid code", "That invite code was not found. Please check and try again.")
+                                else                  -> errorDialog = FsErrorDialogState("Couldn't join group", "We couldn't join $capturedGroupName right now. Please try again.")
                             }
                         }
                     },
@@ -409,6 +412,16 @@ fun MainShell(
                     Text("Cancel", color = androidx.compose.ui.graphics.Color(0xFF8E8E93))
                 }
             },
+        )
+    }
+
+
+    // ── Error dialog — rendered at shell level ──────────────────────────────────
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
         )
     }
 
@@ -622,7 +635,7 @@ fun MainShell(
                     },
                     onNotMember = { groupName ->
                         coroutineScope.launch {
-                            snackbarHostState.showSnackbar("You're no longer a member of $groupName")
+                            snackbarHostState.showSnackbar("You've left $groupName")
                         }
                     },
                 )
@@ -690,9 +703,6 @@ fun MainShell(
                 GroupSettingsScreen(
                     onBack = { shellNavController.popBackStack() },
                     defaultCurrency = defaultCurrency,
-                    onNavigateToCustomize = { gId ->
-                        shellNavController.navigate(Screen.CustomizeGroup.route(gId))
-                    },
                     onNavigateToAddMember = { gId ->
                         shellNavController.navigate(Screen.AddMember.route(gId))
                     },
@@ -717,22 +727,6 @@ fun MainShell(
                     onNavigateToCurrency = { _ ->
                         shellNavController.navigate(Screen.CurrencySelect.route)
                     },
-                )
-            }
-
-            composable(
-                route = Screen.CustomizeGroup.route,
-                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val gId = backStackEntry.arguments?.getString("groupId") ?: return@composable
-                // Reuse the GroupSettingsViewModel scoped to GroupSettings backstack entry
-                val parentEntry = remember(backStackEntry) {
-                    shellNavController.getBackStackEntry(Screen.GroupSettings.route)
-                }
-                val customizeVm = hiltViewModel<GroupSettingsViewModel>(parentEntry)
-                CustomizeGroupScreen(
-                    onBack    = { shellNavController.popBackStack() },
-                    viewModel = customizeVm,
                 )
             }
 
@@ -1369,15 +1363,15 @@ fun MainShell(
                             coroutineScope.launch {
                                 when (val result = viewModel.lookupByFriendCode(code)) {
                                     is ApiResult.Success  -> { pendingFriendCode = code; pendingFriend = result.data }
-                                    is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
-                                    else                  -> snackbarHostState.showSnackbar("Could not look up this code")
+                                    is ApiResult.NotFound -> errorDialog = FsErrorDialogState("Invalid code", "That friend code was not found. Please check and try again.")
+                                    else                  -> errorDialog = FsErrorDialogState("Something went wrong", "We couldn't look up that code. Please try again.")
                                 }
                             }
                         } else {
                             coroutineScope.launch {
                                 when (val result = viewModel.previewGroup(code)) {
                                     is ApiResult.Success  -> { pendingGroupCode = code; pendingGroupName = result.data.name }
-                                    is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid invite code")
+                                    is ApiResult.NotFound -> errorDialog = FsErrorDialogState("Invalid code", "That invite code was not found. Please check and try again.")
                                     else                  -> snackbarHostState.showSnackbar("Could not look up this group")
                                 }
                             }
@@ -1407,8 +1401,8 @@ fun MainShell(
                                 delay(350L)
                                 when (val result = resultDeferred.await()) {
                                     is ApiResult.Success  -> { pendingFriendCode = code; pendingFriend = result.data }
-                                    is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid friend code")
-                                    else                  -> snackbarHostState.showSnackbar("Could not look up this code")
+                                    is ApiResult.NotFound -> errorDialog = FsErrorDialogState("Invalid code", "That friend code was not found. Please check and try again.")
+                                    else                  -> errorDialog = FsErrorDialogState("Something went wrong", "We couldn't look up that code. Please try again.")
                                 }
                             }
                         } else {
@@ -1425,7 +1419,7 @@ fun MainShell(
                                 delay(350L)
                                 when (val result = resultDeferred.await()) {
                                     is ApiResult.Success  -> { pendingGroupCode = inviteCode; pendingGroupName = result.data.name }
-                                    is ApiResult.NotFound -> snackbarHostState.showSnackbar("Invalid invite code")
+                                    is ApiResult.NotFound -> errorDialog = FsErrorDialogState("Invalid code", "That invite code was not found. Please check and try again.")
                                     else                  -> snackbarHostState.showSnackbar("Could not look up this group")
                                 }
                             }

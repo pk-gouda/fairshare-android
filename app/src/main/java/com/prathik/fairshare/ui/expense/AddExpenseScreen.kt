@@ -82,6 +82,9 @@ import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsTextButton
 import com.prathik.fairshare.ui.components.FsTextField
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -131,6 +134,7 @@ fun AddExpenseScreen(
     val preselectedFriend by viewModel.preselectedFriend.collectAsState()
 
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
 
     var showGroupSheet     by remember { mutableStateOf(false) }
     var showPayerSheet     by remember { mutableStateOf(false) }
@@ -187,14 +191,14 @@ fun AddExpenseScreen(
         when (val s = uiState) {
             is AddExpenseUiState.Success      -> { onSuccess(); viewModel.resetUiState() }
             is AddExpenseUiState.SavedOffline -> { onSuccess(); viewModel.resetUiState() }
-            is AddExpenseUiState.Error        -> { snackbarHost.showSnackbar(s.message); viewModel.resetUiState() }
+            is AddExpenseUiState.Error        -> { errorDialog = apiErrorDialogState(s.message); viewModel.resetUiState() }
             else                              -> Unit
         }
     }
 
     LaunchedEffect(receiptState) {
         if (receiptState is ReceiptScanState.Error) {
-            snackbarHost.showSnackbar((receiptState as ReceiptScanState.Error).message)
+            errorDialog = apiErrorDialogState((receiptState as ReceiptScanState.Error).message)
         }
     }
 
@@ -231,6 +235,14 @@ fun AddExpenseScreen(
         SplitType.SHARES     -> "by shares"
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
@@ -298,7 +310,7 @@ fun AddExpenseScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             FsAvatar(name = preselectedFriend!!.fullName,
-                                userId = preselectedFriend!!.id, imageUrl = preselectedFriend!!.profilePictureUrl, size = 20.dp)
+                                userId = preselectedFriend!!.id, size = 20.dp)
                             Text(preselectedFriend!!.fullName, fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold, color = TextPrimary)
                         }
@@ -576,10 +588,9 @@ fun AddExpenseScreen(
                     ) {
                         if (paidByMember != null) {
                             FsAvatar(
-                                name     = paidByMember.fullName,
-                                userId   = paidByMember.userId,
-                                imageUrl = paidByMember.profilePictureUrl,
-                                size     = 24.dp,
+                                name   = paidByMember.fullName,
+                                userId = paidByMember.userId,
+                                size   = 24.dp,
                             )
                         }
                         Text(
@@ -699,7 +710,7 @@ fun AddExpenseScreen(
                             }
                         }
                         Spacer(modifier = Modifier.width(Spacing.md))
-                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = 32.dp)
+                        FsAvatar(name = member.fullName, userId = member.userId, size = 32.dp)
                         Spacer(modifier = Modifier.width(Spacing.md))
 
                         when {
@@ -1045,7 +1056,7 @@ private fun PayerBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
+                            FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                             Spacer(modifier = Modifier.width(Spacing.md))
                             Text(name,
                                 color      = if (selected) Green400 else TextPrimary,
@@ -1092,7 +1103,7 @@ private fun PayerBottomSheet(
                             .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
+                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(name, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                         Text(MoneyUtils.getSymbol(currency), fontSize = 14.sp, color = TextSecondary,
@@ -1256,7 +1267,7 @@ private fun SplitBottomSheet(
                             fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.width(Spacing.sm))
-                    FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
+                    FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                     Spacer(modifier = Modifier.width(Spacing.sm))
                     Text(name, fontSize = 14.sp,
                         color = if (isIncluded) TextPrimary else TextSecondary,

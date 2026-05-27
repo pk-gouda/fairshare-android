@@ -70,6 +70,9 @@ import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSectionLabel
 import com.prathik.fairshare.ui.components.FsTextButton
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
 import com.prathik.fairshare.ui.theme.Radius
@@ -85,14 +88,6 @@ import coil.compose.AsyncImage
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import androidx.compose.foundation.border
-import androidx.compose.material.icons.outlined.Send
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import com.prathik.fairshare.domain.model.ExpenseComment
-import com.prathik.fairshare.ui.components.FsAvatar
-import com.prathik.fairshare.ui.theme.ComponentSize
-import com.prathik.fairshare.ui.theme.Surface3
 
 /**
  * Expense Detail Screen.
@@ -123,12 +118,8 @@ fun ExpenseDetailScreen(
     val itemsLoading     by viewModel.itemsLoading.collectAsState()
     val changeLog        by viewModel.changeLog.collectAsState()
     val changeLogLoading by viewModel.changeLogLoading.collectAsState()
-    val comments         by viewModel.comments.collectAsState()
-    val commentsLoading  by viewModel.commentsLoading.collectAsState()
-    val commentsError    by viewModel.commentsError.collectAsState()
-    val commentText      by viewModel.commentText.collectAsState()
-    val commentPosting   by viewModel.commentPosting.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val isLoading = expenseState is ExpenseDetailUiState.Loading
@@ -158,7 +149,7 @@ fun ExpenseDetailScreen(
             is ExpenseActionState.RestoredOffline -> { onDeleted(); viewModel.resetActionState() }
 
             is ExpenseActionState.Error -> {
-                snackbarHost.showSnackbar(state.message); viewModel.resetActionState()
+                errorDialog = apiErrorDialogState(state.message); viewModel.resetActionState()
             }
 
             else -> Unit
@@ -168,11 +159,19 @@ fun ExpenseDetailScreen(
     // Expense truly does not exist on server (different from soft-deleted)
     LaunchedEffect(expenseState) {
         if (expenseState is ExpenseDetailUiState.Deleted) {
-            snackbarHost.showSnackbar("This expense no longer exists")
+            errorDialog = FsErrorDialogState("Item unavailable", "This expense may have been deleted or changed on another device.")
             onBack()
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         topBar = {
@@ -241,15 +240,6 @@ fun ExpenseDetailScreen(
                     pendingOp            = pendingOp,
                     onRetryPendingOp     = { opId -> viewModel.retryPendingOp(opId) },
                     isLocalPendingCreate = isLocalPendingCreate,
-                    comments             = comments,
-                    commentsLoading      = commentsLoading,
-                    commentsError        = commentsError,
-                    commentText          = commentText,
-                    commentPosting       = commentPosting,
-                    onCommentTextChanged = { viewModel.onCommentTextChanged(it) },
-                    onPostComment        = { viewModel.postComment() },
-                    onDeleteComment      = { viewModel.deleteComment(it) },
-                    onRetryComments      = { viewModel.loadComments() },
                 )
             }
         }
@@ -293,15 +283,6 @@ private fun ExpenseDetailContent(
     pendingOp             : com.prathik.fairshare.data.local.PendingOperationEntity? = null,
     onRetryPendingOp      : (String) -> Unit = {},
     isLocalPendingCreate  : Boolean = false,
-    comments              : List<ExpenseComment> = emptyList(),
-    commentsLoading       : Boolean = false,
-    commentsError         : Boolean = false,
-    commentText           : String = "",
-    commentPosting        : Boolean = false,
-    onCommentTextChanged  : (String) -> Unit = {},
-    onPostComment         : () -> Unit = {},
-    onDeleteComment       : (String) -> Unit = {},
-    onRetryComments       : () -> Unit = {},
 ) {
     var showItemBreakdown by remember { mutableStateOf(false) }
     Column(
@@ -832,23 +813,6 @@ private fun ExpenseDetailContent(
             }
         }
 
-        // ── Comments ─────────────────────────────────────────────────────────
-        if (!expense.isDeleted) {
-            Spacer(modifier = Modifier.height(Spacing.xl))
-            CommentsSection(
-                comments             = comments,
-                commentsLoading      = commentsLoading,
-                commentsError        = commentsError,
-                commentText          = commentText,
-                commentPosting       = commentPosting,
-                currentUserId        = currentUserId,
-                onCommentTextChanged = onCommentTextChanged,
-                onPostComment        = onPostComment,
-                onDeleteComment      = onDeleteComment,
-                onRetry              = onRetryComments,
-            )
-        }
-
         Spacer(modifier = Modifier.height(Spacing.xxxl))
     }
 }
@@ -1044,221 +1008,3 @@ private fun operationLabel(operationType: String): String = when (operationType)
     "RESTORE_EXPENSE" -> "Restoring"
     else              -> "Syncing"
 }
-// ── Comments Section ──────────────────────────────────────────────────────────
-
-@Composable
-private fun CommentsSection(
-    comments            : List<ExpenseComment>,
-    commentsLoading     : Boolean,
-    commentsError       : Boolean,
-    commentText         : String,
-    commentPosting      : Boolean,
-    currentUserId       : String?,
-    onCommentTextChanged: (String) -> Unit,
-    onPostComment       : () -> Unit,
-    onDeleteComment     : (String) -> Unit,
-    onRetry             : () -> Unit,
-) {
-    FsSectionLabel(
-        text     = "COMMENTS",
-        modifier = Modifier.padding(horizontal = Spacing.lg),
-    )
-    Spacer(modifier = Modifier.height(Spacing.sm))
-
-    when {
-        commentsLoading && comments.isEmpty() -> {
-            // First load — inline skeleton, no full-screen spinner
-            Column(
-                modifier = Modifier.padding(horizontal = Spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-            ) {
-                FsSkeletonTimelineRow()
-                FsSkeletonTimelineRow()
-            }
-        }
-        commentsError && comments.isEmpty() -> {
-            // Non-blocking error row
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = Spacing.lg)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    "Couldn't load comments",
-                    fontSize = 13.sp,
-                    color    = TextTertiary,
-                )
-                Text(
-                    "Retry",
-                    fontSize  = 13.sp,
-                    color     = Green400,
-                    modifier  = Modifier.clickable { onRetry() },
-                )
-            }
-        }
-        else -> {
-            if (comments.isEmpty()) {
-                Text(
-                    text     = "No comments yet.",
-                    fontSize = 13.sp,
-                    color    = TextTertiary,
-                    modifier = Modifier.padding(horizontal = Spacing.lg),
-                )
-            } else {
-                Column(
-                    modifier = Modifier.padding(horizontal = Spacing.lg),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
-                ) {
-                    comments.forEach { comment ->
-                        CommentRow(
-                            comment       = comment,
-                            isOwn         = comment.userId == currentUserId,
-                            onDelete      = { onDeleteComment(comment.id) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    // Comment input
-    Spacer(modifier = Modifier.height(Spacing.md))
-    Row(
-        modifier = Modifier
-            .padding(horizontal = Spacing.lg)
-            .fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-    ) {
-        OutlinedTextField(
-            value            = commentText,
-            onValueChange    = onCommentTextChanged,
-            placeholder      = { Text("Add a comment…", fontSize = 14.sp, color = TextTertiary) },
-            maxLines         = 4,
-            enabled          = !commentPosting,
-            modifier         = Modifier.weight(1f),
-            shape            = RoundedCornerShape(Radius.md),
-            colors           = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor   = Green400,
-                unfocusedBorderColor = Surface4,
-                focusedContainerColor   = Surface2,
-                unfocusedContainerColor = Surface2,
-                focusedTextColor        = TextPrimary,
-                unfocusedTextColor      = TextPrimary,
-            ),
-        )
-        val canPost = commentText.trim().isNotBlank() && !commentPosting
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(Radius.md))
-                .background(if (canPost) Green400 else Surface3)
-                .then(if (canPost) Modifier.clickable { onPostComment() } else Modifier),
-        ) {
-            if (commentPosting) {
-                Text("…", fontSize = 16.sp, color = TextTertiary)
-            } else {
-                Icon(
-                    imageVector        = Icons.Outlined.Send,
-                    contentDescription = "Post comment",
-                    tint               = if (canPost) Surface0 else TextTertiary,
-                    modifier           = Modifier.size(18.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CommentRow(
-    comment  : ExpenseComment,
-    isOwn    : Boolean,
-    onDelete : () -> Unit,
-) {
-    var showConfirm by remember { mutableStateOf(false) }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-    ) {
-        FsAvatar(
-            name   = comment.userFullName,
-            userId = comment.userId,
-            size   = ComponentSize.avatarSm,
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text       = comment.userFullName,
-                    fontSize   = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = TextPrimary,
-                )
-                Text(
-                    text     = formatCommentTime(comment.createdAt),
-                    fontSize = 11.sp,
-                    color    = TextTertiary,
-                )
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text     = comment.comment,
-                fontSize = 14.sp,
-                color    = TextSecondary,
-            )
-            if (isOwn) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text     = "Delete",
-                    fontSize = 12.sp,
-                    color    = Negative,
-                    modifier = Modifier.clickable { showConfirm = true },
-                )
-            }
-        }
-    }
-
-    if (showConfirm) {
-        AlertDialog(
-            onDismissRequest = { showConfirm = false },
-            title   = { Text("Delete comment?", fontWeight = FontWeight.Bold) },
-            text    = { Text("This cannot be undone.") },
-            confirmButton = {
-                Text(
-                    "Delete",
-                    color    = Negative,
-                    modifier = Modifier
-                        .padding(Spacing.sm)
-                        .clickable { showConfirm = false; onDelete() },
-                )
-            },
-            dismissButton = {
-                Text(
-                    "Cancel",
-                    color    = TextSecondary,
-                    modifier = Modifier
-                        .padding(Spacing.sm)
-                        .clickable { showConfirm = false },
-                )
-            },
-        )
-    }
-}
-
-private fun formatCommentTime(createdAt: String): String = try {
-    val dt = LocalDateTime.parse(createdAt, DateTimeFormatter.ISO_DATE_TIME)
-    val today = LocalDate.now()
-    if (dt.toLocalDate() == today) {
-        dt.format(DateTimeFormatter.ofPattern("h:mm a"))
-    } else {
-        dt.format(DateTimeFormatter.ofPattern("MMM d"))
-    }
-} catch (_: Exception) { "" }

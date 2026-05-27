@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -69,12 +68,11 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.GroupType
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import com.prathik.fairshare.ui.components.FsAvatar
-import com.prathik.fairshare.ui.components.FsSkeletonBlock
-import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
+import com.prathik.fairshare.ui.components.FsLoadingScreen
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.AvatarColors
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
@@ -99,27 +97,24 @@ import com.prathik.fairshare.ui.theme.TextTertiary
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupSettingsScreen(
-    onBack                : () -> Unit,
-    onNavigateToAddMember : (String) -> Unit,
-    onGroupDeleted        : () -> Unit,
-    onNavigateToCustomize : (String) -> Unit = {},
-    onNavigateToSettleUp  : (groupId: String) -> Unit = {},
-    onNavigateToMembers   : (String) -> Unit = {},
-    onNavigateToAnalytics : (String) -> Unit = {},
-    onNavigateToRecurring : (String) -> Unit = {},
-    onNavigateToReminders : (String) -> Unit = {},
-    onNavigateToInvite    : (groupId: String) -> Unit = {},
-    defaultCurrency       : String = "USD",
-    onNavigateToCurrency  : (currentCurrency: String) -> Unit = {},
-    viewModel             : GroupSettingsViewModel = hiltViewModel(),
+    onBack               : () -> Unit,
+    onNavigateToAddMember: (String) -> Unit,
+    onGroupDeleted       : () -> Unit,
+    onNavigateToSettleUp : (groupId: String) -> Unit = {},
+    onNavigateToMembers  : (String) -> Unit = {},
+    onNavigateToAnalytics: (String) -> Unit = {},
+    onNavigateToRecurring: (String) -> Unit = {},
+    onNavigateToReminders: (String) -> Unit = {},
+    onNavigateToInvite   : (groupId: String) -> Unit = {},
+    defaultCurrency      : String = "USD",
+    onNavigateToCurrency : (currentCurrency: String) -> Unit = {},
+    viewModel            : GroupSettingsViewModel = hiltViewModel(),
 ) {
     val group            by viewModel.group.collectAsState()
     val members          by viewModel.members.collectAsState()
     val isLoading        by viewModel.isLoading.collectAsState()
-    val groupLoadFailed  by viewModel.groupLoadFailed.collectAsState()
     val actionState      by viewModel.actionState.collectAsState()
     val friends          by viewModel.friends.collectAsState()
-    val friendsLoaded    by viewModel.friendsLoaded.collectAsState()
     val claimState       by viewModel.claimState.collectAsState()
     val yourGroupBalances by viewModel.yourGroupBalances.collectAsState()
     val editName         by viewModel.editName.collectAsState()
@@ -127,11 +122,13 @@ fun GroupSettingsScreen(
     val muteNotifications by viewModel.muteNotifications.collectAsState()
 
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     val clipboard    = LocalClipboardManager.current
 
     var showDeleteDialog   by remember { mutableStateOf(false) }
     var deleteConfirmText  by remember { mutableStateOf("") }
     var showRemoveDialog  by remember { mutableStateOf<GroupMember?>(null) }
+    var showNameDialog    by remember { mutableStateOf(false) }
     var showLeaveDialog   by remember { mutableStateOf(false) }
     var showArchiveDialog   by remember { mutableStateOf(false) }
     var showUnarchiveDialog by remember { mutableStateOf(false) }
@@ -152,7 +149,7 @@ fun GroupSettingsScreen(
     LaunchedEffect(actionState) {
         when (val s = actionState) {
             is GroupSettingsActionState.Success     -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
-            is GroupSettingsActionState.Error       -> { snackbarHost.showSnackbar(s.message); viewModel.resetActionState() }
+            is GroupSettingsActionState.Error       -> { errorDialog = apiErrorDialogState(s.message); viewModel.resetActionState() }
             is GroupSettingsActionState.GroupDeleted -> onGroupDeleted()
             else -> Unit
         }
@@ -161,7 +158,7 @@ fun GroupSettingsScreen(
     LaunchedEffect(claimState) {
         when (val s = claimState) {
             is ClaimActionState.Success -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
-            is ClaimActionState.Error   -> { snackbarHost.showSnackbar(s.message); viewModel.resetClaimState() }
+            is ClaimActionState.Error   -> { errorDialog = apiErrorDialogState(s.message); viewModel.resetClaimState() }
             else -> Unit
         }
     }
@@ -392,6 +389,34 @@ fun GroupSettingsScreen(
     }
 
     // ── Edit group name dialog ────────────────────────────────────────────────
+    if (showNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showNameDialog = false },
+            containerColor   = Surface2,
+            title = { Text("Edit group name", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text  = {
+                com.prathik.fairshare.ui.components.FsTextField(
+                    value         = editName,
+                    onValueChange = { viewModel.onNameChanged(it) },
+                    label         = "Group name",
+                    modifier      = androidx.compose.ui.Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (editName.isNotBlank()) {
+                        showNameDialog = false
+                        viewModel.saveGroupName()
+                    }
+                }) {
+                    Text("Save", color = Green400, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNameDialog = false }) { Text("Cancel", color = TextSecondary) }
+            },
+        )
+    }
 
     // ── Assign sheet ──────────────────────────────────────────────────────────
     showAssignSheet?.let { member ->
@@ -420,11 +445,17 @@ fun GroupSettingsScreen(
                 HorizontalDivider(color = Surface4, thickness = 0.5.dp)
                 val realMemberIds = members.filter { !it.email.startsWith("placeholder+") }.map { it.userId }.toSet()
                 val assignable    = friends.filter { it.id !in realMemberIds }
-                if (!friendsLoaded && friends.isEmpty()) {
-                    // Friends still loading — show skeleton rows
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        repeat(3) { FsSkeletonTimelineRow() }
+                if (friends.isEmpty()) {
+                    // Friends still loading — show spinner
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            color    = Green400,
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.dp,
+                        )
                     }
                 } else if (assignable.isNotEmpty()) {
                     assignable.forEach { friend ->
@@ -440,7 +471,7 @@ fun GroupSettingsScreen(
                                 .padding(horizontal = Spacing.lg, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            FsAvatar(name = friend.fullName, userId = friend.id, imageUrl = friend.profilePictureUrl, size = ComponentSize.avatarMd)
+                            FsAvatar(name = friend.fullName, userId = friend.id, size = ComponentSize.avatarMd)
                             Spacer(modifier = Modifier.width(Spacing.md))
                             Text(friend.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.weight(1f))
                         }
@@ -467,6 +498,14 @@ fun GroupSettingsScreen(
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
@@ -474,27 +513,19 @@ fun GroupSettingsScreen(
             com.prathik.fairshare.ui.components.FsTopBar(
                 title  = "Group Settings",
                 onBack = onBack,
+                actions = if (isCreator) {
+                    {
+                        androidx.compose.material3.IconButton(onClick = { showNameDialog = true }) {
+                            Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = TextSecondary)
+                        }
+                    }
+                } else null,
             )
         },
     ) { innerPadding ->
 
-        if (groupLoadFailed && group == null) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Couldn't load group settings", fontSize = 15.sp,
-                        color = com.prathik.fairshare.ui.theme.TextPrimary)
-                    Text("Check your connection and try again", fontSize = 13.sp,
-                        color = com.prathik.fairshare.ui.theme.TextTertiary)
-                    androidx.compose.material3.TextButton(onClick = { viewModel.loadData() }) {
-                        Text("Retry", color = com.prathik.fairshare.ui.theme.Green400, fontSize = 14.sp)
-                    }
-                }
-            }
-            return@Scaffold
-        }
         if (isLoading && group == null) {
-            GroupSettingsSkeleton()
+            FsLoadingScreen()
             return@Scaffold
         }
 
@@ -509,15 +540,10 @@ fun GroupSettingsScreen(
             group?.let { g ->
                 Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(Radius.lg))
-                            .then(if (isMember) Modifier.clickable { onNavigateToCustomize(g.id) } else Modifier)
-                            .padding(Spacing.sm),
                     ) {
-                        // Emoji / group photo tile
+                        // Emoji tile — tappable for any member (change photo)
                         Box(modifier = Modifier.size(56.dp)) {
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -526,23 +552,9 @@ fun GroupSettingsScreen(
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(Surface2)
                                     .border(1.dp, Surface4, RoundedCornerShape(16.dp))
+                                    .then(if (isMember) Modifier.clickable { showNameDialog = true } else Modifier),
                             ) {
-                                if (!g.groupImage.isNullOrBlank()) {
-                                    var imageLoadFailed by remember(g.groupImage) { mutableStateOf(false) }
-                                    if (!imageLoadFailed) {
-                                        coil.compose.AsyncImage(
-                                            model              = g.groupImage,
-                                            contentDescription = g.name,
-                                            contentScale       = androidx.compose.ui.layout.ContentScale.Crop,
-                                            onError            = { imageLoadFailed = true },
-                                            modifier           = Modifier.fillMaxSize(),
-                                        )
-                                    } else {
-                                        Text(coverEmoji(g.type), fontSize = 26.sp)
-                                    }
-                                } else {
-                                    Text(coverEmoji(g.type), fontSize = 26.sp)
-                                }
+                                Text(coverEmoji(g.type), fontSize = 26.sp)
                             }
                             if (isMember) {
                                 Box(
@@ -586,15 +598,6 @@ fun GroupSettingsScreen(
                                 Text("·", fontSize = 12.sp, color = TextTertiary)
                                 Text(g.createdAt.toShortDate(), fontSize = 12.sp, color = TextTertiary)
                             }
-                        }
-                        // Chevron for members who can customize
-                        if (isMember) {
-                            Icon(
-                                imageVector        = Icons.Default.ChevronRight,
-                                contentDescription = "Customize group",
-                                tint               = TextTertiary,
-                                modifier           = Modifier.size(20.dp),
-                            )
                         }
                     }
 
@@ -1260,37 +1263,4 @@ private fun coverEmoji(type: GroupType): String = when (type) {
     GroupType.EVENT     -> "🎉"
     GroupType.APARTMENT -> "🏢"
     GroupType.OTHER     -> "💰"
-}
-// ── GroupSettings skeleton placeholder ───────────────────────────────────────
-
-@Composable
-private fun GroupSettingsSkeleton() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        // Group avatar + name placeholder
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            FsSkeletonBlock(height = 56.dp, widthFraction = 0.16f, cornerRadius = 28.dp)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FsSkeletonBlock(height = 16.dp, widthFraction = 0.5f)
-                FsSkeletonBlock(height = 12.dp, widthFraction = 0.3f)
-            }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        // Settings card placeholders
-        repeat(3) {
-            FsSkeletonBlock(height = 52.dp, widthFraction = 1f, cornerRadius = 10.dp)
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        // Members section placeholder
-        FsSkeletonBlock(height = 14.dp, widthFraction = 0.25f, cornerRadius = 4.dp)
-        repeat(3) { FsSkeletonTimelineRow() }
-    }
 }

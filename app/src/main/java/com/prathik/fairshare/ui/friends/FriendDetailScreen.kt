@@ -81,6 +81,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSecondaryButton
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -227,6 +230,7 @@ fun FriendDetailScreen(
     val nonGroupBalance = nonGroupByCurrency.values.sumOf { it }
 
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
     // Internal representation of one settleable balance context.
@@ -250,7 +254,7 @@ fun FriendDetailScreen(
 
         when (contexts.size) {
             0 -> coroutineScope.launch {
-                snackbarHost.showSnackbar("No balance to settle")
+                errorDialog = FsErrorDialogState("No balance to settle", "You and this friend are already settled up.")
             }
 
             1 -> {
@@ -289,7 +293,7 @@ fun FriendDetailScreen(
     LaunchedEffect(actionState) {
         when (val s = actionState) {
             is FriendDetailActionState.Error -> {
-                snackbarHost.showSnackbar(s.message); viewModel.resetActionState()
+                errorDialog = apiErrorDialogState(s.message); viewModel.resetActionState()
             }
 
             is FriendDetailActionState.Success -> {
@@ -313,7 +317,7 @@ fun FriendDetailScreen(
             }
 
             is SplitwiseImportState.Error -> {
-                snackbarHost.showSnackbar(s.message)
+                errorDialog = apiErrorDialogState(s.message)
                 viewModel.resetImportState()
             }
 
@@ -617,6 +621,14 @@ fun FriendDetailScreen(
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         contentWindowInsets = WindowInsets(0),
@@ -655,7 +667,6 @@ fun FriendDetailScreen(
                                 settledPct = settledPct,
                                 groupCount = groupCount,
                                 friendState = friendState,
-                                imageUrl = friend?.profilePictureUrl,
                             )
                         }
 
@@ -1015,7 +1026,6 @@ fun FriendDetailScreen(
                             FsAvatar(
                                 name = friendName,
                                 userId = viewModel.friendId,
-                                imageUrl = friend?.profilePictureUrl,
                                 size = ComponentSize.avatarMd
                             )
                             Spacer(Modifier.width(Spacing.md))
@@ -1068,7 +1078,6 @@ fun FriendDetailScreen(
                                     FsAvatar(
                                         name = friendName,
                                         userId = viewModel.friendId,
-                                        imageUrl = friend?.profilePictureUrl,
                                         size = ComponentSize.avatarMd
                                     )
                                     Spacer(Modifier.width(Spacing.md))
@@ -1284,7 +1293,6 @@ private fun FriendCoverHeader(
     settledPct: Float,
     groupCount: Int,
     friendState: FriendUiState = FriendUiState.BRAND_NEW,
-    imageUrl: String? = null,
 ) {
     val gradientColors = remember(userId) { friendGradient(userId) }
 
@@ -1414,39 +1422,47 @@ private fun FriendCoverHeader(
                         FsAvatar(
                             name = name,
                             userId = userId,
-                            imageUrl = imageUrl,
                             size = 56.dp,
                             modifier = Modifier.clip(CircleShape)
                         )
                     }
 
                     FriendUiState.THEY_OWE_YOU -> {
-                        // Show friend photo; ring color provides the green debt signal
-                        FsAvatar(
-                            name = name,
-                            userId = userId,
-                            imageUrl = imageUrl,
-                            size = 56.dp,
-                            modifier = Modifier.clip(CircleShape)
-                        )
+                        // Green tinted avatar background
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF00C896))
+                        ) {
+                            Text(
+                                name.take(2).uppercase(), fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold, color = Color.Black
+                            )
+                        }
                     }
 
                     FriendUiState.YOU_OWE_THEM -> {
-                        // Show friend photo; ring color provides the red debt signal
-                        FsAvatar(
-                            name = name,
-                            userId = userId,
-                            imageUrl = imageUrl,
-                            size = 56.dp,
-                            modifier = Modifier.clip(CircleShape)
-                        )
+                        // Red tinted avatar background
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFF87171))
+                        ) {
+                            Text(
+                                name.take(2).uppercase(), fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold, color = Color.White
+                            )
+                        }
                     }
 
                     else -> {
                         FsAvatar(
                             name = name,
                             userId = userId,
-                            imageUrl = imageUrl,
                             size = 56.dp,
                             modifier = Modifier.clip(CircleShape)
                         )
@@ -2312,7 +2328,6 @@ fun FriendLinkSheet(
                         FsAvatar(
                             name = friend.fullName,
                             userId = friend.id,
-                            imageUrl = friend.profilePictureUrl,
                             size = ComponentSize.avatarMd
                         )
                         Spacer(Modifier.width(Spacing.md))

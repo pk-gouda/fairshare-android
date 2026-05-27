@@ -74,10 +74,13 @@ import com.prathik.fairshare.domain.model.GroupMember
 import com.prathik.fairshare.domain.model.SplitType
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsErrorScreen
-import com.prathik.fairshare.ui.components.FsDetailSkeleton
+import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsTextButton
 import com.prathik.fairshare.ui.components.FsTextField
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -128,6 +131,7 @@ fun EditExpenseScreen(
     val splitData    by viewModel.splitData.collectAsState()
 
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
 
     var showPayerSheet     by remember { mutableStateOf(false) }
     var showSplitSheet     by remember { mutableStateOf(false) }
@@ -142,7 +146,7 @@ fun EditExpenseScreen(
         when (val s = saveState) {
             is EditSaveState.Success      -> { onSuccess(); viewModel.resetSaveState() }
             is EditSaveState.SavedOffline -> { onSuccess(); viewModel.resetSaveState() }
-            is EditSaveState.Error        -> { snackbarHost.showSnackbar(s.message); viewModel.resetSaveState() }
+            is EditSaveState.Error        -> { errorDialog = apiErrorDialogState(s.message); viewModel.resetSaveState() }
             else -> Unit
         }
     }
@@ -169,6 +173,14 @@ fun EditExpenseScreen(
     val categoryText = if (categoryResolved == null) "Auto-detect"
     else categoryResolved.name.lowercase().replace("_", " ").replaceFirstChar { it.uppercase() }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost   = { SnackbarHost(snackbarHost) },
@@ -193,7 +205,7 @@ fun EditExpenseScreen(
     ) { innerPadding ->
 
         when (loadState) {
-            is EditLoadState.Loading -> { FsDetailSkeleton(); return@Scaffold }
+            is EditLoadState.Loading -> { FsLoadingScreen(); return@Scaffold }
             is EditLoadState.Error -> {
                 val err = loadState as EditLoadState.Error
                 FsErrorScreen(message = err.message, isNetwork = err.isNetwork, onRetry = { onBack() })
@@ -276,13 +288,11 @@ fun EditExpenseScreen(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier
                         .clip(RoundedCornerShape(Radius.lg))
-                        .background(if (isSaving) com.prathik.fairshare.ui.theme.Surface2 else Green400)
-                        .then(if (!isSaving) Modifier.clickable { viewModel.save() } else Modifier)
+                        .background(Green400)
+                        .clickable { viewModel.save() }
                         .padding(horizontal = Spacing.md, vertical = 8.dp),
                 ) {
-                    Text(if (isSaving) "Saving…" else "Save",
-                        fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                        color = if (isSaving) com.prathik.fairshare.ui.theme.TextTertiary else Surface0)
+                    Text("Save", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Surface0)
                 }
             }
 
@@ -429,7 +439,7 @@ fun EditExpenseScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = 22.dp)
+                            FsAvatar(name = member.fullName, userId = member.userId, size = 22.dp)
                             Text(
                                 text       = name,
                                 fontSize   = 13.sp,
@@ -530,7 +540,7 @@ fun EditExpenseScreen(
                             }
                             Spacer(modifier = Modifier.width(Spacing.md))
                         }
-                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = 32.dp)
+                        FsAvatar(name = member.fullName, userId = member.userId, size = 32.dp)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         when (splitType) {
                             SplitType.EQUAL -> {
@@ -819,7 +829,7 @@ private fun EditPayerBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
+                            FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                             Spacer(modifier = Modifier.width(Spacing.md))
                             Text(name,
                                 color      = if (selected) Green400 else TextPrimary,
@@ -866,7 +876,7 @@ private fun EditPayerBottomSheet(
                             .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
+                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                         Spacer(modifier = Modifier.width(Spacing.md))
                         Text(name, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                         Text(MoneyUtils.getSymbol(currency), fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(end = 4.dp))
@@ -1026,7 +1036,7 @@ private fun EditSplitBottomSheet(
                         if (isIncluded) Text("✓", fontSize = 12.sp, color = Surface0, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.width(Spacing.sm))
-                    FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarSm)
+                    FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarSm)
                     Spacer(modifier = Modifier.width(Spacing.sm))
                     Text(name, fontSize = 14.sp, color = if (isIncluded) TextPrimary else TextSecondary,
                         modifier = Modifier.weight(1f))

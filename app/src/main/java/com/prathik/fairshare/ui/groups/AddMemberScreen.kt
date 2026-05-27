@@ -33,6 +33,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,9 +48,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.prathik.fairshare.domain.model.Friend
 import com.prathik.fairshare.ui.components.FsAvatar
 import com.prathik.fairshare.ui.components.FsEmptyState
-import com.prathik.fairshare.ui.components.FsSkeletonBlock
-import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
+import com.prathik.fairshare.ui.components.FsLoadingScreen
 import com.prathik.fairshare.ui.components.FsTopBar
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Radius
@@ -80,6 +84,7 @@ fun AddMemberScreen(
     val actionState  by viewModel.actionState.collectAsState()
     val addingIds    by viewModel.addingIds.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
 
     val filtered by remember { derivedStateOf { viewModel.filteredFriends() } }
 
@@ -90,13 +95,21 @@ fun AddMemberScreen(
                 viewModel.resetActionState()
             }
             is AddMemberActionState.Error -> {
-                snackbarHost.showSnackbar(s.message)
+                errorDialog = apiErrorDialogState(s.message)
                 viewModel.resetActionState()
             }
             else -> Unit
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor = Surface0,
         snackbarHost = { SnackbarHost(snackbarHost) },
@@ -104,7 +117,7 @@ fun AddMemberScreen(
     ) { innerPadding ->
 
         if (isLoading) {
-            AddMemberSkeleton(Modifier.padding(innerPadding))
+            FsLoadingScreen()
             return@Scaffold
         }
 
@@ -312,20 +325,5 @@ private fun FriendRow(
                 }
             }
         }
-    }
-}
-
-// ── AddMember skeleton ────────────────────────────────────────────────────────
-
-@androidx.compose.runtime.Composable
-private fun AddMemberSkeleton(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
-    androidx.compose.foundation.layout.Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
-    ) {
-        com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 14.dp, widthFraction = 0.4f, cornerRadius = 4.dp)
-        repeat(4) { com.prathik.fairshare.ui.components.FsSkeletonTimelineRow() }
     }
 }

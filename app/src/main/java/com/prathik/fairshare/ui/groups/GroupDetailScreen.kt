@@ -85,6 +85,9 @@ import com.prathik.fairshare.ui.components.FsDetailSkeleton
 import com.prathik.fairshare.ui.components.FsSkeletonTimelineRow
 import com.prathik.fairshare.ui.components.FsPrimaryButton
 import com.prathik.fairshare.ui.components.FsSecondaryButton
+import com.prathik.fairshare.ui.components.FsErrorDialog
+import com.prathik.fairshare.ui.components.FsErrorDialogState
+import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.ComponentSize
 import com.prathik.fairshare.ui.theme.Green400
 import com.prathik.fairshare.ui.theme.Negative
@@ -213,6 +216,7 @@ fun GroupDetailScreen(
     val isLoading = groupState is GroupDetailUiState.Loading
 
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
 
     LaunchedEffect(settlementActionState) {
         when (val s = settlementActionState) {
@@ -221,7 +225,7 @@ fun GroupDetailScreen(
                 viewModel.resetSettlementActionState()
             }
             is SettlementActionState.Error -> {
-                snackbarHostState.showSnackbar(s.message)
+                errorDialog = apiErrorDialogState(s.message)
                 viewModel.resetSettlementActionState()
             }
             else -> Unit
@@ -260,6 +264,14 @@ fun GroupDetailScreen(
         }
     }
 
+
+    errorDialog?.let { err ->
+        FsErrorDialog(
+            title     = err.title,
+            message   = err.message,
+            onDismiss = { errorDialog = null },
+        )
+    }
     Scaffold(
         containerColor      = Surface0,
         contentWindowInsets = WindowInsets(0),
@@ -662,7 +674,7 @@ fun GroupDetailScreen(
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarMd)
+                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarMd)
                         Spacer(Modifier.width(Spacing.md))
                         Text(member.fullName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.weight(1f))
                     }
@@ -691,7 +703,7 @@ fun GroupDetailScreen(
                             .padding(horizontal = Spacing.lg, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FsAvatar(name = member.fullName, userId = member.userId, imageUrl = member.profilePictureUrl, size = ComponentSize.avatarMd,
+                        FsAvatar(name = member.fullName, userId = member.userId, size = ComponentSize.avatarMd,
                             modifier = Modifier.alpha(if (isPayer) 0.35f else 1f))
                         Spacer(Modifier.width(Spacing.md))
                         Column(Modifier.weight(1f)) {
@@ -899,40 +911,6 @@ private fun GroupCoverHeader(
                         letterSpacing = 0.5.sp,
                     )
                 }
-            }
-
-            // Group notes — shown only if present AND not system-generated
-            val visibleNote = com.prathik.fairshare.ui.groups.userVisibleGroupNote(group.groupNotes)
-            if (visibleNote.isNotBlank()) {
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    text     = visibleNote,
-                    fontSize = 13.sp,
-                    color    = Color.White.copy(alpha = 0.75f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = Spacing.sm),
-                )
-            }
-
-            // Trip dates — shown only for TRIP groups with at least one date
-            if (group.type == GroupType.TRIP &&
-                (!group.tripStartDate.isNullOrBlank() || !group.tripEndDate.isNullOrBlank())) {
-                Spacer(Modifier.height(Spacing.sm))
-                val dateText = when {
-                    !group.tripStartDate.isNullOrBlank() && !group.tripEndDate.isNullOrBlank() ->
-                        "✈️  ${formatTripDateDisplay(group.tripStartDate)} – ${formatTripDateDisplay(group.tripEndDate)}"
-                    !group.tripStartDate.isNullOrBlank() ->
-                        "✈️  From ${formatTripDateDisplay(group.tripStartDate)}"
-                    else ->
-                        "✈️  Until ${formatTripDateDisplay(group.tripEndDate!!)}"
-                }
-                Text(
-                    text     = dateText,
-                    fontSize = 13.sp,
-                    color    = Color.White.copy(alpha = 0.75f),
-                    modifier = Modifier.padding(horizontal = Spacing.sm),
-                )
             }
         }
     }
@@ -1613,9 +1591,3 @@ private fun TimelineItem.stableId(): String =
         is TimelineItem.ExpenseItem -> "e_${expense.id}"
         is TimelineItem.SettlementItem -> "s_${settlement.id}"
     }
-// ── Trip date display helper ──────────────────────────────────────────────────
-
-private fun formatTripDateDisplay(isoDate: String): String = runCatching {
-    val d = java.time.LocalDate.parse(isoDate, java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
-    d.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", java.util.Locale.getDefault()))
-}.getOrDefault(isoDate)
