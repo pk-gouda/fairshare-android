@@ -422,7 +422,8 @@ private fun NotificationRow(
                         NotificationType.EXPENSE_RECURRING_SET,
                         NotificationType.EXPENSE_RECURRING_STOPPED,
                         NotificationType.EXPENSE_AUTO_CREATED,
-                        NotificationType.EXPENSE_RESTORED -> {
+                        NotificationType.EXPENSE_RESTORED,
+                        NotificationType.EXPENSE_COMMENT_ADDED -> {
                             if (notification.isGroupDeleted) {
                                 handleGroupDeleted()
                             } else {
@@ -519,6 +520,7 @@ private fun NotificationRow(
 
 private fun notificationEmoji(type: NotificationType): String = when (type) {
     NotificationType.EXPENSE_ADDED -> "🧾"
+    NotificationType.EXPENSE_COMMENT_ADDED -> "💬"
     NotificationType.EXPENSE_UPDATED -> "✏️"
     NotificationType.EXPENSE_DELETED -> "🗑️"
     NotificationType.EXPENSE_RESTORED -> "♻️"
@@ -549,7 +551,8 @@ private fun notificationEmoji(type: NotificationType): String = when (type) {
 private fun notificationBgColor(type: NotificationType): Color = when (type) {
     NotificationType.EXPENSE_ADDED,
     NotificationType.EXPENSE_UPDATED,
-    NotificationType.EXPENSE_DELETED -> Color(0xFF1A2A1A)
+    NotificationType.EXPENSE_DELETED,
+    NotificationType.EXPENSE_COMMENT_ADDED -> Color(0xFF1A2A1A)
 
     NotificationType.EXPENSE_RESTORED -> Color(0xFF1A2A2A)
     NotificationType.SETTLEMENT_RECEIVED,

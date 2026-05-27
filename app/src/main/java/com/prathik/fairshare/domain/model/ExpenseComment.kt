@@ -5,9 +5,10 @@ import kotlinx.parcelize.Parcelize
 
 @Parcelize
 data class ExpenseComment(
-    val id: String,
-    val userId: String,
-    val userFullName: String,
-    val comment: String,
-    val createdAt: String,
+    val id                 : String,
+    val userId             : String,
+    val userFullName       : String,
+    val userProfilePictureUrl: String?,
+    val comment            : String,
+    val createdAt          : String,
 ) : Parcelable

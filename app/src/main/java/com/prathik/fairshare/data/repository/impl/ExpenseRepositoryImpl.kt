@@ -682,11 +682,12 @@ class ExpenseRepositoryImpl @Inject constructor(
 
     private fun com.prathik.fairshare.data.model.response.ExpenseCommentResponse.toDomain() =
         com.prathik.fairshare.domain.model.ExpenseComment(
-            id           = id,
-            userId       = userId,
-            userFullName = userFullName,
-            comment      = comment,
-            createdAt    = createdAt,
+            id                      = id,
+            userId                  = userId,
+            userFullName            = userFullName,
+            userProfilePictureUrl   = userProfilePictureUrl,
+            comment                 = comment,
+            createdAt               = createdAt,
         )
 
     // ── Payer / split entity helpers ──────────────────────────────────────────

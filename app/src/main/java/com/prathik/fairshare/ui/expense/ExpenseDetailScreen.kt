@@ -74,6 +74,7 @@ import com.prathik.fairshare.ui.components.FsErrorDialog
 import com.prathik.fairshare.ui.components.FsErrorDialogState
 import com.prathik.fairshare.ui.components.apiErrorDialogState
 import com.prathik.fairshare.ui.theme.Green400
+import com.prathik.fairshare.ui.theme.Green900
 import com.prathik.fairshare.ui.theme.Negative
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
@@ -88,6 +89,17 @@ import coil.compose.AsyncImage
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.ImeAction
+import com.prathik.fairshare.domain.model.ExpenseComment
+import com.prathik.fairshare.ui.components.FsAvatar
+import com.prathik.fairshare.ui.theme.ComponentSize
+import com.prathik.fairshare.ui.theme.Surface3
 
 /**
  * Expense Detail Screen.
@@ -118,6 +130,11 @@ fun ExpenseDetailScreen(
     val itemsLoading     by viewModel.itemsLoading.collectAsState()
     val changeLog        by viewModel.changeLog.collectAsState()
     val changeLogLoading by viewModel.changeLogLoading.collectAsState()
+    val comments         by viewModel.comments.collectAsState()
+    val commentsLoading  by viewModel.commentsLoading.collectAsState()
+    val commentsError    by viewModel.commentsError.collectAsState()
+    val commentText      by viewModel.commentText.collectAsState()
+    val commentPosting   by viewModel.commentPosting.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     var errorDialog by remember { mutableStateOf<FsErrorDialogState?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -240,6 +257,15 @@ fun ExpenseDetailScreen(
                     pendingOp            = pendingOp,
                     onRetryPendingOp     = { opId -> viewModel.retryPendingOp(opId) },
                     isLocalPendingCreate = isLocalPendingCreate,
+                    comments             = comments,
+                    commentsLoading      = commentsLoading,
+                    commentsError        = commentsError,
+                    commentText          = commentText,
+                    commentPosting       = commentPosting,
+                    onCommentTextChanged = { viewModel.onCommentTextChanged(it) },
+                    onPostComment        = { viewModel.postComment() },
+                    onDeleteComment      = { viewModel.deleteComment(it) },
+                    onRetryComments      = { viewModel.loadComments() },
                 )
             }
         }
@@ -283,6 +309,16 @@ private fun ExpenseDetailContent(
     pendingOp             : com.prathik.fairshare.data.local.PendingOperationEntity? = null,
     onRetryPendingOp      : (String) -> Unit = {},
     isLocalPendingCreate  : Boolean = false,
+    // ── Comments ──────────────────────────────────────────────────────────
+    comments             : List<ExpenseComment>  = emptyList(),
+    commentsLoading      : Boolean               = false,
+    commentsError        : Boolean               = false,
+    commentText          : String                = "",
+    commentPosting       : Boolean               = false,
+    onCommentTextChanged : (String) -> Unit      = {},
+    onPostComment        : () -> Unit            = {},
+    onDeleteComment      : (String) -> Unit      = {},
+    onRetryComments      : () -> Unit            = {},
 ) {
     var showItemBreakdown by remember { mutableStateOf(false) }
     Column(
@@ -813,6 +849,23 @@ private fun ExpenseDetailContent(
             }
         }
 
+        // ── Comments ─────────────────────────────────────────────────────
+        if (!expense.isDeleted) {
+            Spacer(modifier = Modifier.height(Spacing.xl))
+            CommentsSection(
+                comments             = comments,
+                commentsLoading      = commentsLoading,
+                commentsError        = commentsError,
+                commentText          = commentText,
+                commentPosting       = commentPosting,
+                currentUserId        = currentUserId,
+                onCommentTextChanged = onCommentTextChanged,
+                onPostComment        = onPostComment,
+                onDeleteComment      = onDeleteComment,
+                onRetryComments      = onRetryComments,
+            )
+        }
+
         Spacer(modifier = Modifier.height(Spacing.xxxl))
     }
 }
@@ -1008,3 +1061,268 @@ private fun operationLabel(operationType: String): String = when (operationType)
     "RESTORE_EXPENSE" -> "Restoring"
     else              -> "Syncing"
 }
+// ── Comments Thread ───────────────────────────────────────────────────────────
+
+@Composable
+private fun CommentsSection(
+    comments            : List<ExpenseComment>,
+    commentsLoading     : Boolean,
+    commentsError       : Boolean,
+    commentText         : String,
+    commentPosting      : Boolean,
+    currentUserId       : String?,
+    onCommentTextChanged: (String) -> Unit,
+    onPostComment       : () -> Unit,
+    onDeleteComment     : (String) -> Unit,
+    onRetryComments     : () -> Unit,
+) {
+    FsSectionLabel(
+        text     = "COMMENTS",
+        modifier = Modifier.padding(horizontal = Spacing.lg),
+    )
+    Spacer(Modifier.height(Spacing.sm))
+
+    when {
+        // First load — show skeleton, preserve existing comments if present
+        commentsLoading && comments.isEmpty() -> {
+            Column(
+                modifier            = Modifier.padding(horizontal = Spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                FsSkeletonTimelineRow()
+                FsSkeletonTimelineRow()
+            }
+        }
+
+        // Error with no cached comments
+        commentsError && comments.isEmpty() -> {
+            Row(
+                modifier              = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Couldn't load comments.", fontSize = 13.sp, color = TextTertiary)
+                Text(
+                    "Retry",
+                    fontSize = 13.sp,
+                    color    = Green400,
+                    modifier = Modifier.clickable { onRetryComments() },
+                )
+            }
+        }
+
+        else -> {
+            if (comments.isEmpty()) {
+                Text(
+                    "No comments yet.",
+                    fontSize = 13.sp,
+                    color    = TextTertiary,
+                    modifier = Modifier.padding(horizontal = Spacing.lg),
+                )
+            } else {
+                Column(
+                    modifier            = Modifier.padding(horizontal = Spacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                ) {
+                    comments.forEach { comment ->
+                        CommentBubble(
+                            comment   = comment,
+                            isOwn     = comment.userId == currentUserId,
+                            onDelete  = { onDeleteComment(comment.id) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Input row ─────────────────────────────────────────────────────────────
+    Spacer(Modifier.height(Spacing.md))
+    Row(
+        modifier              = Modifier
+            .padding(horizontal = Spacing.lg)
+            .fillMaxWidth(),
+        verticalAlignment     = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        val canPost = commentText.trim().isNotBlank() && !commentPosting
+
+        OutlinedTextField(
+            value         = commentText,
+            onValueChange = onCommentTextChanged,
+            placeholder   = { Text("Add a comment…", fontSize = 14.sp, color = TextTertiary) },
+            maxLines      = 4,
+            enabled       = !commentPosting,
+            modifier      = Modifier.weight(1f),
+            shape         = androidx.compose.foundation.shape.RoundedCornerShape(Radius.md),
+            colors        = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor      = Green400,
+                unfocusedBorderColor    = Surface4,
+                focusedContainerColor   = Surface2,
+                unfocusedContainerColor = Surface2,
+                focusedTextColor        = TextPrimary,
+                unfocusedTextColor      = TextPrimary,
+                disabledTextColor       = TextTertiary,
+                disabledBorderColor     = Surface4,
+                disabledContainerColor  = Surface2,
+            ),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (canPost) onPostComment() }),
+        )
+
+        // Send / posting indicator button
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier         = Modifier
+                .size(48.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(Radius.md))
+                .background(if (canPost) Green400 else Surface3)
+                .then(if (canPost) Modifier.clickable { onPostComment() } else Modifier),
+        ) {
+            if (commentPosting) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier    = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color       = TextTertiary,
+                )
+            } else {
+                Icon(
+                    imageVector        = Icons.Outlined.Send,
+                    contentDescription = "Post comment",
+                    tint               = if (canPost) Surface0 else TextTertiary,
+                    modifier           = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentBubble(
+    comment : ExpenseComment,
+    isOwn   : Boolean,
+    onDelete: () -> Unit,
+) {
+    var showConfirmDelete by remember { mutableStateOf(false) }
+
+    if (isOwn) {
+        // ── Own comment — right-aligned ───────────────────────────────────────
+        Column(
+            modifier          = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.End,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text     = formatCommentTime(comment.createdAt),
+                    fontSize = 11.sp,
+                    color    = TextTertiary,
+                )
+                Text(
+                    text       = "You",
+                    fontSize   = 13.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color      = TextPrimary,
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            Box(
+                modifier = Modifier
+                    .background(
+                        color  = com.prathik.fairshare.ui.theme.Green900,
+                        shape  = androidx.compose.foundation.shape.RoundedCornerShape(
+                            topStart = Radius.md, topEnd = Radius.sm,
+                            bottomStart = Radius.md, bottomEnd = Radius.md,
+                        )
+                    )
+                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            ) {
+                Text(comment.comment, fontSize = 14.sp, color = TextPrimary)
+            }
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text     = "Delete",
+                fontSize = 11.sp,
+                color    = Negative,
+                modifier = Modifier.clickable { showConfirmDelete = true },
+            )
+        }
+    } else {
+        // ── Other user comment — left-aligned with avatar ─────────────────────
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalAlignment     = Alignment.Top,
+        ) {
+            FsAvatar(
+                name     = comment.userFullName,
+                userId   = comment.userId,
+                imageUrl = comment.userProfilePictureUrl,
+                size     = ComponentSize.avatarSm,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    verticalAlignment     = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text       = comment.userFullName,
+                        fontSize   = 13.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                        color      = TextPrimary,
+                    )
+                    Text(
+                        text     = formatCommentTime(comment.createdAt),
+                        fontSize = 11.sp,
+                        color    = TextTertiary,
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color  = Surface2,
+                            shape  = androidx.compose.foundation.shape.RoundedCornerShape(
+                                topStart = Radius.sm, topEnd = Radius.md,
+                                bottomStart = Radius.md, bottomEnd = Radius.md,
+                            )
+                        )
+                        .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                ) {
+                    Text(comment.comment, fontSize = 14.sp, color = TextSecondary)
+                }
+            }
+        }
+    }
+
+    // Delete confirmation dialog
+    if (showConfirmDelete) {
+        AlertDialog(
+            onDismissRequest = { showConfirmDelete = false },
+            containerColor   = Surface2,
+            title            = { Text("Delete comment?", color = TextPrimary) },
+            text             = { Text("This cannot be undone.", color = TextSecondary) },
+            confirmButton    = {
+                FsTextButton(
+                    text    = "Delete",
+                    onClick = { showConfirmDelete = false; onDelete() },
+                )
+            },
+            dismissButton    = {
+                FsTextButton(text = "Cancel", onClick = { showConfirmDelete = false })
+            },
+        )
+    }
+}
+
+private fun formatCommentTime(createdAt: String): String = try {
+    val dt = java.time.LocalDateTime.parse(createdAt.replace("Z", ""),
+        java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+    val today = java.time.LocalDate.now()
+    if (dt.toLocalDate() == today) dt.format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))
+    else dt.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+} catch (_: Exception) { "" }
