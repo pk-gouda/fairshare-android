@@ -18,8 +18,6 @@ class UpdateGroupUseCase @Inject constructor(
         description: String?,
         simplifyDebts: Boolean?,
         defaultCurrency: String? = null,
-        tripStartDate: String? = null,
-        tripEndDate: String? = null,
     ): ApiResult<Group> {
         if (groupId.isBlank()) {
             return ApiResult.ValidationError("Group ID cannot be empty")
@@ -31,13 +29,11 @@ class UpdateGroupUseCase @Inject constructor(
             return ApiResult.ValidationError("Group name must be at least 2 characters")
         }
         return groupRepository.updateGroup(
-            groupId       = groupId,
-            name          = name?.trim(),
-            description   = description?.trim(),
-            simplifyDebts = simplifyDebts,
+            groupId         = groupId,
+            name            = name?.trim(),
+            description     = description?.trim(),
+            simplifyDebts   = simplifyDebts,
             defaultCurrency = defaultCurrency,
-            tripStartDate = tripStartDate,
-            tripEndDate   = tripEndDate,
         )
     }
 }

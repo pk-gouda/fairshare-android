@@ -82,13 +82,8 @@ class GroupSettingsViewModel @Inject constructor(
 
     private val _descriptionDirty = MutableStateFlow(false)
 
-    private val _tripStartDate = MutableStateFlow<String?>(null)
-    val tripStartDate: StateFlow<String?> = _tripStartDate.asStateFlow()
 
-    private val _tripEndDate = MutableStateFlow<String?>(null)
-    val tripEndDate: StateFlow<String?> = _tripEndDate.asStateFlow()
 
-    private val _tripDatesDirty = MutableStateFlow(false)
 
     private val _simplifyDebts = MutableStateFlow(false)
     val simplifyDebts: StateFlow<Boolean> = _simplifyDebts.asStateFlow()
@@ -138,8 +133,6 @@ class GroupSettingsViewModel @Inject constructor(
                 _group.value = cachedGroup
                 _editName.value = cachedGroup.name
                 _editDescription.value = userVisibleGroupNote(cachedGroup.groupNotes)
-                _tripStartDate.value = cachedGroup.tripStartDate
-                _tripEndDate.value = cachedGroup.tripEndDate
                 _simplifyDebts.value = cachedGroup.simplifyDebts
                 _defaultCurrency.value = cachedGroup.defaultCurrency
             }
@@ -160,17 +153,11 @@ class GroupSettingsViewModel @Inject constructor(
             if (!hadCachedGroup) {
                 _editName.value = groupResult.data.name
                 _editDescription.value = userVisibleGroupNote(groupResult.data.groupNotes)
-                _tripStartDate.value = groupResult.data.tripStartDate
-                _tripEndDate.value = groupResult.data.tripEndDate
                 _simplifyDebts.value = groupResult.data.simplifyDebts
                 _defaultCurrency.value = groupResult.data.defaultCurrency
             } else if (!_descriptionDirty.value) {
                 // Not actively editing notes — safe to sync to latest server value
                 _editDescription.value = userVisibleGroupNote(groupResult.data.groupNotes)
-            }
-            if (!_tripDatesDirty.value) {
-                _tripStartDate.value = groupResult.data.tripStartDate
-                _tripEndDate.value = groupResult.data.tripEndDate
             }
         } else if (!hadCachedGroup) {
             _groupLoadFailed.value = true
@@ -191,16 +178,6 @@ class GroupSettingsViewModel @Inject constructor(
         _descriptionDirty.value = true
     }
 
-    fun onTripStartDateChanged(isoDate: String?) {
-        _tripStartDate.value = isoDate
-        _tripDatesDirty.value = true
-    }
-
-    fun onTripEndDateChanged(isoDate: String?) {
-        _tripEndDate.value = isoDate
-        _tripDatesDirty.value = true
-    }
-
     /**
      * Returns the correct description value for update calls.
      * If the user explicitly edited notes (_descriptionDirty), send the typed value.
@@ -210,42 +187,6 @@ class GroupSettingsViewModel @Inject constructor(
         if (_descriptionDirty.value) _editDescription.value.trim().ifBlank { null }
         else _group.value?.groupNotes
 
-    /** Returns true if end date is set and is before start date. */
-    private fun tripDatesInvalid(): Boolean {
-        val start = _tripStartDate.value
-        val end   = _tripEndDate.value
-        if (start.isNullOrBlank() || end.isNullOrBlank()) return false
-        return runCatching {
-            java.time.LocalDate.parse(end) < java.time.LocalDate.parse(start)
-        }.getOrDefault(false)
-    }
-
-    fun saveTripDates() {
-        if (tripDatesInvalid()) {
-            _actionState.value = GroupSettingsActionState.Error("End date must be on or after start date")
-            return
-        }
-        viewModelScope.launch {
-            _actionState.value = GroupSettingsActionState.Loading
-            when (val result = updateGroupUseCase(
-                groupId       = groupId,
-                name          = null,
-                description   = descriptionForUpdate(),
-                simplifyDebts = null,
-                tripStartDate = _tripStartDate.value,
-                tripEndDate   = _tripEndDate.value,
-            )) {
-                is ApiResult.Success -> {
-                    _group.value = result.data
-                    _tripStartDate.value = result.data.tripStartDate
-                    _tripEndDate.value = result.data.tripEndDate
-                    _tripDatesDirty.value = false
-                    _actionState.value = GroupSettingsActionState.Success("Trip dates updated")
-                }
-                else -> _actionState.value = GroupSettingsActionState.Error("Failed to update trip dates")
-            }
-        }
-    }
     fun onSimplifyDebtsToggled()     { _simplifyDebts.value = !_simplifyDebts.value }
 
     fun saveDefaultCurrency(currency: String) {
@@ -258,8 +199,6 @@ class GroupSettingsViewModel @Inject constructor(
                 description     = descriptionForUpdate(),
                 simplifyDebts   = null,
                 defaultCurrency = currency,
-                tripStartDate   = _tripStartDate.value,
-                tripEndDate     = _tripEndDate.value,
             )
         }
     }
@@ -298,8 +237,6 @@ class GroupSettingsViewModel @Inject constructor(
                 name          = name,
                 description   = descriptionForUpdate(),
                 simplifyDebts = null,
-                tripStartDate = _tripStartDate.value,
-                tripEndDate   = _tripEndDate.value,
             )) {
                 is ApiResult.Success -> {
                     _group.value = result.data
@@ -319,8 +256,6 @@ class GroupSettingsViewModel @Inject constructor(
                 name          = null,
                 description   = descriptionForUpdate(),
                 simplifyDebts = value,
-                tripStartDate = _tripStartDate.value,
-                tripEndDate   = _tripEndDate.value,
             )
             when (result) {
                 is ApiResult.Success -> {
@@ -456,7 +391,8 @@ class GroupSettingsViewModel @Inject constructor(
     fun resetActionState() { _actionState.value = GroupSettingsActionState.Idle }
 
     /**
-     * Save name + notes + trip dates in a single call.
+     * Save group identity fields from CustomizeGroupScreen.
+     * Currently saves name + notes. Trip dates are read-only until backend create/update supports them.
      * Used by CustomizeGroupScreen so all identity fields save together.
      * Notes: only sends user-visible value. Raw system notes are never re-sent
      * (they stay on the server; we only overwrite if user actually typed something).
@@ -468,10 +404,6 @@ class GroupSettingsViewModel @Inject constructor(
             _actionState.value = GroupSettingsActionState.Error("Group name must be at least 2 characters")
             return
         }
-        if (tripDatesInvalid()) {
-            _actionState.value = GroupSettingsActionState.Error("End date must be on or after start date")
-            return
-        }
         viewModelScope.launch {
             _actionState.value = GroupSettingsActionState.Loading
             when (val result = updateGroupUseCase(
@@ -479,17 +411,12 @@ class GroupSettingsViewModel @Inject constructor(
                 name          = name,
                 description   = descriptionForUpdate(),
                 simplifyDebts = null,
-                tripStartDate = if (_tripDatesDirty.value) _tripStartDate.value else _group.value?.tripStartDate,
-                tripEndDate   = if (_tripDatesDirty.value) _tripEndDate.value else _group.value?.tripEndDate,
             )) {
                 is ApiResult.Success -> {
                     _group.value           = result.data
                     _editName.value        = result.data.name
                     _editDescription.value = userVisibleGroupNote(result.data.groupNotes)
                     _descriptionDirty.value = false
-                    _tripStartDate.value   = result.data.tripStartDate
-                    _tripEndDate.value     = result.data.tripEndDate
-                    _tripDatesDirty.value  = false
                     _actionState.value     = GroupSettingsActionState.Success("Group updated")
                 }
                 else -> _actionState.value = GroupSettingsActionState.Error("Failed to save changes")

@@ -39,8 +39,6 @@ interface GroupRepository {
         name: String,
         type: String,
         description: String?,
-        tripStartDate: String? = null,
-        tripEndDate: String? = null,
     ): ApiResult<Group>
 
     /**
@@ -53,8 +51,6 @@ interface GroupRepository {
         description: String?,
         simplifyDebts: Boolean?,
         defaultCurrency: String? = null,
-        tripStartDate: String? = null,
-        tripEndDate: String? = null,
     ): ApiResult<Group>
 
     /**

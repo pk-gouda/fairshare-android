@@ -9,8 +9,6 @@ data class CreateGroupRequest(
     @SerialName("name")           val name: String,
     @SerialName("type")           val type: GroupType,
     @SerialName("description")    val description: String? = null,
-    @SerialName("tripStartDate")  val tripStartDate: String? = null,
-    @SerialName("tripEndDate")    val tripEndDate: String? = null,
 )
 
 @Serializable
@@ -19,8 +17,6 @@ data class UpdateGroupRequest(
     @SerialName("description")     val description: String? = null,
     @SerialName("simplifyDebts")   val simplifyDebts: Boolean? = null,
     @SerialName("defaultCurrency") val defaultCurrency: String? = null,
-    @SerialName("tripStartDate")   val tripStartDate: String? = null,
-    @SerialName("tripEndDate")     val tripEndDate: String? = null,
 )
 
 @Serializable

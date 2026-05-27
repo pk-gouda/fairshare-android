@@ -1,6 +1,5 @@
 package com.prathik.fairshare.ui.groups
 
-import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -72,18 +72,19 @@ fun CustomizeGroupScreen(
     val group           by viewModel.group.collectAsState()
     val editName        by viewModel.editName.collectAsState()
     val editDescription by viewModel.editDescription.collectAsState()
-    val tripStartDate   by viewModel.tripStartDate.collectAsState()
-    val tripEndDate     by viewModel.tripEndDate.collectAsState()
     val actionState     by viewModel.actionState.collectAsState()
     val isLoading       by viewModel.isLoading.collectAsState()
 
     val snackbarHost = remember { SnackbarHostState() }
+    val focusManager = LocalFocusManager.current
 
-    // Surface action state feedback
+    // Surface action state feedback — navigate back on success, snackbar on error
     LaunchedEffect(actionState) {
         when (actionState) {
-            is GroupSettingsActionState.Success ->
-                snackbarHost.showSnackbar((actionState as GroupSettingsActionState.Success).message)
+            is GroupSettingsActionState.Success -> {
+                focusManager.clearFocus(force = true)
+                onBack()
+            }
             is GroupSettingsActionState.Error ->
                 snackbarHost.showSnackbar((actionState as GroupSettingsActionState.Error).message)
             else -> Unit
@@ -186,15 +187,30 @@ fun CustomizeGroupScreen(
                 )
             }
 
-            // ── Trip dates (TRIP groups only) ─────────────────────────────────
-            if (g.type == GroupType.TRIP) {
+            // ── Trip dates (TRIP groups only) — read-only until backend update endpoint supports these fields ──
+            if (g.type == GroupType.TRIP &&
+                (!g.tripStartDate.isNullOrBlank() || !g.tripEndDate.isNullOrBlank())) {
                 Spacer(modifier = Modifier.height(Spacing.md))
-                CustomizeTripDatesSection(
-                    tripStartDate    = tripStartDate,
-                    tripEndDate      = tripEndDate,
-                    onStartChanged   = { viewModel.onTripStartDateChanged(it) },
-                    onEndChanged     = { viewModel.onTripEndDateChanged(it) },
-                )
+                Column(
+                    modifier = Modifier.padding(horizontal = Spacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Trip dates", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                    val dateText = when {
+                        !g.tripStartDate.isNullOrBlank() && !g.tripEndDate.isNullOrBlank() ->
+                            "${custFormatDate(g.tripStartDate)} – ${custFormatDate(g.tripEndDate)}"
+                        !g.tripStartDate.isNullOrBlank() ->
+                            "From ${custFormatDate(g.tripStartDate)}"
+                        else ->
+                            "Until ${custFormatDate(g.tripEndDate!!)}"
+                    }
+                    Text(dateText, fontSize = 14.sp, color = TextSecondary)
+                    Text(
+                        "Trip date editing coming soon",
+                        fontSize = 11.sp,
+                        color    = TextTertiary,
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(Spacing.xl))
@@ -202,7 +218,10 @@ fun CustomizeGroupScreen(
             // ── Save button ───────────────────────────────────────────────────
             FsPrimaryButton(
                 text     = "Save changes",
-                onClick  = { viewModel.saveGroupIdentity() },
+                onClick  = {
+                    focusManager.clearFocus(force = true)
+                    viewModel.saveGroupIdentity()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Spacing.lg),
@@ -213,120 +232,7 @@ fun CustomizeGroupScreen(
     }
 }
 
-// ── Trip date section for CustomizeGroup ──────────────────────────────────────
-
-@Composable
-private fun CustomizeTripDatesSection(
-    tripStartDate : String?,
-    tripEndDate   : String?,
-    onStartChanged: (String?) -> Unit,
-    onEndChanged  : (String?) -> Unit,
-) {
-    val context = LocalContext.current
-
-    val endBeforeStart = tripStartDate != null && tripEndDate != null && runCatching {
-        LocalDate.parse(tripEndDate) < LocalDate.parse(tripStartDate)
-    }.getOrDefault(false)
-
-    Column(
-        modifier = Modifier.padding(horizontal = Spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-    ) {
-        Text("Trip dates", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-        Text(
-            "Dates are optional. End date cannot be before start date.",
-            fontSize = 12.sp, color = TextTertiary, lineHeight = 16.sp,
-        )
-
-        CustomizeDateRow(
-            label     = "Start date",
-            display   = tripStartDate?.let { custFormatDate(it) } ?: "Not set",
-            context   = context,
-            current   = tripStartDate,
-            maxDate   = tripEndDate,
-            allowClear = false,
-            onPicked  = onStartChanged,
-        )
-        CustomizeDateRow(
-            label     = "End date",
-            display   = tripEndDate?.let { custFormatDate(it) } ?: "Not set",
-            context   = context,
-            current   = tripEndDate,
-            minDate   = tripStartDate,
-            allowClear = true,
-            onPicked  = onEndChanged,
-        )
-
-        if (endBeforeStart) {
-            Text("End date must be on or after start date", fontSize = 12.sp, color = Negative)
-        }
-    }
-}
-
-@Suppress("DEPRECATION")
-@Composable
-private fun CustomizeDateRow(
-    label     : String,
-    display   : String,
-    context   : android.content.Context,
-    current   : String?,
-    minDate   : String? = null,
-    maxDate   : String? = null,
-    allowClear: Boolean = true,
-    onPicked  : (String?) -> Unit,
-) {
-    val calendar = java.util.Calendar.getInstance()
-    current?.let { s ->
-        runCatching { LocalDate.parse(s) }.getOrNull()?.let {
-            calendar.set(it.year, it.monthValue - 1, it.dayOfMonth)
-        }
-    }
-    val dialog = DatePickerDialog(
-        context,
-        { _, y, m, d ->
-            onPicked(LocalDate.of(y, m + 1, d).format(DateTimeFormatter.ISO_LOCAL_DATE))
-        },
-        calendar.get(java.util.Calendar.YEAR),
-        calendar.get(java.util.Calendar.MONTH),
-        calendar.get(java.util.Calendar.DAY_OF_MONTH),
-    )
-    minDate?.let { s -> runCatching { LocalDate.parse(s) }.getOrNull()?.let {
-        val c = java.util.Calendar.getInstance(); c.set(it.year, it.monthValue - 1, it.dayOfMonth)
-        dialog.datePicker.minDate = c.timeInMillis
-    }}
-    maxDate?.let { s -> runCatching { LocalDate.parse(s) }.getOrNull()?.let {
-        val c = java.util.Calendar.getInstance(); c.set(it.year, it.monthValue - 1, it.dayOfMonth)
-        dialog.datePicker.maxDate = c.timeInMillis
-    }}
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.md))
-            .background(Surface3)
-            .clickable { dialog.show() }
-            .padding(horizontal = Spacing.md, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, fontSize = 14.sp, color = TextSecondary)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(display, fontSize = 14.sp, color = TextPrimary)
-            if (allowClear && current != null) {
-                Text(
-                    "Clear",
-                    fontSize = 12.sp,
-                    color    = TextTertiary,
-                    modifier = Modifier.clickable { onPicked(null) },
-                )
-            }
-        }
-    }
-}
-
+// ── Trip date section for CustomizeGroup ─────────────────────────────────────
 private fun custFormatDate(isoDate: String): String = runCatching {
     val d = LocalDate.parse(isoDate, DateTimeFormatter.ISO_LOCAL_DATE)
     d.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))

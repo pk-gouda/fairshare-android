@@ -34,24 +34,6 @@ class CreateGroupViewModel @Inject constructor(
     private val _description = MutableStateFlow("")
     val description: StateFlow<String> = _description.asStateFlow()
 
-    private fun todayIso(): String =
-        java.time.LocalDate.now()
-            .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
-
-    private val _tripStartDate = MutableStateFlow<String?>(todayIso())
-    val tripStartDate: StateFlow<String?> = _tripStartDate.asStateFlow()
-
-    private val _tripEndDate = MutableStateFlow<String?>(null)
-    val tripEndDate: StateFlow<String?> = _tripEndDate.asStateFlow()
-
-    /** Toggle for "Add trip dates" — defaults true when type is TRIP. */
-    private val _addTripDates = MutableStateFlow(true)  // default selected type is TRIP
-    val addTripDates: StateFlow<Boolean> = _addTripDates.asStateFlow()
-
-    /** True while the "no end date" confirmation dialog should be shown. */
-    private val _showTripDateDialog = MutableStateFlow(false)
-    val showTripDateDialog: StateFlow<Boolean> = _showTripDateDialog.asStateFlow()
-
     private val _selectedType = MutableStateFlow(GroupType.TRIP)
     val selectedType: StateFlow<GroupType> = _selectedType.asStateFlow()
 
@@ -97,37 +79,7 @@ class CreateGroupViewModel @Inject constructor(
         if (value.length <= 100) _description.value = value
     }
 
-    fun onTypeSelected(type: GroupType) {
-        _selectedType.value = type
-        if (type == GroupType.TRIP) {
-            _addTripDates.value = true
-            if (_tripStartDate.value == null) _tripStartDate.value = todayIso()
-        } else {
-            _addTripDates.value = false
-            _tripStartDate.value = null
-            _tripEndDate.value = null
-        }
-    }
-
-    fun onAddTripDatesChanged(enabled: Boolean) {
-        _addTripDates.value = enabled
-        if (enabled && _tripStartDate.value == null) _tripStartDate.value = todayIso()
-        else if (!enabled) { _tripStartDate.value = null; _tripEndDate.value = null }
-    }
-
-    fun dismissTripDateDialog() { _showTripDateDialog.value = false }
-
-    /** Called when user confirms "Turn off and save" in the no-end-date dialog. */
-    fun confirmTurnOffDatesAndCreate() {
-        _showTripDateDialog.value = false
-        _addTripDates.value = false
-        _tripStartDate.value = null
-        _tripEndDate.value = null
-        doCreate()
-    }
-
-    fun onTripStartDateChanged(isoDate: String?) { _tripStartDate.value = isoDate }
-    fun onTripEndDateChanged(isoDate: String?) { _tripEndDate.value = isoDate }
+    fun onTypeSelected(type: GroupType) { _selectedType.value = type }
 
     fun toggleShowAllTypes() { _showAllTypes.value = !_showAllTypes.value }
 
@@ -137,29 +89,12 @@ class CreateGroupViewModel @Inject constructor(
         if (name.isBlank()) { _nameError.value = "Group name is required"; return }
         if (name.length < 2) { _nameError.value = "Name must be at least 2 characters"; return }
 
-        // If TRIP with toggle ON and no end date — show confirmation dialog
-        val isTripGroup = _selectedType.value == GroupType.TRIP
-        if (isTripGroup && _addTripDates.value && _tripEndDate.value == null) {
-            _showTripDateDialog.value = true
-            return
-        }
-
-        doCreate()
-    }
-
-    private fun doCreate() {
-        val name = _name.value.trim()
-        val isTripGroup = _selectedType.value == GroupType.TRIP
-        val sendDates   = isTripGroup && _addTripDates.value
-
         viewModelScope.launch {
             _isLoading.value = true
             when (val result = createGroupUseCase(
-                name          = name,
-                type          = _selectedType.value.name,
-                description   = _description.value.trim().ifBlank { null },
-                tripStartDate = if (sendDates) _tripStartDate.value else null,
-                tripEndDate   = if (sendDates) _tripEndDate.value else null,
+                name        = name,
+                type        = _selectedType.value.name,
+                description = _description.value.trim().ifBlank { null },
             )) {
                 is ApiResult.Success -> {
                     _createdGroup.value = result.data
