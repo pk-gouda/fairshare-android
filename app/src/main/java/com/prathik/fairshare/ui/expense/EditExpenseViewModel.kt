@@ -677,35 +677,33 @@ class EditExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.ValidationError -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error(result.message)
                 }
 
                 is ApiResult.Forbidden -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error(result.message)
                 }
 
                 is ApiResult.Unauthorized -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error(result.message)
                 }
 
                 is ApiResult.NotFound -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, "Expense not found")
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value =
                         EditSaveState.Error("Expense not found. It may have been deleted.")
                 }
 
                 is ApiResult.Conflict -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error(result.message)
                 }
 
                 is ApiResult.HttpError -> {
-                    pendingOperationRepository.markFailed(
-                        enqueued.operationId, "HTTP ${result.code}: ${result.message}"
-                    )
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error("HTTP ${result.code}: ${result.message}")
                 }
             }

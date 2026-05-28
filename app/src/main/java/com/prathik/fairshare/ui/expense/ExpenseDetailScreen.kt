@@ -173,6 +173,16 @@ fun ExpenseDetailScreen(
         }
     }
 
+    // Comment post/delete error dialog
+    val commentError by viewModel.commentError.collectAsState()
+    LaunchedEffect(commentError) {
+        val msg = commentError
+        if (msg != null) {
+            errorDialog = apiErrorDialogState(msg)
+            viewModel.clearCommentError()
+        }
+    }
+
     // Expense truly does not exist on server (different from soft-deleted)
     LaunchedEffect(expenseState) {
         if (expenseState is ExpenseDetailUiState.Deleted) {
@@ -1239,17 +1249,11 @@ private fun CommentBubble(
                             bottomStart = Radius.md, bottomEnd = Radius.md,
                         )
                     )
+                    .clickable { showConfirmDelete = true }
                     .padding(horizontal = Spacing.md, vertical = Spacing.sm),
             ) {
                 Text(comment.comment, fontSize = 14.sp, color = TextPrimary)
             }
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text     = "Delete",
-                fontSize = 11.sp,
-                color    = Negative,
-                modifier = Modifier.clickable { showConfirmDelete = true },
-            )
         }
     } else {
         // ── Other user comment — left-aligned with avatar ─────────────────────

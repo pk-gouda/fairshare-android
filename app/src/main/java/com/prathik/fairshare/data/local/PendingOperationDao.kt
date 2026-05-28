@@ -137,16 +137,22 @@ interface PendingOperationDao {
     suspend fun deleteAll()
 
     /**
-     * Live-watches the latest non-terminal pending operation for a given resource
-     * (expense), matched on [localResourceId] or [serverResourceId].
+     * Live-watches the latest operation that should be surfaced as sync state for a
+     * given resource (expense), matched on [localResourceId] or [serverResourceId].
      *
-     * Returns null when no active operation exists (already SYNCED or CANCELLED).
-     * Drives the sync-status banner in ExpenseDetailScreen.
+     * Important distinction:
+     * - Foreground online validation/permission/backend failures are cancelled and
+     *   handled by the screen that initiated the action. They are not sync failures.
+     * - FAILED_PERMANENT is shown only after SyncWorker has actually attempted a
+     *   queued/offline operation, which is represented by retryCount > 0.
      */
     @Query("""
         SELECT * FROM pending_operations
         WHERE (localResourceId = :resourceId OR serverResourceId = :resourceId)
-          AND status NOT IN ('SYNCED', 'CANCELLED')
+          AND (
+              status IN ('PENDING', 'SYNCING', 'FAILED_RETRYABLE')
+              OR (status = 'FAILED_PERMANENT' AND retryCount > 0)
+          )
         ORDER BY createdAt DESC
         LIMIT 1
     """)
@@ -159,7 +165,10 @@ interface PendingOperationDao {
      */
     @Query("""
         SELECT DISTINCT localResourceId FROM pending_operations
-        WHERE status IN ('PENDING', 'SYNCING', 'FAILED_RETRYABLE', 'FAILED_PERMANENT')
+        WHERE (
+              status IN ('PENDING', 'SYNCING', 'FAILED_RETRYABLE')
+              OR (status = 'FAILED_PERMANENT' AND retryCount > 0)
+          )
           AND localResourceId IS NOT NULL
     """)
     fun observeActiveResourceIds(): Flow<List<String>>

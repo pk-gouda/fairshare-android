@@ -114,7 +114,15 @@ class PendingOperationRepository @Inject constructor(
     suspend fun markRetryable(operationId: String, error: String) =
         dao.markStatus(operationId, SyncStatus.FAILED_RETRYABLE.name, lastError = error)
 
-    /** Mark as permanently failed (4xx errors — user action needed). */
+    /**
+     * Mark a queued/offline operation as permanently failed.
+     *
+     * Use this for failures discovered by SyncWorker/background replay, or for an
+     * operation that was already accepted into the offline queue. Do not use this
+     * for a normal foreground online request that returned 4xx/5xx before any
+     * offline mutation was applied; those should be discarded with
+     * [discardForegroundFailure] so the UI does not show a false sync banner.
+     */
     suspend fun markFailed(operationId: String, error: String) {
         dao.markStatus(operationId, SyncStatus.FAILED_PERMANENT.name, lastError = error)
         // FAILED_PERMANENT is terminal — remove impact row so UI shows
@@ -129,6 +137,16 @@ class PendingOperationRepository @Inject constructor(
         // Cancelled ops no longer affect balance overlay — remove impact row.
         impactDao.deleteByOperationId(operationId)
     }
+
+    /**
+     * Discard a pre-enqueued idempotency row after a foreground online request
+     * failed before the app accepted the mutation into offline sync.
+     *
+     * This is the design boundary that keeps error handling honest:
+     * - foreground request failed -> screen-level error only
+     * - queued/offline replay failed -> sync banner / retry UI
+     */
+    suspend fun discardForegroundFailure(operationId: String) = markCancelled(operationId)
 
     /** Record a retry attempt (increments counter, updates lastAttemptAt). */
     suspend fun incrementRetry(operationId: String) =

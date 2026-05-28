@@ -700,17 +700,17 @@ class AddExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.ValidationError -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
                 is ApiResult.Forbidden -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
                 is ApiResult.Unauthorized -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
@@ -718,15 +718,13 @@ class AddExpenseViewModel @Inject constructor(
                     // Preserve the backend actual 409 reason. A conflict can be an
                     // idempotency/body conflict, an in-flight duplicate, or a domain conflict;
                     // mapping every 409 to "Expense already exists" hides the real issue.
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
                 else -> {
-                    // Other 4xx/5xx — permanent failure, don't queue for retry.
-                    pendingOperationRepository.markFailed(
-                        enqueued.operationId, "HTTP error creating expense"
-                    )
+                    // Other foreground HTTP failures are not offline sync failures.
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error("Failed to create expense. Please try again.")
                 }
             }
@@ -857,9 +855,7 @@ class AddExpenseViewModel @Inject constructor(
                 }
 
                 else -> {
-                    pendingOperationRepository.markFailed(
-                        enqueued.operationId, "Failed to save transfer"
-                    )
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error("Failed to save transfer. Please try again.")
                 }
             }

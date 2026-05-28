@@ -95,6 +95,11 @@ class ExpenseDetailViewModel @Inject constructor(
     private val _commentPosting = MutableStateFlow(false)
     val commentPosting: StateFlow<Boolean> = _commentPosting.asStateFlow()
 
+    private val _commentError = MutableStateFlow<String?>(null)
+    val commentError: StateFlow<String?> = _commentError.asStateFlow()
+
+    fun clearCommentError() { _commentError.value = null }
+
     /**
      * Wave 2D-4: live pending operation for this expense.
      * Null when no active (non-SYNCED/CANCELLED) operation exists.
@@ -284,7 +289,7 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 is ApiResult.Forbidden -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _actionState.value = ExpenseActionState.Error(result.message)
                 }
 
@@ -304,7 +309,7 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 else -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, "Failed to delete expense")
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
                 }
             }
@@ -369,12 +374,12 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 is ApiResult.Forbidden -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, result.message)
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _actionState.value = ExpenseActionState.Error(result.message)
                 }
 
                 else -> {
-                    pendingOperationRepository.markFailed(enqueued.operationId, "Failed to restore expense")
+                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _actionState.value = ExpenseActionState.Error("Failed to restore expense.")
                 }
             }
@@ -414,7 +419,8 @@ class ExpenseDetailViewModel @Inject constructor(
                     _comments.value    = (_comments.value + result.data).sortedBy { it.createdAt }
                     _commentText.value = ""
                 }
-                else -> { /* keep text, let user retry */ }
+                is ApiResult.NetworkError -> _commentError.value = "You're offline. Check your connection and try again."
+                else                      -> _commentError.value = "Couldn't post comment. Please try again."
             }
             _commentPosting.value = false
         }
@@ -426,7 +432,7 @@ class ExpenseDetailViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     _comments.value = _comments.value.filter { it.id != commentId }
                 }
-                else -> { /* non-blocking: leave comment visible */ }
+                else -> _commentError.value = "Couldn't delete comment. Please try again."
             }
         }
     }
