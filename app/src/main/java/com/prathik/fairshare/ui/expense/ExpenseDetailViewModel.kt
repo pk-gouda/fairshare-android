@@ -254,18 +254,20 @@ class ExpenseDetailViewModel @Inject constructor(
 
             when (val result = deleteExpenseUseCase(expenseId, idempotencyKey)) {
                 is ApiResult.Success -> {
-                    // Online success — no pending operation created.
+                    // Navigate back immediately — do not block on cache refresh.
+                    // Background refresh runs in FairShareSyncManager.backgroundScope
+                    // which outlives this ViewModel so it is not cancelled on pop.
                     val preDelete = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
-                    val gId = preDelete?.groupId
                     val participants = ((preDelete?.payers?.map { it.userId } ?: emptyList()) +
                             (preDelete?.splits?.map { it.userId } ?: emptyList())).toSet()
-                    mutationCacheRefresher.refreshAfterDeleteSuccess(
+                    expenseRepository.updateLocalDeletedStatus(expenseId, true)
+                    _actionState.value = ExpenseActionState.Deleted
+                    mutationCacheRefresher.launchAfterDeleteSuccess(
                         expenseId      = expenseId,
-                        groupId        = gId,
+                        groupId        = preDelete?.groupId,
                         currentUserId  = userId,
                         participantIds = participants,
                     )
-                    _actionState.value = ExpenseActionState.Deleted
                 }
 
                 is ApiResult.NetworkError -> {
@@ -293,17 +295,18 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 is ApiResult.NotFound -> {
-                    // Already deleted on server — refresh caches, no pending op needed.
+                    // Already deleted on server — navigate back immediately, refresh in background.
                     val preDelete = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
                     val participants = ((preDelete?.payers?.map { it.userId } ?: emptyList()) +
                             (preDelete?.splits?.map { it.userId } ?: emptyList())).toSet()
-                    mutationCacheRefresher.refreshAfterDeleteSuccess(
+                    expenseRepository.updateLocalDeletedStatus(expenseId, true)
+                    _actionState.value = ExpenseActionState.Deleted
+                    mutationCacheRefresher.launchAfterDeleteSuccess(
                         expenseId      = expenseId,
                         groupId        = preDelete?.groupId,
                         currentUserId  = userId,
                         participantIds = participants,
                     )
-                    _actionState.value = ExpenseActionState.Deleted
                 }
 
                 else -> {
@@ -329,7 +332,7 @@ class ExpenseDetailViewModel @Inject constructor(
 
             when (val result = restoreExpenseUseCase(expenseId, idempotencyKey)) {
                 is ApiResult.Success -> {
-                    // Online success — no pending operation was created.
+                    // Navigate back immediately — cache refresh runs in background.
                     val restored = result.data
                     val preRestoreCtx = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
                     val responseParticipants = ((restored.payers?.map { it.userId } ?: emptyList()) +
@@ -338,13 +341,14 @@ class ExpenseDetailViewModel @Inject constructor(
                         ((preRestoreCtx?.payers?.map { it.userId } ?: emptyList()) +
                                 (preRestoreCtx?.splits?.map { it.userId } ?: emptyList())).toSet()
                     }
-                    mutationCacheRefresher.refreshAfterRestoreSuccess(
+                    expenseRepository.updateLocalDeletedStatus(expenseId, false)
+                    _actionState.value = ExpenseActionState.Restored
+                    mutationCacheRefresher.launchAfterRestoreSuccess(
                         expense        = restored,
                         groupId        = restored.groupId ?: preRestoreCtx?.groupId,
                         currentUserId  = userId,
                         participantIds = participants,
                     )
-                    _actionState.value = ExpenseActionState.Restored
                 }
 
                 is ApiResult.NetworkError -> {

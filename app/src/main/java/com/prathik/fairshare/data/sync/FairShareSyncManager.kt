@@ -88,6 +88,38 @@ class FairShareSyncManager @Inject constructor(
     }
 
     /**
+     * Fire-and-forget cache refresh after an online expense delete.
+     * Runs in [backgroundScope] so it survives ViewModel teardown after
+     * the screen navigates back. Mirrors [launchSyncAfterExpenseCreate].
+     */
+    fun launchSyncAfterExpenseDelete(
+        expenseId     : String,
+        groupId       : String?,
+        currentUserId : String,
+        participantIds: Set<String> = emptySet(),
+    ) {
+        backgroundScope.launch {
+            syncAfterExpenseDelete(expenseId, groupId, currentUserId, participantIds)
+        }
+    }
+
+    /**
+     * Fire-and-forget cache refresh after an online expense restore.
+     * Runs in [backgroundScope] so it survives ViewModel teardown after
+     * the screen navigates back. Mirrors [launchSyncAfterExpenseCreate].
+     */
+    fun launchSyncAfterExpenseRestore(
+        expense       : Expense,
+        groupId       : String?,
+        currentUserId : String,
+        participantIds: Set<String> = emptySet(),
+    ) {
+        backgroundScope.launch {
+            syncAfterExpenseRestore(expense, groupId, currentUserId, participantIds)
+        }
+    }
+
+    /**
      * Fire-and-forget full account sync.
      * Throttled — ignores call if a run started within [MIN_INTERVAL_MS].
      * Safe to call from MainActivity.onStart() or AuthViewModel after login.
