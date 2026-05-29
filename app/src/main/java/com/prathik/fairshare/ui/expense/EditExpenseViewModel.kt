@@ -35,13 +35,12 @@ import javax.inject.Inject
 /**
  * ViewModel for EditExpenseScreen.
  *
- * Wave 2D-2: UPDATE_EXPENSE is now queue-backed.
- * - A PendingOperation is enqueued before the network call.
- * - The stable idempotencyKey from the queue row is sent to the backend,
- *   preventing a double balance reversal/re-apply on retry.
- * - On NetworkError the operation is marked FAILED_RETRYABLE and
- *   SyncWorker will replay it when connectivity returns.
- * - Delete/restore remain online-only until Wave 2D-3.
+ * UPDATE_EXPENSE uses try-first queue semantics.
+ * - A stable idempotencyKey is generated BEFORE the network call.
+ * - If online and backend succeeds, no PendingOperation is created.
+ * - If online and backend returns HTTP/validation/server error, no PendingOperation.
+ * - Only on NetworkError is the operation enqueued with the same idempotencyKey
+ *   that was already sent to the backend, so SyncWorker replay is deduplicated.
  */
 @HiltViewModel
 class EditExpenseViewModel @Inject constructor(
@@ -571,18 +570,10 @@ class EditExpenseViewModel @Inject constructor(
                 clearRepeat = clearRepeatSend,
             )
 
-            // Enqueue BEFORE the network call.
-            // localResourceId = serverResourceId = expenseId so SyncWorker
-            // never needs to parse the endpoint string to know which expense
-            // it is updating.
-            val enqueued = pendingOperationRepository.enqueue(
-                userId = userId,
-                operationType = OperationType.UPDATE_EXPENSE,
-                endpoint = "/api/expenses/$expenseId",
-                method = "PUT",
-                requestBodyJson = json.encodeToString(request),
-                localResourceId = expenseId,
-            )
+            // Try-first: generate a stable idempotencyKey BEFORE the network call,
+            // but do NOT enqueue yet. We only enqueue on NetworkError so that online
+            // HTTP/server errors never create a pending operation or show a sync banner.
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
 
             val result = updateExpenseUseCase(
                 expenseId = expenseId,
@@ -597,12 +588,12 @@ class EditExpenseViewModel @Inject constructor(
                 splitData = effectiveSplitData,
                 repeatInterval = repeatIntervalSend,
                 clearRepeat = clearRepeatSend,
-                idempotencyKey = enqueued.idempotencyKey,
+                idempotencyKey = idempotencyKey,
             )
 
             when (result) {
                 is ApiResult.Success -> {
-                    pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
+                    // Online success — no pending operation was created.
                     // Await cache cascade with real old+new participants.
                     val splits = effectiveSplitData?.keys ?: emptySet()
                     val payers = _payerData.value.keys
@@ -617,6 +608,16 @@ class EditExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.NetworkError -> {
+                    // True offline: enqueue NOW with the same idempotencyKey sent to backend.
+                    val enqueued = pendingOperationRepository.enqueue(
+                        userId          = userId,
+                        operationType   = OperationType.UPDATE_EXPENSE,
+                        endpoint        = "/api/expenses/$expenseId",
+                        method          = "PUT",
+                        requestBodyJson = json.encodeToString(request),
+                        localResourceId = expenseId,
+                        idempotencyKey  = idempotencyKey,
+                    )
                     // 1. Apply Room update FIRST so ExpenseDetail shows new values
                     //    and the impact row exists before pending-ops observers fire.
                     // Capture old participants BEFORE edit overwrites Room — SyncWorker
@@ -677,33 +678,27 @@ class EditExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.ValidationError -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error(result.message)
                 }
 
                 is ApiResult.Forbidden -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error(result.message)
                 }
 
                 is ApiResult.Unauthorized -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error(result.message)
                 }
 
                 is ApiResult.NotFound -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value =
                         EditSaveState.Error("Expense not found. It may have been deleted.")
                 }
 
                 is ApiResult.Conflict -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error(result.message)
                 }
 
                 is ApiResult.HttpError -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _saveState.value = EditSaveState.Error("HTTP ${result.code}: ${result.message}")
                 }
             }

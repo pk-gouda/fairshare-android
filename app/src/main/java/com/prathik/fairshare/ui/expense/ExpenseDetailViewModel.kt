@@ -34,14 +34,14 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Wave 2D-3: delete and restore are now queue-backed.
- * - A PendingOperation is enqueued before the network call.
- * - The stable idempotencyKey is sent as the Idempotency-Key header so the backend
- *   cannot apply the balance reversal/re-application twice on retry.
- * - On NetworkError the operation is marked FAILED_RETRYABLE and SyncWorker
- *   will replay it when connectivity returns.
- * - The screen navigates back after queueing; the list will reflect the correct
- *   state after sync completes.
+ * Expense detail ViewModel.
+ *
+ * Delete and restore use try-first queue semantics:
+ * - Generate a stable idempotencyKey before the network call.
+ * - If the online request succeeds, no PendingOperation is created.
+ * - If the backend returns an HTTP/server/validation error, no PendingOperation is created.
+ * - Only on ApiResult.NetworkError is a PendingOperation enqueued with the same
+ *   idempotencyKey so SyncWorker replay is deduplicated by the backend.
  */
 @HiltViewModel
 class ExpenseDetailViewModel @Inject constructor(
@@ -233,12 +233,12 @@ class ExpenseDetailViewModel @Inject constructor(
     }
 
     /**
-     * Wave 2D-3: delete expense — queue-backed.
-     *
-     * Enqueues DELETE_EXPENSE before the network call. The stable idempotencyKey
-     * is sent as the Idempotency-Key header so the backend cannot reverse balances
-     * twice on retry. On NetworkError the operation stays FAILED_RETRYABLE and
-     * SyncWorker replays it when network returns.
+     * Try-first delete: generates a stable idempotencyKey before the network call,
+     * only enqueues a DELETE_EXPENSE PendingOperation on ApiResult.NetworkError.
+     * Online success and HTTP errors do not create a pending operation so no
+     * sync banner appears for foreground failures.
+     * The same idempotencyKey is stored in the queue row so SyncWorker replay
+     * is deduplicated by the backend.
      */
     fun deleteExpense() {
         val userId = currentUserId ?: run {
@@ -249,21 +249,12 @@ class ExpenseDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _actionState.value = ExpenseActionState.Loading
 
-            val enqueued = pendingOperationRepository.enqueue(
-                userId           = userId,
-                operationType    = OperationType.DELETE_EXPENSE,
-                endpoint         = "/api/expenses/$expenseId",
-                method           = "DELETE",
-                requestBodyJson  = null,         // DELETE has no body
-                localResourceId  = expenseId,
-                serverResourceId = expenseId,    // resource already exists on server
-            )
+            // Try-first: generate key before call, enqueue only on NetworkError.
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
 
-            when (val result = deleteExpenseUseCase(expenseId, enqueued.idempotencyKey)) {
+            when (val result = deleteExpenseUseCase(expenseId, idempotencyKey)) {
                 is ApiResult.Success -> {
-                    pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
-                    // Cascade cache refresh before emitting Deleted so group/friend
-                    // caches are consistent if user goes offline immediately after.
+                    // Online success — no pending operation created.
                     val preDelete = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
                     val gId = preDelete?.groupId
                     val participants = ((preDelete?.payers?.map { it.userId } ?: emptyList()) +
@@ -278,10 +269,19 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 is ApiResult.NetworkError -> {
+                    val enqueued = pendingOperationRepository.enqueue(
+                        userId           = userId,
+                        operationType    = OperationType.DELETE_EXPENSE,
+                        endpoint         = "/api/expenses/$expenseId",
+                        method           = "DELETE",
+                        requestBodyJson  = null,
+                        localResourceId  = expenseId,
+                        serverResourceId = expenseId,
+                        idempotencyKey   = idempotencyKey,
+                    )
                     pendingOperationRepository.markRetryable(
                         enqueued.operationId, result.exception.message ?: "Network error"
                     )
-                    // Optimistically hide the expense from the list immediately.
                     expenseRepository.updateLocalDeletedStatus(expenseId, true)
                     SyncWorker.triggerImmediateSync(appContext)
                     android.util.Log.w("ExpenseDetailVM", "Offline delete queued: ${enqueued.operationId}")
@@ -289,13 +289,11 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 is ApiResult.Forbidden -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _actionState.value = ExpenseActionState.Error(result.message)
                 }
 
                 is ApiResult.NotFound -> {
-                    // Already deleted on server — still refresh caches.
-                    pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
+                    // Already deleted on server — refresh caches, no pending op needed.
                     val preDelete = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
                     val participants = ((preDelete?.payers?.map { it.userId } ?: emptyList()) +
                             (preDelete?.splits?.map { it.userId } ?: emptyList())).toSet()
@@ -309,18 +307,14 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 else -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _actionState.value = ExpenseActionState.Error("Failed to delete expense.")
                 }
             }
         }
     }
-
     /**
-     * Wave 2D-3: restore expense — queue-backed.
-     *
-     * Same idempotency guarantee as delete: the stable key prevents a double
-     * balance re-application on retry.
+     * Try-first restore: same pattern as deleteExpense — idempotencyKey generated
+     * before the call, enqueue only on NetworkError.
      */
     fun restoreExpense() {
         val userId = currentUserId ?: run {
@@ -331,21 +325,12 @@ class ExpenseDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _actionState.value = ExpenseActionState.Loading
 
-            val enqueued = pendingOperationRepository.enqueue(
-                userId           = userId,
-                operationType    = OperationType.RESTORE_EXPENSE,
-                endpoint         = "/api/expenses/$expenseId/restore",
-                method           = "POST",
-                requestBodyJson  = null,         // restore has no body
-                localResourceId  = expenseId,
-                serverResourceId = expenseId,    // resource already exists on server
-            )
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
 
-            when (val result = restoreExpenseUseCase(expenseId, enqueued.idempotencyKey)) {
+            when (val result = restoreExpenseUseCase(expenseId, idempotencyKey)) {
                 is ApiResult.Success -> {
-                    pendingOperationRepository.markSynced(enqueued.operationId, expenseId)
+                    // Online success — no pending operation was created.
                     val restored = result.data
-                    // Fallback to pre-restore cached context if response lacks payer/split rows.
                     val preRestoreCtx = (_expenseState.value as? ExpenseDetailUiState.Success)?.expense
                     val responseParticipants = ((restored.payers?.map { it.userId } ?: emptyList()) +
                             (restored.splits?.map { it.userId } ?: emptyList())).toSet()
@@ -363,10 +348,19 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 is ApiResult.NetworkError -> {
+                    val enqueued = pendingOperationRepository.enqueue(
+                        userId          = userId,
+                        operationType   = OperationType.RESTORE_EXPENSE,
+                        endpoint        = "/api/expenses/$expenseId/restore",
+                        method          = "POST",
+                        requestBodyJson = null,
+                        localResourceId = expenseId,
+                        serverResourceId = expenseId,
+                        idempotencyKey  = idempotencyKey,
+                    )
                     pendingOperationRepository.markRetryable(
                         enqueued.operationId, result.exception.message ?: "Network error"
                     )
-                    // Optimistically show the expense in the list again immediately.
                     expenseRepository.updateLocalDeletedStatus(expenseId, false)
                     SyncWorker.triggerImmediateSync(appContext)
                     android.util.Log.w("ExpenseDetailVM", "Offline restore queued: ${enqueued.operationId}")
@@ -374,12 +368,10 @@ class ExpenseDetailViewModel @Inject constructor(
                 }
 
                 is ApiResult.Forbidden -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _actionState.value = ExpenseActionState.Error(result.message)
                 }
 
                 else -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _actionState.value = ExpenseActionState.Error("Failed to restore expense.")
                 }
             }

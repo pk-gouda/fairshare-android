@@ -602,22 +602,15 @@ class AddExpenseViewModel @Inject constructor(
                 // idempotencyKey is omitted here — it comes from the pending operation below
             )
 
-            // Wave 2D-1: enqueue BEFORE network call.
-            // The stable idempotencyKey from the queue row is used for the backend request
-            // so the backend can deduplicate on any retry.
-            // Pre-generate a stable local ID for this expense. It becomes:
-            //   - the placeholder ExpenseEntity.id in Room (shown in list immediately)
-            //   - the localResourceId in the pending op (drives the pending dot)
+            // Try-first: generate a stable idempotency key and local expense ID BEFORE
+            // the network call, but do NOT enqueue yet. We only enqueue on NetworkError.
+            // This means online success and HTTP errors never create a pending operation
+            // or show a sync banner.
+            //   localExpenseId — placeholder ExpenseEntity.id in Room (offline only)
+            //   idempotencyKey — sent to backend; reused in queue row on NetworkError
+            //                    so SyncWorker replay is deduplicated by the backend.
             val localExpenseId = java.util.UUID.randomUUID().toString()
-
-            val enqueued = pendingOperationRepository.enqueue(
-                userId           = userId,
-                operationType    = OperationType.CREATE_EXPENSE,
-                endpoint         = "/api/expenses",
-                method           = "POST",
-                requestBodyJson  = json.encodeToString(request),
-                localResourceId  = localExpenseId,
-            )
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
 
             when (val result = createExpenseUseCase(
                 groupId          = groupId,
@@ -631,16 +624,13 @@ class AddExpenseViewModel @Inject constructor(
                 payerData        = _payerData.value,
                 splitData        = effectiveSplitData,
                 receiptId        = scannedReceiptId,
-                idempotencyKey   = enqueued.idempotencyKey,
+                idempotencyKey   = idempotencyKey,
                 remainderPointer = _pointerAtCreation,
                 itemAssignments  = _itemAssignments.value.ifEmpty { null },
                 repeatInterval   = _repeatInterval.value,
             )) {
                 is ApiResult.Success -> {
-                    pendingOperationRepository.markSynced(
-                        operationId      = enqueued.operationId,
-                        serverResourceId = result.data.id,
-                    )
+                    // Online success — no pending operation was created, nothing to mark.
                     // For direct friend expenses, propagate otherUserId from the local
                     // placeholder to the server-confirmed cached row so FriendDetail
                     // can find it by otherUserId immediately from Room.
@@ -663,6 +653,17 @@ class AddExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.NetworkError -> {
+                    // True offline failure: NOW enqueue with the same idempotencyKey that
+                    // was already sent to the backend, so SyncWorker replay is deduplicated.
+                    val enqueued = pendingOperationRepository.enqueue(
+                        userId           = userId,
+                        operationType    = OperationType.CREATE_EXPENSE,
+                        endpoint         = "/api/expenses",
+                        method           = "POST",
+                        requestBodyJson  = json.encodeToString(request),
+                        localResourceId  = localExpenseId,
+                        idempotencyKey   = idempotencyKey,
+                    )
                     pendingOperationRepository.markRetryable(
                         operationId = enqueued.operationId,
                         error       = result.exception.message ?: "Network error",
@@ -700,31 +701,24 @@ class AddExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.ValidationError -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
+                    // Foreground HTTP error — no pending operation was created.
                     _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
                 is ApiResult.Forbidden -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
                 is ApiResult.Unauthorized -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
                 is ApiResult.Conflict -> {
-                    // Preserve the backend actual 409 reason. A conflict can be an
-                    // idempotency/body conflict, an in-flight duplicate, or a domain conflict;
-                    // mapping every 409 to "Expense already exists" hides the real issue.
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
+                    // Preserve the backend actual 409 reason.
                     _uiState.value = AddExpenseUiState.Error(result.message)
                 }
 
                 else -> {
-                    // Other foreground HTTP failures are not offline sync failures.
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error("Failed to create expense. Please try again.")
                 }
             }
@@ -776,19 +770,9 @@ class AddExpenseViewModel @Inject constructor(
                 splitData   = mapOf(toId to amount),
             )
 
-            // Pre-generate a stable local ID for this expense. It becomes:
-            //   - the placeholder ExpenseEntity.id in Room (shown in list immediately)
-            //   - the localResourceId in the pending op (drives the pending dot)
+            // Try-first: generate stable keys upfront, enqueue only on NetworkError.
             val localExpenseId = java.util.UUID.randomUUID().toString()
-
-            val enqueued = pendingOperationRepository.enqueue(
-                userId           = userId,
-                operationType    = OperationType.CREATE_EXPENSE,
-                endpoint         = "/api/expenses",
-                method           = "POST",
-                requestBodyJson  = json.encodeToString(request),
-                localResourceId  = localExpenseId,
-            )
+            val idempotencyKey = java.util.UUID.randomUUID().toString()
 
             when (val result = createExpenseUseCase(
                 groupId        = groupId,
@@ -802,10 +786,10 @@ class AddExpenseViewModel @Inject constructor(
                 payerData      = mapOf(fromId to amount),
                 splitData      = mapOf(toId to amount),
                 receiptId      = null,
-                idempotencyKey = enqueued.idempotencyKey,
+                idempotencyKey = idempotencyKey,
             )) {
                 is ApiResult.Success -> {
-                    pendingOperationRepository.markSynced(enqueued.operationId, result.data.id)
+                    // Online success — no pending operation was created.
                     if (groupId == null && preselectedFriendId != null) {
                         expenseRepository.setCachedDirectOtherUserId(
                             expenseId   = result.data.id,
@@ -823,11 +807,19 @@ class AddExpenseViewModel @Inject constructor(
                 }
 
                 is ApiResult.NetworkError -> {
+                    val enqueued = pendingOperationRepository.enqueue(
+                        userId           = userId,
+                        operationType    = OperationType.CREATE_EXPENSE,
+                        endpoint         = "/api/expenses",
+                        method           = "POST",
+                        requestBodyJson  = json.encodeToString(request),
+                        localResourceId  = localExpenseId,
+                        idempotencyKey   = idempotencyKey,
+                    )
                     pendingOperationRepository.markRetryable(
                         enqueued.operationId, result.exception.message ?: "Network error"
                     )
-                    // Insert placeholder so the transfer appears in list immediately,
-                    // consistent with normal offline expense create behavior.
+                    // Insert placeholder so the transfer appears in list immediately.
                     val yourPaid  = if (fromId == userId) amount else 0.0
                     val yourShare = if (toId  == userId) amount else 0.0
                     val memberNamesDirect = _members.value.associate { it.userId to it.fullName }
@@ -855,7 +847,6 @@ class AddExpenseViewModel @Inject constructor(
                 }
 
                 else -> {
-                    pendingOperationRepository.discardForegroundFailure(enqueued.operationId)
                     _uiState.value = AddExpenseUiState.Error("Failed to save transfer. Please try again.")
                 }
             }

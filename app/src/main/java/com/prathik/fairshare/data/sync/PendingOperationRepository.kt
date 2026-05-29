@@ -56,13 +56,16 @@ class PendingOperationRepository @Inject constructor(
     // ── Write ─────────────────────────────────────────────────────────────────
 
     /**
-     * Enqueue a new operation. Both [EnqueueResult.operationId] and
-     * [EnqueueResult.idempotencyKey] are generated once here and stored with
-     * the operation — they must never be regenerated on retry.
+     * Enqueue a new operation. [EnqueueResult.operationId] is always generated
+     * fresh. [EnqueueResult.idempotencyKey] is either the caller-supplied value
+     * (for try-first flows that already sent the key to the backend) or a new
+     * UUID — both are stored and must never be regenerated on retry.
      *
-     * The caller should use [EnqueueResult.idempotencyKey] for the backend
-     * request so the backend can deduplicate on retry.
+     * Try-first callers: generate a UUID before the network call, pass it to the
+     * API, then pass the same value here on NetworkError so the backend can
+     * deduplicate the SyncWorker replay attempt.
      *
+     * @param idempotencyKey Caller-supplied stable key, or a fresh UUID by default.
      * @return [EnqueueResult] containing the stable operationId and idempotencyKey.
      */
     suspend fun enqueue(
@@ -74,9 +77,10 @@ class PendingOperationRepository @Inject constructor(
         localResourceId: String? = null,
         serverResourceId: String? = null,
         dependsOnOperationId: String? = null,
+        idempotencyKey: String = UUID.randomUUID().toString(),
     ): EnqueueResult {
         val operationId    = UUID.randomUUID().toString()
-        val idempotencyKey = UUID.randomUUID().toString()
+        // idempotencyKey is either caller-supplied (try-first) or generated above.
         val now            = System.currentTimeMillis()
 
         val entity = PendingOperationEntity(
@@ -118,10 +122,7 @@ class PendingOperationRepository @Inject constructor(
      * Mark a queued/offline operation as permanently failed.
      *
      * Use this for failures discovered by SyncWorker/background replay, or for an
-     * operation that was already accepted into the offline queue. Do not use this
-     * for a normal foreground online request that returned 4xx/5xx before any
-     * offline mutation was applied; those should be discarded with
-     * [discardForegroundFailure] so the UI does not show a false sync banner.
+     * operation that was already accepted into the offline queue.
      */
     suspend fun markFailed(operationId: String, error: String) {
         dao.markStatus(operationId, SyncStatus.FAILED_PERMANENT.name, lastError = error)
@@ -137,16 +138,6 @@ class PendingOperationRepository @Inject constructor(
         // Cancelled ops no longer affect balance overlay — remove impact row.
         impactDao.deleteByOperationId(operationId)
     }
-
-    /**
-     * Discard a pre-enqueued idempotency row after a foreground online request
-     * failed before the app accepted the mutation into offline sync.
-     *
-     * This is the design boundary that keeps error handling honest:
-     * - foreground request failed -> screen-level error only
-     * - queued/offline replay failed -> sync banner / retry UI
-     */
-    suspend fun discardForegroundFailure(operationId: String) = markCancelled(operationId)
 
     /** Record a retry attempt (increments counter, updates lastAttemptAt). */
     suspend fun incrementRetry(operationId: String) =
