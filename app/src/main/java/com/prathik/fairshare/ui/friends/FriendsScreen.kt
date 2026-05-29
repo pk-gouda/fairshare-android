@@ -99,11 +99,12 @@ private val Gold = Color(0xFFF59E0B)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendsScreen(
-    onNavigateToAddFriendByEmail: () -> Unit,
-    onNavigateToScanQr          : () -> Unit,
-    onNavigateToImport          : () -> Unit,
-    onNavigateToFriend          : (String) -> Unit,
-    viewModel                   : FriendsViewModel = hiltViewModel(),
+    onNavigateToAddExpense       : () -> Unit,
+    onNavigateToAddFriendByEmail : () -> Unit,
+    onNavigateToScanQr           : () -> Unit,
+    onNavigateToImport           : () -> Unit,
+    onNavigateToFriend           : (String) -> Unit,
+    viewModel                    : FriendsViewModel = hiltViewModel(),
 ) {
     val isLoading        by viewModel.isLoading.collectAsState()
     val manualRefreshing by viewModel.manualRefreshing.collectAsState()
@@ -282,13 +283,13 @@ fun FriendsScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick        = { showSheet = true },
+                onClick        = { onNavigateToAddExpense() },
                 containerColor = Green400,
                 contentColor   = Surface0,
                 shape          = RoundedCornerShape(Radius.xl),
                 modifier       = Modifier.size(56.dp),
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Add friend", modifier = Modifier.size(24.dp))
+                Icon(Icons.Filled.Add, contentDescription = "Add expense", modifier = Modifier.size(24.dp))
             }
         },
     ) { innerPadding ->

@@ -607,6 +607,7 @@ fun MainShell(
             }
             composable(Screen.Friends.route) {
                 FriendsScreen(
+                    onNavigateToAddExpense = { shellNavController.navigate(Screen.AddExpense.route()) },
                     onNavigateToAddFriendByEmail = { shellNavController.navigate(Screen.AddFriendByEmail.route) },
                     onNavigateToScanQr = { shellNavController.navigate(Screen.ScanQrCode.route) },
                     onNavigateToImport = { shellNavController.navigate(Screen.ImportSplitwise.route) },
