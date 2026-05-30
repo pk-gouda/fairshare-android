@@ -593,18 +593,19 @@ class EditExpenseViewModel @Inject constructor(
 
             when (result) {
                 is ApiResult.Success -> {
-                    // Online success — no pending operation was created.
-                    // Await cache cascade with real old+new participants.
+                    // updateExpenseUseCase already wrote result.data to Room (expense,
+                    // payers, splits) before returning — no extra cache write needed.
+                    // Navigate immediately; full refresh runs in backgroundScope.
                     val splits = effectiveSplitData?.keys ?: emptySet()
                     val payers = _payerData.value.keys
-                    mutationCacheRefresher.refreshAfterUpdateSuccess(
+                    _saveState.value = EditSaveState.Success
+                    mutationCacheRefresher.launchAfterUpdateSuccess(
                         expense           = result.data,
                         groupId           = _groupId.value,
                         currentUserId     = userId,
                         oldParticipantIds = originalParticipantIds,
                         newParticipantIds = splits + payers,
                     )
-                    _saveState.value = EditSaveState.Success
                 }
 
                 is ApiResult.NetworkError -> {

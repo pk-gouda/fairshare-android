@@ -88,6 +88,23 @@ class FairShareSyncManager @Inject constructor(
     }
 
     /**
+     * Fire-and-forget cache refresh after an online expense update.
+     * Runs in [backgroundScope] so it survives ViewModel teardown after
+     * the screen navigates back. Mirrors [launchSyncAfterExpenseCreate].
+     */
+    fun launchSyncAfterExpenseUpdate(
+        expense           : Expense,
+        groupId           : String?,
+        currentUserId     : String,
+        oldParticipantIds : Set<String> = emptySet(),
+        newParticipantIds : Set<String> = emptySet(),
+    ) {
+        backgroundScope.launch {
+            syncAfterExpenseUpdate(expense, groupId, currentUserId, oldParticipantIds, newParticipantIds)
+        }
+    }
+
+    /**
      * Fire-and-forget cache refresh after an online expense delete.
      * Runs in [backgroundScope] so it survives ViewModel teardown after
      * the screen navigates back. Mirrors [launchSyncAfterExpenseCreate].

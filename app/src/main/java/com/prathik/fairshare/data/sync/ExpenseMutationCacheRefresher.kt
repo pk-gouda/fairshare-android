@@ -46,6 +46,20 @@ class ExpenseMutationCacheRefresher @Inject constructor(
     ) = syncManager.syncAfterExpenseRestore(expense, groupId, currentUserId, participantIds)
 
     /**
+     * Fire-and-forget: delegates to [FairShareSyncManager.launchSyncAfterExpenseUpdate].
+     * Does NOT block — returns immediately. Cache refresh survives ViewModel teardown.
+     * Call this AFTER emitting [EditSaveState.Success] so navigation is instant.
+     */
+    fun launchAfterUpdateSuccess(
+        expense           : Expense,
+        groupId           : String?,
+        currentUserId     : String,
+        oldParticipantIds : Set<String> = emptySet(),
+        newParticipantIds : Set<String> = emptySet(),
+    ) = syncManager.launchSyncAfterExpenseUpdate(
+        expense, groupId, currentUserId, oldParticipantIds, newParticipantIds)
+
+    /**
      * Fire-and-forget: delegates to [FairShareSyncManager.launchSyncAfterExpenseDelete].
      * Does NOT block — returns immediately. Cache refresh survives ViewModel teardown.
      * Call this AFTER emitting [ExpenseActionState.Deleted] so navigation is instant.
