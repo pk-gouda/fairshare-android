@@ -24,6 +24,22 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.math.absoluteValue
 
+// ── Charge/fee detection ──────────────────────────────────────────────────────
+/**
+ * Receipt-level charges that should be allocated proportionally, not assigned manually.
+ * Matched against lowercased item name using substring/word matching.
+ */
+private val CHARGE_KEYWORDS = setOf(
+    "tax", "sales tax", "service fee", "delivery fee", "bag fee",
+    "checkout bag", "tip", "gratuity", "beverage tax", "surcharge",
+    "convenience fee", "discount", "coupon", "promo", "adjustment",
+)
+
+fun isReceiptCharge(name: String): Boolean {
+    val lower = name.lowercase().trim()
+    return CHARGE_KEYWORDS.any { lower.contains(it) }
+}
+
 enum class SplitMode { EQUAL, AMOUNT, PERCENT, SHARES }
 
 data class ShareUiState(
@@ -165,8 +181,22 @@ class ItemAssignmentViewModel @Inject constructor(
     private val _items         = MutableStateFlow<List<ExpenseItem>>(emptyList())
     val items: StateFlow<List<ExpenseItem>> = _items.asStateFlow()
 
+    /** Real assignable items — excludes receipt-level charges. */
+    val realItems: StateFlow<List<ExpenseItem>> = _items
+        .map { list -> list.filter { !isReceiptCharge(it.name) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Receipt-level charges (tax, fees, tip) — allocated proportionally. */
+    val charges: StateFlow<List<ExpenseItem>> = _items
+        .map { list -> list.filter { isReceiptCharge(it.name) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val _isLoading     = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    /** The receiptId whose items are currently loaded. Guards against stale data
+     *  when the user scans a different receipt in the same Add Expense session. */
+    private var loadedReceiptId: String? = null
 
     private val _error         = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
@@ -185,13 +215,15 @@ class ItemAssignmentViewModel @Inject constructor(
 
     // ── Reactive totals — recompute whenever items or share state changes ──────
 
+    /** Sum of real (assignable) item prices — excludes charges/fees. */
     val receiptTotal: StateFlow<Double> = _items
-        .map { list -> list.sumOf { it.totalPrice } }
+        .map { list -> list.filter { !isReceiptCharge(it.name) }.sumOf { it.totalPrice } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
 
     val totalAssigned: StateFlow<Double> =
         combine(_items, _shareStates, _separateItems) { items, states, sep ->
-            items.flatMap { activeKeysFor(it, sep) }
+            items.filter { !isReceiptCharge(it.name) }
+                .flatMap { activeKeysFor(it, sep) }
                 .mapNotNull { states[it]?.assignedAmount() }
                 .sum()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
@@ -199,7 +231,8 @@ class ItemAssignmentViewModel @Inject constructor(
     val myTotal: StateFlow<Double> =
         combine(_items, _shareStates, _separateItems) { items, states, sep ->
             val uid = currentUserId ?: return@combine 0.0
-            items.flatMap { activeKeysFor(it, sep) }
+            items.filter { !isReceiptCharge(it.name) }
+                .flatMap { activeKeysFor(it, sep) }
                 .mapNotNull { states[it]?.myAmount(uid) }
                 .sum()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
@@ -207,9 +240,10 @@ class ItemAssignmentViewModel @Inject constructor(
     // ── Load ──────────────────────────────────────────────────────────────────
 
     fun loadItems(receiptId: String) {
-        // ✅ Skip if items are already loaded for this receipt — preserves user's
-        // assignments when navigating back from ReviewSubmit to ItemAssignment.
-        if (_items.value.isNotEmpty()) return
+        // Skip reload only if the SAME receipt is already loaded.
+        // If the user scans a different receipt in the same session, clear
+        // assignments and reload so stale items from the previous scan are not shown.
+        if (loadedReceiptId == receiptId && _items.value.isNotEmpty()) return
 
         viewModelScope.launch {
             _isLoading.value = true
@@ -217,6 +251,7 @@ class ItemAssignmentViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     val items = result.data.map { it.toDomain() }
                     _items.value = items
+                    loadedReceiptId = receiptId
                     initShareStates(items)
                 }
                 else -> _error.value = "Failed to load receipt items"
@@ -390,11 +425,11 @@ class ItemAssignmentViewModel @Inject constructor(
 
     // ── Bulk actions ──────────────────────────────────────────────────────────
 
-    /** Assign all currently unassigned shares to the current user */
+    /** Assign all currently unassigned real items to the current user */
     fun assignRemainingToMe() {
         val uid = currentUserId ?: return
         val current = _shareStates.value.toMutableMap()
-        _items.value.forEach { item ->
+        _items.value.filter { !isReceiptCharge(it.name) }.forEach { item ->
             shareKeysForItem(item.id).forEach { key ->
                 val share = current[key] ?: return@forEach
                 if (share.assignedAmount() == 0.0) {
@@ -406,17 +441,34 @@ class ItemAssignmentViewModel @Inject constructor(
         _expandedKey.value = null
     }
 
-    /** Split all currently unassigned shares equally among all members */
+    /** Split all currently unassigned real items equally among all members */
     fun splitRemainingEqually(members: List<GroupMember>) {
         val allIds = members.map { it.userId }
         val current = _shareStates.value.toMutableMap()
-        _items.value.forEach { item ->
+        _items.value.filter { !isReceiptCharge(it.name) }.forEach { item ->
             shareKeysForItem(item.id).forEach { key ->
                 val share = current[key] ?: return@forEach
                 if (share.assignedAmount() == 0.0) {
                     current[key] = share.copy(splitMode = SplitMode.EQUAL, selected = allIds)
                 }
             }
+        }
+        _shareStates.value = current
+        _expandedKey.value = null
+    }
+
+    // ── Reset ────────────────────────────────────────────────────────────────
+
+    /** Clear all item assignments so the user can choose a different quick action. */
+    fun resetAssignments() {
+        val current = _shareStates.value.toMutableMap()
+        current.keys.forEach { key ->
+            current[key] = current[key]!!.copy(
+                selected = emptyList(),
+                amounts  = emptyMap(),
+                percents = emptyMap(),
+                shares   = emptyMap(),
+            )
         }
         _shareStates.value = current
         _expandedKey.value = null
@@ -456,7 +508,9 @@ class ItemAssignmentViewModel @Inject constructor(
     fun buildSplitData(): Map<String, Double> {
         val totals = mutableMapOf<String, Double>()
 
-        _items.value.forEach { item ->
+        // Only real items contribute to splitData — charges are allocated
+        // proportionally in MainShell using receipt.totalAmount - itemSubtotal.
+        _items.value.filter { !isReceiptCharge(it.name) }.forEach { item ->
             shareKeysForItem(item.id).forEach { key ->
                 val share = _shareStates.value[key] ?: return@forEach
                 // Collect all userIds who have any assignment in this share
@@ -480,6 +534,53 @@ class ItemAssignmentViewModel @Inject constructor(
     }
 
     /**
+     * Compute the **final per-person amounts** including proportional fee allocation.
+     *
+     * This is what ReviewSubmitScreen must display and what the backend must receive.
+     * It builds on [buildSplitData] (real items only) and distributes the remaining
+     * charges proportionally:
+     *
+     * ```
+     * chargesTotal = grandTotal - realItemSubtotal
+     * person share = personItems + (personItems / realItemSubtotal) × chargesTotal
+     * ```
+     *
+     * Rounding: 2 decimal places per person; residual fixed on the last entry so
+     * the sum equals [grandTotal] exactly — prevents backend rejection.
+     *
+     * @param grandTotal receipt.totalAmount (includes all charges)
+     * @return Map<userId, totalOwed> where values sum exactly to [grandTotal]
+     */
+    fun buildFinalSplitData(grandTotal: Double): Map<String, Double> {
+        val rawSplitData   = buildSplitData()                          // real items only
+        val itemSubtotal   = rawSplitData.values.sum()
+        val extraTotal     = grandTotal - itemSubtotal                  // charges + fees
+
+        if (rawSplitData.isEmpty()) return emptyMap()
+
+        if (extraTotal.absoluteValue < 0.001 || itemSubtotal <= 0.0) {
+            // No charges or no real items: return raw data as-is
+            return rawSplitData
+        }
+
+        // Distribute charges proportionally then round to 2dp
+        val entries = rawSplitData.entries.toList()
+        val rounded = entries.map { (uid, itemAmt) ->
+            val adjusted = itemAmt + extraTotal * (itemAmt / itemSubtotal)
+            uid to (Math.round(adjusted * 100) / 100.0)
+        }.toMutableList()
+
+        // Fix residual on last entry so sum == grandTotal exactly
+        val roundedSum = rounded.sumOf { it.second }
+        val residual   = Math.round((grandTotal - roundedSum) * 100) / 100.0
+        if (residual != 0.0 && rounded.isNotEmpty()) {
+            val last = rounded.last()
+            rounded[rounded.lastIndex] = last.first to (last.second + residual)
+        }
+        return rounded.filter { it.second > 0.001 }.toMap()
+    }
+
+    /**
      * Build item-level assignment map for the backend's assignItems() API.
      * Used only in the edit-expense flow.
      *
@@ -489,7 +590,7 @@ class ItemAssignmentViewModel @Inject constructor(
      */
     fun buildAssignmentsMap(): Map<String, List<String>> {
         val result = mutableMapOf<String, MutableSet<String>>()
-        _items.value.forEach { item ->
+        _items.value.filter { !isReceiptCharge(it.name) }.forEach { item ->
             shareKeysForItem(item.id).forEach { key ->
                 val share = _shareStates.value[key] ?: return@forEach
                 val assignees = when (share.splitMode) {

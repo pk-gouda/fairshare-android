@@ -91,6 +91,10 @@ sealed class Screen(val route: String) {
     }
 
 
+    object ConfirmItems : Screen("confirm_items/{receiptId}") {
+        fun route(receiptId: String) = "confirm_items/$receiptId"
+    }
+
     object ItemAssignment : Screen("item_assignment/{receiptId}") {
         fun route(receiptId: String) = "item_assignment/$receiptId"
     }

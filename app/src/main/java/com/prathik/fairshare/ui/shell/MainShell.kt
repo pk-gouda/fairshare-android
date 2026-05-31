@@ -55,6 +55,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.prathik.fairshare.ui.expense.AddExpenseScreen
+import com.prathik.fairshare.ui.expense.ConfirmItemsScreen
 import com.prathik.fairshare.ui.expense.ItemAssignmentScreen
 import com.prathik.fairshare.ui.expense.ItemAssignmentViewModel
 import com.prathik.fairshare.ui.expense.SaveState
@@ -293,6 +294,7 @@ fun MainShell(
         currentRoute.startsWith("add_expense") -> false
         currentRoute.startsWith("expense/") && currentRoute.endsWith("/edit") -> false
         currentRoute.startsWith("settle/") -> false
+        currentRoute.startsWith("confirm_items/") -> false
         currentRoute.startsWith("item_assignment/") -> false
         currentRoute.startsWith("edit_items/") -> false
         currentRoute == "review_submit" -> false
@@ -889,7 +891,7 @@ fun MainShell(
                         shellNavController.navigate(Screen.CurrencySelect.route)
                     },
                     onNavigateToItemize = { receiptId ->
-                        shellNavController.navigate(Screen.ItemAssignment.route(receiptId))
+                        shellNavController.navigate(Screen.ConfirmItems.route(receiptId))
                     },
                 )
             }
@@ -1004,6 +1006,38 @@ fun MainShell(
             }
 
             composable(
+                route     = Screen.ConfirmItems.route,
+                arguments = listOf(navArgument("receiptId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val receiptId = backStackEntry.arguments?.getString("receiptId") ?: return@composable
+                val parentEntry = remember(backStackEntry) {
+                    shellNavController.getBackStackEntry(Screen.AddExpense.route)
+                }
+                val addExpenseViewModel = hiltViewModel<AddExpenseViewModel>(parentEntry)
+                // Scoped to AddExpense so ConfirmItems, ItemAssignment, and ReviewSubmit
+                // all share the same ItemAssignmentViewModel instance and state.
+                val itemAssignViewModel = hiltViewModel<ItemAssignmentViewModel>(parentEntry)
+                val items    by itemAssignViewModel.items.collectAsState()
+                val isLoading by itemAssignViewModel.isLoading.collectAsState()
+                val currency by addExpenseViewModel.currency.collectAsState()
+                val receiptState by addExpenseViewModel.receiptState.collectAsState()
+                val receipt = (receiptState as? com.prathik.fairshare.ui.expense.ReceiptScanState.Success)?.receipt
+
+                if (receipt == null) { shellNavController.popBackStack(); return@composable }
+
+                LaunchedEffect(receiptId) { itemAssignViewModel.loadItems(receiptId) }
+
+                ConfirmItemsScreen(
+                    receipt   = receipt,
+                    items     = items,
+                    currency  = currency,
+                    isLoading = isLoading,
+                    onBack    = { shellNavController.popBackStack() },
+                    onNext    = { shellNavController.navigate(Screen.ItemAssignment.route(receiptId)) },
+                )
+            }
+
+            composable(
                 route = Screen.ItemAssignment.route,
                 arguments = listOf(navArgument("receiptId") { type = NavType.StringType })
             ) { backStackEntry ->
@@ -1012,7 +1046,7 @@ fun MainShell(
                     shellNavController.getBackStackEntry(Screen.AddExpense.route)
                 }
                 val addExpenseViewModel  = hiltViewModel<AddExpenseViewModel>(parentEntry)
-                val itemAssignViewModel  = hiltViewModel<ItemAssignmentViewModel>()
+                val itemAssignViewModel  = hiltViewModel<ItemAssignmentViewModel>(parentEntry)
                 val members by addExpenseViewModel.members.collectAsState()
                 val currency by addExpenseViewModel.currency.collectAsState()
                 ItemAssignmentScreen(
@@ -1021,40 +1055,15 @@ fun MainShell(
                     currency  = currency,
                     onBack               = { shellNavController.popBackStack() },
                     onDone               = { assignments ->
-                        val rawSplitData = itemAssignViewModel.buildSplitData()
-
-                        // ✅ Distribute tax + fees proportionally before sending to backend.
-                        // buildSplitData() returns raw item prices only. The grand total
-                        // (receipt.totalAmount) includes tax/fees. Each person pays
-                        // tax/fees proportional to their item share.
-                        // We round to 2dp and fix any residual on the last entry so the
-                        // sum equals receipt.totalAmount exactly — avoiding backend rejection.
+                        // buildFinalSplitData() handles proportional charge allocation,
+                        // 2dp rounding, and residual fixing — no inline math needed here.
                         val receipt = (addExpenseViewModel.receiptState.value
                                 as? com.prathik.fairshare.ui.expense.ReceiptScanState.Success)?.receipt
-                        val adjustedSplitData: Map<String, Double> = if (receipt != null) {
-                            val itemSubtotal = rawSplitData.values.sum()
-                            val extraTotal   = receipt.totalAmount - itemSubtotal
-                            if (extraTotal != 0.0 && itemSubtotal > 0.0) {
-                                val entries = rawSplitData.entries.toList()
-                                val rounded = entries.map { (uid, itemAmount) ->
-                                    val proportion = itemAmount / itemSubtotal
-                                    val adjusted   = itemAmount + (extraTotal * proportion)
-                                    uid to (Math.round(adjusted * 100) / 100.0)
-                                }.toMutableList()
-                                // Fix rounding residual on last entry
-                                val roundedSum = rounded.sumOf { it.second }
-                                val residual   = Math.round((receipt.totalAmount - roundedSum) * 100) / 100.0
-                                if (residual != 0.0 && rounded.isNotEmpty()) {
-                                    val last = rounded.last()
-                                    rounded[rounded.lastIndex] = last.first to (last.second + residual)
-                                }
-                                rounded.toMap()
-                            } else rawSplitData
-                        } else rawSplitData
-
+                        val finalSplit = itemAssignViewModel
+                            .buildFinalSplitData(receipt?.totalAmount ?: itemAssignViewModel.buildSplitData().values.sum())
                         addExpenseViewModel.setItemAssignments(
                             assignments = assignments,
-                            splitData   = adjustedSplitData,
+                            splitData   = finalSplit,
                         )
                     },
                     onNavigateToReview   = {
@@ -1065,14 +1074,13 @@ fun MainShell(
 
 
             composable(route = Screen.ReviewSubmit.route) { backStackEntry ->
+                // Both ViewModels scoped to AddExpense — same instances as ConfirmItems
+                // and ItemAssignment so ReviewSubmit sees the exact assignments the user made.
                 val addExpenseEntry = remember(backStackEntry) {
                     shellNavController.getBackStackEntry(Screen.AddExpense.route)
                 }
-                val itemAssignEntry = remember(backStackEntry) {
-                    shellNavController.getBackStackEntry(Screen.ItemAssignment.route)
-                }
                 val addExpenseViewModel = hiltViewModel<AddExpenseViewModel>(addExpenseEntry)
-                val itemAssignViewModel = hiltViewModel<ItemAssignmentViewModel>(itemAssignEntry)
+                val itemAssignViewModel = hiltViewModel<ItemAssignmentViewModel>(addExpenseEntry)
 
                 val items       by itemAssignViewModel.items.collectAsState()
                 val members     by addExpenseViewModel.members.collectAsState()
@@ -1097,7 +1105,7 @@ fun MainShell(
                 ReviewSubmitScreen(
                     receipt    = receipt,
                     items      = items,
-                    splitData  = itemAssignViewModel.buildSplitData(),
+                    splitData  = itemAssignViewModel.buildFinalSplitData(receipt.totalAmount),
                     members    = members,
                     currency   = currency,
                     isLoading  = uiState is com.prathik.fairshare.ui.expense.AddExpenseUiState.Loading,

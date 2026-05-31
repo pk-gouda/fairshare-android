@@ -75,6 +75,7 @@ import com.prathik.fairshare.ui.theme.Orange400
 import com.prathik.fairshare.ui.theme.Radius
 import com.prathik.fairshare.ui.theme.Spacing
 import com.prathik.fairshare.ui.theme.Surface0
+import com.prathik.fairshare.ui.theme.Surface2
 import com.prathik.fairshare.ui.theme.Surface3
 import com.prathik.fairshare.ui.theme.Surface4
 import com.prathik.fairshare.ui.theme.TextPrimary
@@ -104,6 +105,8 @@ fun ItemAssignmentScreen(
     viewModel          : ItemAssignmentViewModel = hiltViewModel(),
 ) {
     val items         by viewModel.items.collectAsState()
+    val realItems     by viewModel.realItems.collectAsState()
+    val charges       by viewModel.charges.collectAsState()
     val isLoading     by viewModel.isLoading.collectAsState()
     val shareStates   by viewModel.shareStates.collectAsState()
     val separateItems by viewModel.separateItems.collectAsState()
@@ -111,12 +114,20 @@ fun ItemAssignmentScreen(
     val receiptTotal  by viewModel.receiptTotal.collectAsState()
     val totalAssigned by viewModel.totalAssigned.collectAsState()
     val myTotal       by viewModel.myTotal.collectAsState()
+    // allDone checks real items only — charges are never manually assigned
     val allDone        = receiptTotal > 0 && (totalAssigned - receiptTotal).absoluteValue < 0.01
+    val hasAnyAssigned = totalAssigned > 0.001
 
     val snackbar = remember { SnackbarHostState() }
     var pendingMergeItemId by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(receiptId) { viewModel.loadItems(receiptId) }
+    // Safe fallback: if items are empty when ItemAssignment opens (process recreation,
+    // navigation edge case, or ConfirmItems load did not complete), trigger load here.
+    // loadItems() has a loadedReceiptId guard — it is a no-op if the same receipt
+    // is already loaded, so this never causes redundant network calls.
+    LaunchedEffect(receiptId, items.isEmpty()) {
+        if (items.isEmpty()) viewModel.loadItems(receiptId)
+    }
 
     Scaffold(
         containerColor = Surface0,
@@ -134,7 +145,7 @@ fun ItemAssignmentScreen(
 
         if (isLoading) { ItemAssignmentSkeleton(Modifier.padding(pad)); return@Scaffold }
 
-        if (items.isEmpty()) {
+        if (realItems.isEmpty() && !isLoading) {
             EmptyState(onSkip = { onDone(emptyMap()); onNavigateToReview() })
             return@Scaffold
         }
@@ -143,10 +154,13 @@ fun ItemAssignmentScreen(
             ItemizeHeader(
                 receiptTotal  = receiptTotal,
                 totalAssigned = totalAssigned,
+                chargesTotal  = charges.sumOf { it.totalPrice },
                 currency      = currency,
                 allDone       = allDone,
+                hasAnyAssigned= hasAnyAssigned,
                 onAssignToMe  = { viewModel.assignRemainingToMe() },
                 onSplitAll    = { viewModel.splitRemainingEqually(members) },
+                onReset       = { viewModel.resetAssignments() },
             )
 
             LazyColumn(
@@ -159,7 +173,7 @@ fun ItemAssignmentScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
-                items(items, key = { it.id }) { item ->
+                items(realItems, key = { it.id }) { item ->
                     val isSeparate = item.id in separateItems
                     val qty        = item.quantity ?: 1
 
@@ -193,6 +207,17 @@ fun ItemAssignmentScreen(
                         },
                     )
                 }
+                // Auto-allocated charges section — shown below real items
+                if (charges.isNotEmpty()) {
+                    item {
+                        Spacer(Modifier.height(Spacing.sm))
+                        AutoAllocatedChargesSection(
+                            charges  = charges,
+                            currency = currency,
+                        )
+                    }
+                }
+                item { Spacer(Modifier.height(Spacing.xl)) }
             }
         }
     }
@@ -225,10 +250,13 @@ fun ItemAssignmentScreen(
 private fun ItemizeHeader(
     receiptTotal  : Double,
     totalAssigned : Double,
+    chargesTotal  : Double,
     currency      : String,
     allDone       : Boolean,
+    hasAnyAssigned: Boolean,
     onAssignToMe  : () -> Unit,
     onSplitAll    : () -> Unit,
+    onReset       : () -> Unit,
 ) {
     val pct by animateFloatAsState(
         if (receiptTotal > 0) (totalAssigned / receiptTotal).coerceIn(0.0, 1.0).toFloat() else 0f,
@@ -290,6 +318,27 @@ private fun ItemizeHeader(
         ) {
             BulkBtn("Assign remaining to me",  !allDone, Modifier.weight(1f), onAssignToMe)
             BulkBtn("Split remaining equally", !allDone, Modifier.weight(1f), onSplitAll)
+        }
+        if (hasAnyAssigned && !allDone) {
+            Spacer(Modifier.height(Spacing.xs))
+            androidx.compose.material3.TextButton(
+                onClick  = onReset,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text      = "Reset assignments",
+                    fontSize  = 12.sp,
+                    color     = TextTertiary,
+                )
+            }
+        }
+        if (chargesTotal > 0) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text     = "${com.prathik.fairshare.util.MoneyUtils.format(chargesTotal, currency)} in fees/tax allocated proportionally",
+                fontSize = 11.sp,
+                color    = TextTertiary,
+            )
         }
 
         Spacer(Modifier.height(4.dp))
@@ -1013,5 +1062,47 @@ private fun ItemAssignmentSkeleton(modifier: androidx.compose.ui.Modifier = andr
         com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 48.dp, widthFraction = 1f, cornerRadius = 10.dp)
         repeat(5) { com.prathik.fairshare.ui.components.FsSkeletonTimelineRow() }
         com.prathik.fairshare.ui.components.FsSkeletonBlock(height = 44.dp, widthFraction = 1f, cornerRadius = 8.dp)
+    }
+}
+
+@Composable
+private fun AutoAllocatedChargesSection(
+    charges  : List<com.prathik.fairshare.domain.model.ExpenseItem>,
+    currency : String,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .background(Surface2)
+            .padding(Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+    ) {
+        Text(
+            text       = "Auto-allocated charges",
+            fontSize   = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color      = TextTertiary,
+        )
+        Text(
+            text     = "Split proportionally based on each person's item total",
+            fontSize = 11.sp,
+            color    = TextTertiary,
+        )
+        Spacer(Modifier.height(4.dp))
+        charges.forEach { charge ->
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(charge.name,  fontSize = 13.sp, color = TextSecondary)
+                Text(
+                    com.prathik.fairshare.util.MoneyUtils.format(charge.totalPrice, currency),
+                    fontSize   = 13.sp,
+                    color      = TextSecondary,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
     }
 }
