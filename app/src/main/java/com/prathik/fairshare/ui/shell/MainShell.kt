@@ -1144,31 +1144,13 @@ fun MainShell(
                     currency           = currency,
                     onBack             = { shellNavController.popBackStack() },
                     onDone             = { assignments ->
-                        val rawSplitData  = itemAssignViewModel.buildSplitData()
-                        val itemSubtotal  = rawSplitData.values.sum()
-                        val expenseTotal  = editExpenseVm.amount.value.toDoubleOrNull() ?: itemSubtotal
-                        val extraTotal    = expenseTotal - itemSubtotal
-
-                        // Distribute tax/fees proportionally — same logic as the add flow
-                        val adjustedSplitData: Map<String, Double> =
-                            if (extraTotal != 0.0 && itemSubtotal > 0.0) {
-                                val entries = rawSplitData.entries.toList()
-                                val rounded = entries.map { (uid, itemAmount) ->
-                                    val proportion = itemAmount / itemSubtotal
-                                    val adjusted   = itemAmount + (extraTotal * proportion)
-                                    uid to (Math.round(adjusted * 100) / 100.0)
-                                }.toMutableList()
-                                // Fix any rounding residual on the last entry so sum == expenseTotal exactly
-                                val roundedSum = rounded.sumOf { it.second }
-                                val residual   = Math.round((expenseTotal - roundedSum) * 100) / 100.0
-                                if (residual != 0.0 && rounded.isNotEmpty()) {
-                                    val last = rounded.last()
-                                    rounded[rounded.lastIndex] = last.first to (last.second + residual)
-                                }
-                                rounded.toMap()
-                            } else rawSplitData
-
-                        editExpenseVm.setItemAssignments(assignments, adjustedSplitData)
+                        // Use the shared buildFinalSplitData helper — identical math
+                        // to the Add flow: real item subtotals + proportional charges
+                        // + 2dp rounding + residual correction = sum equals expenseTotal.
+                        val expenseTotal = editExpenseVm.amount.value.toDoubleOrNull()
+                            ?: itemAssignViewModel.buildSplitData().values.sum()
+                        val finalSplit = itemAssignViewModel.buildFinalSplitData(expenseTotal)
+                        editExpenseVm.setItemAssignments(assignments, finalSplit)
                     },
                     onNavigateToReview = {
                         shellNavController.navigate(Screen.EditReviewSubmit.route)
@@ -1187,12 +1169,19 @@ fun MainShell(
                 val editExpenseVm       = hiltViewModel<EditExpenseViewModel>(editExpenseEntry)
                 val itemAssignViewModel  = hiltViewModel<ItemAssignmentViewModel>(itemAssignEntry)
 
-                val items    by itemAssignViewModel.items.collectAsState()
-                val members  by editExpenseVm.members.collectAsState()
-                val currency by editExpenseVm.currency.collectAsState()
-                val saveState by editExpenseVm.saveState.collectAsState()
-                val amountStr by editExpenseVm.amount.collectAsState()
-                val amount = amountStr.toDoubleOrNull() ?: 0.0
+                val items          by itemAssignViewModel.items.collectAsState()
+                val members        by editExpenseVm.members.collectAsState()
+                val currency       by editExpenseVm.currency.collectAsState()
+                val saveState      by editExpenseVm.saveState.collectAsState()
+                val itemSaveState  by itemAssignViewModel.saveState.collectAsState()
+                val amountStr      by editExpenseVm.amount.collectAsState()
+                val amount         = amountStr.toDoubleOrNull() ?: 0.0
+                val assignError       = (itemSaveState as? com.prathik.fairshare.ui.expense.SaveState.Error)?.message
+                val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
+                val coroutineScope    = androidx.compose.runtime.rememberCoroutineScope()
+                // True once the financial update (updateExpense) has succeeded so that
+                // a retry attempt only re-runs assignItems, not the full expense update.
+                var financialSaveCompleted by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
                 // Synthetic receipt so ReviewSubmitScreen can display totals
                 val syntheticReceipt = com.prathik.fairshare.domain.model.Receipt(
@@ -1216,25 +1205,81 @@ fun MainShell(
 
                 val expenseId = itemAssignEntry.arguments?.getString("expenseId") ?: ""
 
-                androidx.compose.runtime.LaunchedEffect(saveState) {
-                    if (saveState is EditSaveState.Success) {
-                        // Save item assignments (who owns which items) then pop
-                        itemAssignViewModel.saveAssignments(expenseId)
-                        editExpenseVm.resetSaveState()
-                        shellNavController.popBackStack(Screen.EditExpense.route, inclusive = true)
+                // Show assignment-save error in a Snackbar. "Retry" retries ONLY
+                // the assignItems call — the financial edit is already persisted.
+                androidx.compose.runtime.LaunchedEffect(assignError) {
+                    if (assignError != null) {
+                        val result = snackbarHostState.showSnackbar(
+                            message     = assignError,
+                            actionLabel = "Retry",
+                            duration    = androidx.compose.material3.SnackbarDuration.Indefinite,
+                        )
+                        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                            // Launch on coroutineScope — not inside the LaunchedEffect coroutine —
+                            // so saveAssignmentsBlocking() is not cancelled when assignError changes
+                            // to null (which happens immediately when Saving state is set).
+                            coroutineScope.launch {
+                                val saved = itemAssignViewModel.saveAssignmentsBlocking(expenseId)
+                                if (saved) {
+                                    editExpenseVm.resetSaveState()
+                                    shellNavController.popBackStack(Screen.EditExpense.route, inclusive = true)
+                                }
+                            }
+                        }
                     }
                 }
 
-                ReviewSubmitScreen(
-                    receipt   = syntheticReceipt,
-                    items     = items,
-                    splitData = itemAssignViewModel.buildSplitData(),
-                    members   = members,
-                    currency  = currency,
-                    isLoading = saveState is EditSaveState.Loading,
-                    onBack    = { shellNavController.popBackStack() },
-                    onSubmit  = { editExpenseVm.save() },
-                )
+                androidx.compose.runtime.LaunchedEffect(saveState) {
+                    if (saveState is EditSaveState.Success) {
+                        financialSaveCompleted = true
+                        // Await item assignment save — both the financial update
+                        // (updateExpense) and the item assignment mapping (assignItems)
+                        // must succeed before we pop. Failure shows a Snackbar instead.
+                        val saved = itemAssignViewModel.saveAssignmentsBlocking(expenseId)
+                        if (saved) {
+                            editExpenseVm.resetSaveState()
+                            shellNavController.popBackStack(Screen.EditExpense.route, inclusive = true)
+                        }
+                        // If !saved: itemSaveState = SaveState.Error, Snackbar shown above.
+                    }
+                }
+
+                // Pass final fee-adjusted splitData so what the user sees on the
+                // review screen is exactly what gets submitted to the backend.
+                androidx.compose.material3.Scaffold(
+                    snackbarHost = {
+                        androidx.compose.material3.SnackbarHost(snackbarHostState)
+                    },
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                ) { innerPadding ->
+                    ReviewSubmitScreen(
+                        receipt   = syntheticReceipt,
+                        items     = items,
+                        splitData = itemAssignViewModel.buildFinalSplitData(amount),
+                        members   = members,
+                        currency  = currency,
+                        // Disable submit button while either save is in flight
+                        isLoading = saveState is EditSaveState.Loading
+                                || itemSaveState is com.prathik.fairshare.ui.expense.SaveState.Saving,
+                        onBack    = { shellNavController.popBackStack() },
+                        onSubmit  = {
+                            if (financialSaveCompleted &&
+                                itemSaveState is com.prathik.fairshare.ui.expense.SaveState.Error) {
+                                // Financial edit already persisted — only retry assignItems.
+                                coroutineScope.launch {
+                                    val saved = itemAssignViewModel.saveAssignmentsBlocking(expenseId)
+                                    if (saved) {
+                                        editExpenseVm.resetSaveState()
+                                        shellNavController.popBackStack(
+                                            Screen.EditExpense.route, inclusive = true)
+                                    }
+                                }
+                            } else {
+                                editExpenseVm.save()
+                            }
+                        },
+                    )
+                }
             }
 
             // ── Settlement screens ────────────────────────────────────────────

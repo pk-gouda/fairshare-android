@@ -123,10 +123,11 @@ fun ItemAssignmentScreen(
 
     // Safe fallback: if items are empty when ItemAssignment opens (process recreation,
     // navigation edge case, or ConfirmItems load did not complete), trigger load here.
-    // loadItems() has a loadedReceiptId guard — it is a no-op if the same receipt
-    // is already loaded, so this never causes redundant network calls.
+    // receiptId.isNotBlank() guard prevents calling loadItems("") in the edit flow,
+    // where EditItemAssignment passes receiptId="" and loadItemsForEdit handles load.
+    // loadItems() has a loadedReceiptId guard — it is a no-op if already loaded.
     LaunchedEffect(receiptId, items.isEmpty()) {
-        if (items.isEmpty()) viewModel.loadItems(receiptId)
+        if (receiptId.isNotBlank() && items.isEmpty()) viewModel.loadItems(receiptId)
     }
 
     Scaffold(

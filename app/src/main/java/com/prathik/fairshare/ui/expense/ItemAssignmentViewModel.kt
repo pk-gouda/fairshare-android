@@ -261,18 +261,32 @@ class ItemAssignmentViewModel @Inject constructor(
     }
 
     /**
-     * Load itemized expense items for EDIT mode.
-     * Uses the expense ID to fetch existing item assignments from the server.
+     * Load items for an existing itemised expense and restore their existing
+     * member assignments so the edit screen opens with correct pre-selections.
+     * Uses [loadedReceiptId] guard keyed on expenseId so navigating back/forward
+     * within the edit flow does not re-load and wipe the user's changes.
      */
     fun loadItemsForEdit(expenseId: String) {
-        if (_items.value.isNotEmpty()) return
+        if (loadedReceiptId == expenseId && _items.value.isNotEmpty()) return
         viewModelScope.launch {
             _isLoading.value = true
             when (val result = safeApiCall { expenseApiService.getExpenseItems(expenseId) }) {
                 is ApiResult.Success -> {
                     val items = result.data.map { it.toDomain() }
                     _items.value = items
+                    loadedReceiptId = expenseId
                     initShareStates(items)
+                    // Restore existing assignments from the saved item.assignedTo lists
+                    val current = _shareStates.value.toMutableMap()
+                    items.forEach { item ->
+                        val assigned = item.assignedTo.map { it.userId }
+                        if (assigned.isNotEmpty()) {
+                            current["${item.id}-0"]?.let { s ->
+                                current["${item.id}-0"] = s.copy(selected = assigned)
+                            }
+                        }
+                    }
+                    _shareStates.value = current
                 }
                 else -> _error.value = "Failed to load expense items"
             }
@@ -484,6 +498,29 @@ class ItemAssignmentViewModel @Inject constructor(
             }) {
                 is ApiResult.Success -> SaveState.Success
                 else                 -> SaveState.Error("Failed to save assignments")
+            }
+        }
+    }
+
+    /**
+     * Awaitable version of [saveAssignments] — returns true on success, false on failure.
+     * Use in contexts where the caller must wait for completion before navigating away
+     * (e.g. EditReviewSubmit), so the item assignment API call is not cancelled when
+     * the ViewModel is cleared by navigation.
+     */
+    suspend fun saveAssignmentsBlocking(expenseId: String): Boolean {
+        _saveState.value = SaveState.Saving
+        val result = safeApiCall {
+            expenseApiService.assignItems(expenseId, ItemAssignmentRequest(buildAssignmentsMap()))
+        }
+        return when (result) {
+            is ApiResult.Success -> {
+                _saveState.value = SaveState.Success
+                true
+            }
+            else -> {
+                _saveState.value = SaveState.Error("Failed to save item assignments. Please try again.")
+                false
             }
         }
     }
