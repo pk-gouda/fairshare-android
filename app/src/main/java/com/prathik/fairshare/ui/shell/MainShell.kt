@@ -1053,6 +1053,7 @@ fun MainShell(
                     receiptId = receiptId,
                     members   = members,
                     currency  = currency,
+                    viewModel = itemAssignViewModel,
                     onBack               = { shellNavController.popBackStack() },
                     onDone               = { assignments ->
                         // buildFinalSplitData() handles proportional charge allocation,
@@ -1142,6 +1143,7 @@ fun MainShell(
                     receiptId          = "",
                     members            = members,
                     currency           = currency,
+                    viewModel          = itemAssignViewModel,
                     onBack             = { shellNavController.popBackStack() },
                     onDone             = { assignments ->
                         // Use the shared buildFinalSplitData helper — identical math
@@ -1251,7 +1253,7 @@ fun MainShell(
                         androidx.compose.material3.SnackbarHost(snackbarHostState)
                     },
                     containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                ) { innerPadding ->
+                ) { _ ->
                     ReviewSubmitScreen(
                         receipt   = syntheticReceipt,
                         items     = items,

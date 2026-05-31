@@ -61,36 +61,26 @@ import kotlin.math.absoluteValue
 fun ReviewSubmitScreen(
     receipt    : Receipt,
     items      : List<ExpenseItem>,
-    splitData  : Map<String, Double>,  // userId → amountOwed (accurate, from buildSplitData())
+    splitData  : Map<String, Double>,  // userId → FINAL amount owed, already fee-adjusted
     members    : List<GroupMember>,
     currency   : String,
     isLoading  : Boolean,
     onBack     : () -> Unit,
     onSubmit   : () -> Unit,
 ) {
-    // ✅ Distribute tax, fees and discounts proportionally on top of item amounts.
-    // buildSplitData() only includes raw item prices. Tax + fees are in receipt.totalAmount.
-    // Each person pays tax/fees proportional to their share of the item subtotal.
-    val itemSubtotal  = splitData.values.sum()
-    val grandTotal    = receipt.totalAmount
-    val extraTotal    = grandTotal - itemSubtotal   // tax + fees + discounts combined
+    // splitData is already the FINAL per-person amount.
+    // ItemAssignmentViewModel.buildFinalSplitData() applies proportional fees/tax,
+    // rounds to 2 decimals, and fixes residuals before this screen receives it.
+    // Do NOT apply fees again here, or the review screen will double-count charges.
+    val finalSplitData = splitData
 
-    val adjustedSplitData: Map<String, Double> = if (extraTotal != 0.0 && itemSubtotal > 0.0) {
-        splitData.mapValues { (_, itemAmount) ->
-            val proportion = itemAmount / itemSubtotal
-            itemAmount + (extraTotal * proportion)
-        }
-    } else {
-        splitData
-    }
+    // Only show members who actually owe something.
+    val participants = members.filter { (finalSplitData[it.userId] ?: 0.0) > 0.001 }
 
-    // Only show members who actually owe something
-    val participants = members.filter { (adjustedSplitData[it.userId] ?: 0.0) > 0.001 }
-
-    // Validation: do per-person amounts sum to the grand total?
-    val assignedTotal = adjustedSplitData.values.sum()
-    val itemsTotal    = grandTotal
-    val isBalanced    = (assignedTotal - itemsTotal).absoluteValue < 0.02
+    // Validation: do final per-person amounts sum to the receipt grand total?
+    val grandTotal     = receipt.totalAmount
+    val assignedTotal  = finalSplitData.values.sum()
+    val isBalanced     = (assignedTotal - grandTotal).absoluteValue < 0.02
 
     Scaffold(
         containerColor = Surface0,
@@ -107,7 +97,7 @@ fun ReviewSubmitScreen(
             ) {
                 // Warn if some items are unassigned (amounts don't add up)
                 if (!isBalanced && !isLoading) {
-                    val unassigned = itemsTotal - assignedTotal
+                    val unassigned = grandTotal - assignedTotal
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -118,7 +108,7 @@ fun ReviewSubmitScreen(
                     ) {
                         Text(
                             text = if (unassigned > 0)
-                                "⚠ ${MoneyUtils.format(unassigned, currency)} of items not assigned — some splits will be missing"
+                                "⚠ ${MoneyUtils.format(unassigned, currency)} of total not assigned — some splits will be missing"
                             else
                                 "⚠ Assigned exceeds item totals",
                             fontSize = 12.sp,
@@ -212,7 +202,7 @@ fun ReviewSubmitScreen(
             }
 
             items(participants) { member ->
-                val amount = adjustedSplitData[member.userId] ?: 0.0
+                val amount = finalSplitData[member.userId] ?: 0.0
                 val pct    = if (receipt.totalAmount > 0) (amount / receipt.totalAmount * 100).toInt() else 0
 
                 Row(
