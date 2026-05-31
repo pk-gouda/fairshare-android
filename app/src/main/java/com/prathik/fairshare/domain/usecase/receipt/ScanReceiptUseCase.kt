@@ -16,11 +16,13 @@ class ScanReceiptUseCase @Inject constructor(
         imageBase64      : String,
         mimeType         : String,
         preferredCurrency: String,
+        scanTraceId      : String = "",   // TEMPORARY — remove before GA release
     ): ApiResult<Receipt> {
         return receiptRepository.scanReceipt(
             imageBase64       = imageBase64,
             mimeType          = mimeType,
             preferredCurrency = preferredCurrency,
+            scanTraceId       = scanTraceId,
         )
     }
 }

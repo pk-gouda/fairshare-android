@@ -16,6 +16,8 @@ interface ReceiptRepository {
      * [imageBase64] — base64-encoded image data
      * [mimeType]    — "image/jpeg" or "image/png"
      * [preferredCurrency] — optional hint for the AI
+     * [scanTraceId] — TEMPORARY timing trace ID; default blank = no tracing.
+     *                 Remove before GA release.
      *
      * Returns [ApiResult.ValidationError] if image is unreadable.
      * Returns the scanned receipt with HIGH/MEDIUM/LOW confidence score.
@@ -24,6 +26,7 @@ interface ReceiptRepository {
         imageBase64: String,
         mimeType: String,
         preferredCurrency: String?,
+        scanTraceId: String = "",   // TEMPORARY — remove before GA release
     ): ApiResult<Receipt>
 
     /**
