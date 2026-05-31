@@ -143,7 +143,7 @@ fun AddExpenseScreen(
     var showDatePicker     by remember { mutableStateOf(false) }
     var showNoteField      by remember { mutableStateOf(notes.isNotBlank()) }
 
-    val context = LocalContext.current
+    val context      = LocalContext.current
 
     // GmsDocumentScanner — Google's native document scanning UI with auto crop + flatten
     val scannerLauncher = rememberLauncherForActivityResult(
@@ -158,16 +158,9 @@ fun AddExpenseScreen(
             val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(intentData)
             val imageUri = scanResult?.pages?.firstOrNull()?.imageUri
             if (imageUri != null) {
-                try {
-                    val bytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
-                    if (bytes != null) {
-                        viewModel.scanReceipt(bytes)
-                    } else {
-                        viewModel.setScanError("Could not read the scanned image. Try again.")
-                    }
-                } catch (e: Exception) {
-                    viewModel.setScanError("Could not read the scanned image. Try again.")
-                }
+                // ViewModel sets Preparing immediately, reads URI on Dispatchers.IO,
+                // writes to cacheDir, and uploads — all lifecycle-safe.
+                viewModel.scanReceipt(imageUri)
             }
         }
     }
@@ -196,11 +189,8 @@ fun AddExpenseScreen(
         }
     }
 
-    LaunchedEffect(receiptState) {
-        if (receiptState is ReceiptScanState.Error) {
-            errorDialog = apiErrorDialogState((receiptState as ReceiptScanState.Error).message)
-        }
-    }
+    // Scan errors are handled entirely inline by the scan button banner.
+    // They must NOT set errorDialog — that is reserved for Save (uiState) failures.
 
     val isLoading    = uiState is AddExpenseUiState.Loading
     val amountDouble = amount.toDoubleOrNull() ?: 0.0
@@ -374,7 +364,17 @@ fun AddExpenseScreen(
                     .clip(RoundedCornerShape(Radius.xl))
                     .background(Surface0)
                     .border(1.dp, Green400.copy(alpha = 0.5f), RoundedCornerShape(Radius.xl))
-                    .clickable { launchScanner() }
+                    .clickable {
+                        val rs = receiptState
+                        if (rs is ReceiptScanState.Error && rs.canRetry) {
+                            // Cached payload exists — retry same image without scanner relaunch.
+                            viewModel.retryReceiptScan()
+                        } else if (rs !is ReceiptScanState.Scanning &&
+                            rs !is ReceiptScanState.Preparing) {
+                            launchScanner()
+                        }
+                        // If Scanning/Preparing, tap is a no-op (button is effectively disabled).
+                    }
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
@@ -382,16 +382,22 @@ fun AddExpenseScreen(
                 Icon(
                     imageVector        = Icons.Outlined.CameraAlt,
                     contentDescription = null,
-                    tint               = Green400,
+                    tint               = when (receiptState) {
+                        is ReceiptScanState.Error -> Color(0xFFFF5A5F)
+                        else                      -> Green400
+                    },
                     modifier           = Modifier.size(18.dp),
                 )
                 Spacer(modifier = Modifier.width(Spacing.sm))
                 Text(
-                    text = when (receiptState) {
-                        is ReceiptScanState.Success  -> "Receipt scanned \u2713"
-                        is ReceiptScanState.Scanning -> "Scanning\u2026"
-                        is ReceiptScanState.Error    -> "Scan failed \u2014 tap to retry"
-                        else                         -> "Scan receipt to auto-fill"
+                    // Show the actual message from Error state so network vs server
+                    // errors have distinct copy ("Scan paused" vs "Scan failed").
+                    text = when (val rs = receiptState) {
+                        is ReceiptScanState.Success   -> "Receipt scanned \u2713"
+                        is ReceiptScanState.Scanning  -> "Scanning\u2026"
+                        is ReceiptScanState.Preparing -> "Preparing image\u2026"
+                        is ReceiptScanState.Error     -> rs.message
+                        else                          -> "Scan receipt to auto-fill"
                     },
                     fontSize   = 14.sp,
                     fontWeight = FontWeight.Medium,

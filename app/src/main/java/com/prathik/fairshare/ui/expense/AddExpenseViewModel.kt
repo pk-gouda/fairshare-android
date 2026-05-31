@@ -1,6 +1,9 @@
 package com.prathik.fairshare.ui.expense
 
 import android.content.Context
+import android.net.Uri
+import java.io.File
+import java.io.FileOutputStream
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -28,7 +31,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.LocalDateTime
@@ -49,7 +54,7 @@ class AddExpenseViewModel @Inject constructor(
     private val syncManager              : com.prathik.fairshare.data.sync.FairShareSyncManager,
     private val json: Json,
     @ApplicationContext private val appContext: Context,
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     val preselectedGroupId: String? = savedStateHandle.get<String>("groupId")
@@ -142,6 +147,42 @@ class AddExpenseViewModel @Inject constructor(
 
     private var scannedReceiptId: String? = null
     val currentReceiptId: String? get() = scannedReceiptId
+
+    /**
+     * Path to the cached scan JPEG, backed by [SavedStateHandle] so it survives
+     * both normal backgrounding and process death/ViewModel recreation.
+     * Key: "receipt_scan_file_path".
+     *
+     * Cleared on scan success, permanent (non-retryable) failure, and new scan start.
+     * NOT deleted on [onCleared] so that lifecycle recreation can restore a retryable
+     * state. May linger in cacheDir if the user abandons Add Expense after a scan
+     * failure — this is safe to overwrite on the next scan attempt.
+     */
+    private var cachedScanFile: File?
+        get() = savedStateHandle.get<String>("receipt_scan_file_path")?.let(::File)
+        set(value) { savedStateHandle["receipt_scan_file_path"] = value?.absolutePath }
+
+    /**
+     * Monotonically increasing counter. Each [scanReceipt] call increments it.
+     * Only the coroutine that started with the current generation may update
+     * [_receiptState], so stale results from cancelled/slow scans are silently dropped.
+     */
+    private val scanGeneration = AtomicLong(0L)
+    private var scanJob: Job? = null
+
+    init {
+        // If the process was killed while a scan was in-flight and a cache file still
+        // exists on disk, restore a retryable inline error so the user can tap retry
+        // without re-opening the scanner.
+        val file = cachedScanFile
+        if (file != null && file.exists()) {
+            _receiptState.value = ReceiptScanState.Error(
+                message        = "Scan paused — tap to retry when back online.",
+                canRetry       = true,
+                isNetworkError = true,
+            )
+        }
+    }
 
     // itemId → list of userIds assigned to that item (for backend item-linking)
     private val _itemAssignments = MutableStateFlow<Map<String, List<String>>>(emptyMap())
@@ -468,68 +509,216 @@ class AddExpenseViewModel @Inject constructor(
         }
     }
 
-    fun scanReceipt(imageBytes: ByteArray) {
-        viewModelScope.launch {
-            _receiptState.value = ReceiptScanState.Scanning
-            try {
-                val base64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    var bitmap = android.graphics.BitmapFactory.decodeByteArray(
-                        imageBytes, 0, imageBytes.size
-                    )
-                    if (bitmap == null) return@withContext null
-                    if (bitmap.width > 1000) {
-                        val ratio = 1000f / bitmap.width
-                        val h = (bitmap.height * ratio).toInt()
-                        bitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, 1000, h, true)
-                    }
-                    val outputStream = java.io.ByteArrayOutputStream()
-                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, outputStream)
-                    android.util.Base64.encodeToString(
-                        outputStream.toByteArray(), android.util.Base64.NO_WRAP
-                    )
-                }
-                if (base64 == null) {
-                    _receiptState.value =
-                        ReceiptScanState.Error("Could not decode image. Try scanning again.")
-                    return@launch
-                }
-                when (val result = scanReceiptUseCase(
-                    imageBase64 = base64,
-                    mimeType = "image/jpeg",
-                    preferredCurrency = _currency.value,
-                )) {
-                    is ApiResult.Success -> {
-                        val receipt = result.data
-                        scannedReceiptId = receipt.id
-                        receipt.merchantName?.let { _description.value = it }
-                        if (receipt.totalAmount > 0) {
-                            _amount.value = receipt.totalAmount.toString()
-                        }
-                        _expenseDate.value = java.time.LocalDateTime.now().toString()
-                        receipt.currency?.let { _currency.value = it }
-                        _receiptState.value = ReceiptScanState.Success(receipt)
-                        recalculateSplits()
-                    }
-
-                    is ApiResult.NetworkError -> {
-                        _receiptState.value =
-                            ReceiptScanState.Error("No internet connection. Check your network and try again.")
-                    }
-
-                    else -> {
-                        _receiptState.value =
-                            ReceiptScanState.Error("Receipt scan failed. Try again or enter the amount manually.")
-                    }
-                }
-            } catch (e: Exception) {
-                _receiptState.value =
-                    ReceiptScanState.Error("Something went wrong scanning the receipt. Try again.")
+    /**
+     * Start a new receipt scan from the GMS scanner result [uri].
+     *
+     * Steps:
+     * 1. Set [ReceiptScanState.Preparing] immediately (main thread).
+     * 2. Cancel any in-flight scan; increment [scanGeneration].
+     * 3. On IO: read URI → sampled-decode bitmap → compress JPEG → write to cacheDir.
+     * 4. Store the file path via [cachedScanFile] (backed by SavedStateHandle).
+     * 5. Upload via [scanReceiptUseCase]; only the current generation may update state.
+     */
+    fun scanReceipt(uri: Uri) {
+        // Set Preparing synchronously BEFORE launching the coroutine so the button
+        // gives immediate feedback even before IO work starts.
+        _receiptState.value = ReceiptScanState.Preparing
+        scanJob?.cancel()
+        val myGeneration = scanGeneration.incrementAndGet()
+        deleteCachedScanFile()
+        scanJob = viewModelScope.launch {
+            val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                writeScanToCache(uri, myGeneration)
             }
+            // If a newer scan started while we were writing, discard this file.
+            // The generation guard on file IO prevents stale writes from corrupting
+            // the cache file that the newer scan will use.
+            if (scanGeneration.get() != myGeneration) {
+                file?.delete()
+                return@launch
+            }
+            if (file == null) {
+                _receiptState.value = ReceiptScanState.Error(
+                    message  = "Could not read the image. Tap to scan again.",
+                    canRetry = false,
+                )
+                return@launch
+            }
+            cachedScanFile = file
+            uploadScanFile(file, myGeneration)
         }
     }
 
+    /**
+     * Retry the last scan using the persisted cache file on disk.
+     * Safe after process death: checks [File.exists] before retrying.
+     * If the file is gone, resets to [ReceiptScanState.Idle] so the Screen re-launches
+     * the GMS scanner.
+     */
+    fun retryReceiptScan() {
+        val file = cachedScanFile
+        if (file == null || !file.exists()) {
+            cachedScanFile = null
+            _receiptState.value = ReceiptScanState.Idle
+            return
+        }
+        scanJob?.cancel()
+        val myGeneration = scanGeneration.incrementAndGet()
+        scanJob = viewModelScope.launch {
+            uploadScanFile(file, myGeneration)
+        }
+    }
+
+    /**
+     * Read [uri] via [appContext.contentResolver], decode the bitmap with inSampleSize
+     * sampling (max dimension 1200px) to avoid OOM on large camera scans, compress
+     * to JPEG at 75 quality, and write to cacheDir/fairshare_receipt_scan/.
+     * Must run on a background dispatcher.
+     *
+     * Two-pass approach:
+     * 1. Decode bounds only (no pixel allocation) to get image dimensions.
+     * 2. Decode with computed [inSampleSize] so the full-resolution bitmap is
+     *    never loaded into memory.
+     */
+    private fun writeScanToCache(uri: Uri, generation: Long): File? {
+        return try {
+            val cr = appContext.contentResolver
+
+            // Pass 1: decode only bounds — zero pixel allocation.
+            val bounds = android.graphics.BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            cr.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+            }
+            val (rawW, rawH) = bounds.outWidth to bounds.outHeight
+            if (rawW <= 0 || rawH <= 0) return null
+
+            // Compute power-of-2 sample size so the decoded bitmap fits within 1200px.
+            val maxDim = 1200
+            var sampleSize = 1
+            var halfW = rawW / 2
+            var halfH = rawH / 2
+            while (halfW >= maxDim || halfH >= maxDim) {
+                sampleSize *= 2
+                halfW /= 2
+                halfH /= 2
+            }
+
+            // Pass 2: decode sampled bitmap — never loads full resolution into memory.
+            val opts = android.graphics.BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+            }
+            var bitmap = cr.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, opts)
+            } ?: return null
+
+            // Fine-scale to exactly maxDim on the long edge if still over.
+            val longEdge = maxOf(bitmap.width, bitmap.height)
+            if (longEdge > maxDim) {
+                val ratio = maxDim.toFloat() / longEdge
+                bitmap = android.graphics.Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width  * ratio).toInt(),
+                    (bitmap.height * ratio).toInt(),
+                    true,
+                )
+            }
+
+            val dir = File(appContext.cacheDir, "fairshare_receipt_scan").also { it.mkdirs() }
+            // Generation-specific filename prevents stale cancelled-scan IO from
+            // overwriting the file currently in use by the active scan.
+            val outFile = File(dir, "receipt_scan_$generation.jpg")
+            FileOutputStream(outFile).use { out ->
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, out)
+            }
+            outFile
+        } catch (_: Exception) { null }
+    }
+
+    /**
+     * Read [file], Base64-encode it on [kotlinx.coroutines.Dispatchers.IO], and upload
+     * to the Gemini receipt scan API.
+     * Only updates [_receiptState] when [myGeneration] still matches [scanGeneration].
+     */
+    private suspend fun uploadScanFile(file: File, myGeneration: Long) {
+        _receiptState.value = ReceiptScanState.Scanning
+        val base64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try { android.util.Base64.encodeToString(file.readBytes(), android.util.Base64.NO_WRAP) }
+            catch (_: Exception) { null }
+        }
+        if (scanGeneration.get() != myGeneration) return
+        if (base64 == null) {
+            deleteCachedScanFile()
+            _receiptState.value = ReceiptScanState.Error(
+                message  = "Could not read cached image. Tap to scan again.",
+                canRetry = false,
+            )
+            return
+        }
+        try {
+            when (val result = scanReceiptUseCase(
+                imageBase64       = base64,
+                mimeType          = "image/jpeg",
+                preferredCurrency = _currency.value,
+            )) {
+                is ApiResult.Success -> {
+                    if (scanGeneration.get() != myGeneration) return
+                    val receipt = result.data
+                    scannedReceiptId = receipt.id
+                    receipt.merchantName?.let { _description.value = it }
+                    if (receipt.totalAmount > 0) _amount.value = receipt.totalAmount.toString()
+                    _expenseDate.value = java.time.LocalDateTime.now().toString()
+                    receipt.currency?.let { _currency.value = it }
+                    deleteCachedScanFile() // success — file no longer needed
+                    _receiptState.value = ReceiptScanState.Success(receipt)
+                    recalculateSplits()
+                }
+                is ApiResult.NetworkError -> {
+                    if (scanGeneration.get() != myGeneration) return
+                    // Keep cache file so retryReceiptScan() can re-upload without scanner relaunch.
+                    _receiptState.value = ReceiptScanState.Error(
+                        message        = "Scan paused — tap to retry when back online.",
+                        canRetry       = true,
+                        isNetworkError = true,
+                    )
+                }
+                else -> {
+                    if (scanGeneration.get() != myGeneration) return
+                    deleteCachedScanFile() // permanent failure — payload won't help on retry
+                    _receiptState.value = ReceiptScanState.Error(
+                        message  = "Scan failed. Tap to scan again or enter details manually.",
+                        canRetry = false,
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            if (scanGeneration.get() != myGeneration) return
+            deleteCachedScanFile() // unexpected exception — payload won't help on retry
+            _receiptState.value = ReceiptScanState.Error(
+                message  = "Scan failed. Tap to scan again or enter details manually.",
+                canRetry = false,
+            )
+        }
+    }
+
+    /** Delete the cache file and clear the reference. */
+    private fun deleteCachedScanFile() {
+        cachedScanFile?.delete()
+        cachedScanFile = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Do NOT delete cachedScanFile here — the file path is persisted in
+        // SavedStateHandle and the file itself must survive ViewModel recreation
+        // (e.g. configuration change, process death) so retryReceiptScan() can
+        // re-upload without forcing the user to re-open the scanner.
+        // The file is deleted on success, permanent failure, or new scan start.
+    }
+
     fun setScanError(message: String) {
-        _receiptState.value = ReceiptScanState.Error(message)
+        _receiptState.value = ReceiptScanState.Error(message, canRetry = false)
     }
 
     fun submit() {
@@ -870,8 +1059,21 @@ sealed class AddExpenseUiState {
 }
 
 sealed class ReceiptScanState {
+    /** No scan in progress and no result yet. */
     object Idle : ReceiptScanState()
+    /** Image bytes are being read / compressed off the main thread. */
+    object Preparing : ReceiptScanState()
+    /** Compressed payload is uploading to the Gemini API. */
     object Scanning : ReceiptScanState()
     data class Success(val receipt: Receipt) : ReceiptScanState()
-    data class Error(val message: String) : ReceiptScanState()
+    /**
+     * @param message        Inline banner text — never routed to the global error dialog.
+     * @param canRetry       True when the ViewModel has a cached payload for [AddExpenseViewModel.retryReceiptScan].
+     * @param isNetworkError True when the failure was a transient network issue (retry makes sense).
+     */
+    data class Error(
+        val message      : String,
+        val canRetry     : Boolean = false,
+        val isNetworkError: Boolean = false,
+    ) : ReceiptScanState()
 }
