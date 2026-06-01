@@ -229,9 +229,9 @@ class GroupDetailViewModel @Inject constructor(
                 }
 
                 // Step 2 — Network sync (same coroutine so indicator stays until done).
-                syncManager.syncGroupDetail(groupId, SyncReason.MANUAL_REFRESH)
+                val syncResult = syncManager.syncGroupDetail(groupId, SyncReason.MANUAL_REFRESH)
+                // Settlements are not refreshed by syncGroupDetail — still fetch directly.
                 val settlementsDeferred = async { groupRepository.getGroupSettlements(groupId) }
-                val balancesDeferred    = async { getGroupBalancesUseCase(groupId) }
 
                 val refreshedExpenses = expenseRepository.getCachedGroupExpenses(groupId)
                 if (refreshedExpenses.isNotEmpty() || _expensesState.value is ExpensesUiState.Success) {
@@ -243,18 +243,19 @@ class GroupDetailViewModel @Inject constructor(
                     is ApiResult.Success -> _settlements.value = result.data
                     else -> Unit
                 }
-                when (val result = balancesDeferred.await()) {
-                    is ApiResult.Success -> {
-                        _balancesLoadFailed.value = false
-                        _balancesLoaded.value = true
-                        _balances.value = result.data
-                        _yourBalance.value = result.data.sumOf { it.amount }
+                // groupBalancesOk distinguishes "network ok + empty = settled" from
+                // "network failed + empty = unknown". Replicates original ApiResult semantics.
+                if (syncResult.groupBalancesOk) {
+                    val cached = balanceRepository.getCachedGroupBalances(groupId)
+                    _balancesLoadFailed.value = false
+                    _balancesLoaded.value     = true
+                    _balances.value           = cached
+                    _yourBalance.value        = cached.sumOf { it.amount }
+                } else {
+                    if (!_balancesLoaded.value && _balances.value.isEmpty()) {
+                        _balancesLoadFailed.value = true
                     }
-                    else -> {
-                        if (!_balancesLoaded.value && _balances.value.isEmpty()) {
-                            _balancesLoadFailed.value = true
-                        }
-                    }
+                    // else: sync failed but data previously loaded — keep visible.
                 }
             } finally {
                 if (manual) _manualRefreshing.value = false

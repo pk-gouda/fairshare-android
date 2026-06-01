@@ -278,25 +278,25 @@ class FriendDetailViewModel @Inject constructor(
                 }
 
                 // Step 2 — Network sync (same coroutine so indicator stays until done).
-                syncManager.syncFriendDetail(friendId, SyncReason.MANUAL_REFRESH)
-                when (val result = balanceRepository.getNetBalanceWithUser(friendId)) {
-                    is ApiResult.Success -> {
-                        _balancesLoadFailed.value = false
-                        _balancesLoaded.value = true
-                        _userBalances.value = result.data
-                        _netBalance.value = result.data.sumOf { it.amount }
-                        _currency.value = result.data.firstOrNull()?.currency ?: "USD"
+                val syncResult = syncManager.syncFriendDetail(friendId, SyncReason.MANUAL_REFRESH)
+                // netOk distinguishes "network ok + empty = settled" from "network failed"\.
+                if (syncResult.netOk) {
+                    val cachedNet = balanceRepository.getCachedNetBalanceWithUser(friendId)
+                    _balancesLoadFailed.value = false
+                    _balancesLoaded.value     = true
+                    _userBalances.value        = cachedNet
+                    _netBalance.value          = cachedNet.sumOf { it.amount }
+                    _currency.value            = cachedNet.firstOrNull()?.currency ?: "USD"
+                } else {
+                    if (!_balancesLoaded.value && _userBalances.value.isEmpty()) {
+                        _balancesLoadFailed.value = true
                     }
-                    else -> {
-                        if (!_balancesLoaded.value && _userBalances.value.isEmpty()) {
-                            _balancesLoadFailed.value = true
-                        }
-                    }
+                    // else: sync failed but data previously loaded — keep visible.
                 }
-                when (val result = balanceRepository.getBreakdownWithUser(friendId)) {
-                    is ApiResult.Success -> _groupBalances.value = result.data
-                    else -> Unit
+                if (syncResult.breakdownOk) {
+                    _groupBalances.value = balanceRepository.getCachedBreakdownWithUser(friendId)
                 }
+                // else: breakdown sync failed — keep existing breakdown visible.
                 val refreshedExpenses = expenseRepository.getCachedDirectExpensesWithFriend(friendId)
                 if (refreshedExpenses.isNotEmpty() || _expensesState.value is FriendExpensesState.Success) {
                     _expensesState.value = FriendExpensesState.Success(

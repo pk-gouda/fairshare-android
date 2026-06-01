@@ -186,41 +186,42 @@ class GroupsViewModel @Inject constructor(
         viewModelScope.launch {
             if (manual) _manualRefreshing.value = true
             try {
-                syncManager.syncGroupsHome(SyncReason.MANUAL_REFRESH)
-                when (val result = getGroupsUseCase()) {
-                    is ApiResult.Success -> {
-                        val groups = result.data.stableSorted()
-                        _groupsState.value = GroupsUiState.Success(groups)
-
-                        // Refresh per-group tile balances
-                        val groupBalanceResults = groups.map { group ->
-                            async {
-                                group.id to when (val r = getGroupBalancesUseCase(group.id)) {
-                                    is ApiResult.Success -> {
-                                        r.data.groupBy { it.currency }
-                                            .map { (cur, list) -> Pair(list.sumOf { it.amount }, cur) }
-                                            .filter { it.first != 0.0 }
-                                    }
-                                    else -> null
-                                }
+                val syncResult = syncManager.syncGroupsHome(SyncReason.MANUAL_REFRESH)
+                // groupsOk: getMyGroups() succeeded — safe to show cached group list.
+                // groupBalanceOkByGroupId: per-group flag — only update tile when that
+                // group's balance fetch succeeded. If a fetch failed, the previous tile
+                // value is preserved so stale data stays visible (not falsely cleared).
+                if (syncResult.groupsOk) {
+                    val cachedGroups = groupRepository.getCachedGroups().stableSorted()
+                    _groupsState.value = GroupsUiState.Success(cachedGroups)
+                    // Rebuild balance map: update only groups whose fetch succeeded.
+                    val currentGroupIds = cachedGroups.map { it.id }.toSet()
+                    val updatedMap = _groupBalanceMap.value
+                        .filterKeys { it in currentGroupIds }
+                        .toMutableMap()
+                    for (group in cachedGroups) {
+                        val balOk = syncResult.groupBalanceOkByGroupId[group.id] ?: false
+                        if (balOk) {
+                            val balances = balanceRepository.getCachedGroupBalances(group.id)
+                            val entries = balances
+                                .groupBy { it.currency }
+                                .map { (cur, list) -> Pair(list.sumOf { it.amount }, cur) }
+                                .filter { kotlin.math.abs(it.first) > 0.005 }
+                            if (entries.isNotEmpty()) {
+                                updatedMap[group.id] = entries
+                            } else {
+                                updatedMap.remove(group.id)  // settled — clear tile
                             }
-                        }.awaitAll()
-                        _groupBalanceMap.value = groupBalanceResults
-                            .mapNotNull { (id, bal) -> bal?.let { id to it } }
-                            .toMap()
-                        recomputeEffectiveBalances()
-
-                        // Refresh top balance summary
-                        when (val allBalances = getAllBalancesUseCase()) {
-                            is ApiResult.Success -> {
-                                _balanceSummary.value = calculateSummary(allBalances.data)
-                                recomputeEffectiveBalances()
-                            }
-                            else -> Unit
                         }
+                        // balOk=false: leave existing tile value in updatedMap
                     }
-                    is ApiResult.NetworkError -> Unit  // keep cached data visible
-                    else -> Unit
+                    _groupBalanceMap.value = updatedMap.toMap()
+                    recomputeEffectiveBalances()
+                }
+                // balancesOk: getAllBalances() succeeded — safe to update summary.
+                if (syncResult.balancesOk) {
+                    _balanceSummary.value = calculateSummary(balanceRepository.getCachedAllBalances())
+                    recomputeEffectiveBalances()
                 }
             } finally {
                 if (manual) _manualRefreshing.value = false

@@ -184,17 +184,15 @@ class FriendsViewModel @Inject constructor(
         viewModelScope.launch {
             if (manual) _manualRefreshing.value = true
             try {
-                syncManager.syncFriendsHome(SyncReason.MANUAL_REFRESH)
-                when (val result = getFriendsUseCase()) {
-                    is ApiResult.Success -> _friends.value = result.data.stableSortedForHome()
-                    else -> Unit
+                val syncResult = syncManager.syncFriendsHome(SyncReason.MANUAL_REFRESH)
+                // Gate on sync success: distinguishes empty=settled (ok=true) from
+                // empty=unknown (ok=false). On failure, existing state remains visible.
+                if (syncResult.friendsOk) {
+                    _friends.value = friendRepository.getCachedFriends().stableSortedForHome()
                 }
-                when (val result = getAllBalancesUseCase()) {
-                    is ApiResult.Success -> {
-                        applyBalances(result.data)
-                        recomputeEffectiveBalances()
-                    }
-                    else -> Unit
+                if (syncResult.balancesOk) {
+                    applyBalances(balanceRepository.getCachedAllBalances())
+                    recomputeEffectiveBalances()
                 }
             } finally {
                 if (manual) _manualRefreshing.value = false
