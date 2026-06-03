@@ -535,38 +535,20 @@ class AddExpenseViewModel @Inject constructor(
         scanJob?.cancel()
         val myGeneration = scanGeneration.incrementAndGet()
         deleteCachedScanFile()
-        // [SCAN_TIMING] TEMPORARY — remove before GA release.
-        // Capture local immutable traceId so logs inside this coroutine are always
-        // consistent, even if the user starts a new scan (which overwrites scanTraceId).
         val myTraceId = java.util.UUID.randomUUID().toString().replace("-", "").take(12)
         scanTraceId = myTraceId  // persist for retry after process death
-        val _t0scan = System.nanoTime()
-        android.util.Log.i("SCAN_TIMING",
-            "[SCAN_TIMING] scan.start traceId=$myTraceId generation=$myGeneration")
         scanJob = viewModelScope.launch {
-            val _tPrepStart = System.nanoTime()
             val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 writeScanToCache(uri, myGeneration)
             }
-            // [SCAN_TIMING] prepareImage = URI read + sampled decode + JPEG compress + file write
-            val _tPrepEnd = System.nanoTime()
-            val _fileBytes = file?.length() ?: 0L
-            android.util.Log.i("SCAN_TIMING",
-                "[SCAN_TIMING] scan.prepareImage phaseMs=${(_tPrepEnd - _tPrepStart) / 1_000_000}" +
-                        " totalMs=${(_tPrepEnd - _t0scan) / 1_000_000}" +
-                        " compressedFileBytes=$_fileBytes traceId=$myTraceId")
             // If a newer scan started while we were writing, discard this file.
             // The generation guard on file IO prevents stale writes from corrupting
             // the cache file that the newer scan will use.
             if (scanGeneration.get() != myGeneration) {
                 file?.delete()
-                android.util.Log.i("SCAN_TIMING",
-                    "[SCAN_TIMING] scan.stale_drop traceId=$myTraceId generation=$myGeneration")
                 return@launch
             }
             if (file == null) {
-                android.util.Log.i("SCAN_TIMING",
-                    "[SCAN_TIMING] scan.error category=image_decode_failed traceId=$myTraceId")
                 _receiptState.value = ReceiptScanState.Error(
                     message  = "Could not read the image. Tap to scan again.",
                     canRetry = false,
@@ -574,7 +556,7 @@ class AddExpenseViewModel @Inject constructor(
                 return@launch
             }
             cachedScanFile = file
-            uploadScanFile(file, myGeneration, _t0scan, myTraceId)
+            uploadScanFile(file, myGeneration, myTraceId)
         }
     }
 
@@ -598,10 +580,8 @@ class AddExpenseViewModel @Inject constructor(
         val myTraceId = scanTraceId.ifBlank {
             java.util.UUID.randomUUID().toString().replace("-", "").take(12).also { scanTraceId = it }
         }
-        android.util.Log.i("SCAN_TIMING",
-            "[SCAN_TIMING] scan.retry traceId=$myTraceId generation=$myGeneration")
         scanJob = viewModelScope.launch {
-            uploadScanFile(file, myGeneration, System.nanoTime(), myTraceId)
+            uploadScanFile(file, myGeneration, myTraceId)
         }
     }
 
@@ -677,32 +657,19 @@ class AddExpenseViewModel @Inject constructor(
      * to the Gemini receipt scan API.
      * Only updates [_receiptState] when [myGeneration] still matches [scanGeneration].
      */
-    // _t0 is nanoTime at scan start (passed from scanReceipt / retryReceiptScan)
-    // myTraceId is the local immutable trace ID for this scan attempt — never uses the
-    // shared scanTraceId property, which can be overwritten by a concurrent scan.
     private suspend fun uploadScanFile(
         file        : File,
         myGeneration: Long,
-        _t0         : Long   = System.nanoTime(),
         myTraceId   : String = scanTraceId,
     ) {
         _receiptState.value = ReceiptScanState.Scanning
-        // [SCAN_TIMING] base64Encode phase
-        val _tB64Start = System.nanoTime()
         val base64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try { android.util.Base64.encodeToString(file.readBytes(), android.util.Base64.NO_WRAP) }
             catch (_: Exception) { null }
         }
-        val _tB64End = System.nanoTime()
-        android.util.Log.i("SCAN_TIMING",
-            "[SCAN_TIMING] scan.base64Encode phaseMs=${(_tB64End - _tB64Start) / 1_000_000}" +
-                    " totalMs=${(_tB64End - _t0) / 1_000_000}" +
-                    " base64Length=${base64?.length ?: 0} traceId=$myTraceId")
         if (scanGeneration.get() != myGeneration) return
         if (base64 == null) {
             deleteCachedScanFile()
-            android.util.Log.i("SCAN_TIMING",
-                "[SCAN_TIMING] scan.error category=base64_read_failed traceId=$myTraceId")
             _receiptState.value = ReceiptScanState.Error(
                 message  = "Could not read cached image. Tap to scan again.",
                 canRetry = false,
@@ -710,8 +677,6 @@ class AddExpenseViewModel @Inject constructor(
             return
         }
         try {
-            // [SCAN_TIMING] apiRoundTrip phase — from Retrofit call to response/error
-            val _tApiStart = System.nanoTime()
             when (val result = scanReceiptUseCase(
                 imageBase64       = base64,
                 mimeType          = "image/jpeg",
@@ -720,13 +685,6 @@ class AddExpenseViewModel @Inject constructor(
             )) {
                 is ApiResult.Success -> {
                     if (scanGeneration.get() != myGeneration) return
-                    val _tNow = System.nanoTime()
-                    android.util.Log.i("SCAN_TIMING",
-                        "[SCAN_TIMING] scan.apiRoundTrip phaseMs=${(_tNow - _tApiStart) / 1_000_000}" +
-                                " totalMs=${(_tNow - _t0) / 1_000_000} traceId=$myTraceId")
-                    android.util.Log.i("SCAN_TIMING",
-                        "[SCAN_TIMING] scan.total totalMs=${(_tNow - _t0) / 1_000_000}" +
-                                " outcome=success traceId=$myTraceId")
                     val receipt = result.data
                     scannedReceiptId = receipt.id
                     receipt.merchantName?.let { _description.value = it }
@@ -739,13 +697,6 @@ class AddExpenseViewModel @Inject constructor(
                 }
                 is ApiResult.NetworkError -> {
                     if (scanGeneration.get() != myGeneration) return
-                    val _tNow = System.nanoTime()
-                    android.util.Log.i("SCAN_TIMING",
-                        "[SCAN_TIMING] scan.apiRoundTrip phaseMs=${(_tNow - _tApiStart) / 1_000_000}" +
-                                " totalMs=${(_tNow - _t0) / 1_000_000} traceId=$myTraceId")
-                    android.util.Log.i("SCAN_TIMING",
-                        "[SCAN_TIMING] scan.total totalMs=${(_tNow - _t0) / 1_000_000}" +
-                                " outcome=network_error traceId=$myTraceId")
                     _receiptState.value = ReceiptScanState.Error(
                         message        = "Scan paused — tap to retry when back online.",
                         canRetry       = true,
@@ -754,14 +705,6 @@ class AddExpenseViewModel @Inject constructor(
                 }
                 else -> {
                     if (scanGeneration.get() != myGeneration) return
-                    val _tNow = System.nanoTime()
-                    android.util.Log.i("SCAN_TIMING",
-                        "[SCAN_TIMING] scan.apiRoundTrip phaseMs=${(_tNow - _tApiStart) / 1_000_000}" +
-                                " totalMs=${(_tNow - _t0) / 1_000_000}" +
-                                " outcome=server_error traceId=$myTraceId")
-                    android.util.Log.i("SCAN_TIMING",
-                        "[SCAN_TIMING] scan.total totalMs=${(_tNow - _t0) / 1_000_000}" +
-                                " outcome=server_error traceId=$myTraceId")
                     deleteCachedScanFile()
                     _receiptState.value = ReceiptScanState.Error(
                         message  = "Scan failed. Tap to scan again or enter details manually.",
@@ -771,10 +714,6 @@ class AddExpenseViewModel @Inject constructor(
             }
         } catch (e: Exception) {
             if (scanGeneration.get() != myGeneration) return
-            val _tNow = System.nanoTime()
-            android.util.Log.i("SCAN_TIMING",
-                "[SCAN_TIMING] scan.total totalMs=${(_tNow - _t0) / 1_000_000}" +
-                        " outcome=exception category=${e.javaClass.simpleName} traceId=$myTraceId")
             deleteCachedScanFile()
             _receiptState.value = ReceiptScanState.Error(
                 message  = "Scan failed. Tap to scan again or enter details manually.",
