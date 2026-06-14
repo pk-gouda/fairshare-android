@@ -494,20 +494,47 @@ class AddExpenseViewModel @Inject constructor(
                 val included = members.filter { !_equalExcluded.value.contains(it.userId) }
                 if (included.isEmpty()) return
 
+                // Base divides by PARTICIPANT count (matches backend: total / count, DOWN).
                 val totalCents = Math.round(total * 100)
                 val shareCents = totalCents / included.size
                 val remainderCents = totalCents - (shareCents * included.size)
 
-                val pointer = _groups.value
-                    .find { it.id == _selectedGroupId.value }
-                    ?.lastRemainderIndex ?: 0
-                val startIndex = if (remainderCents > 0 && included.isNotEmpty())
-                    pointer % included.size else 0
-                _pointerAtCreation = pointer
+                val groupId = _selectedGroupId.value
+                val ordered: List<GroupMember> = if (groupId != null) {
+                    // GROUP expense — mirror the backend exactly: walk the full ACTIVE
+                    // roster (_members, which is the ACTIVE joinedAt-ASC roster incl.
+                    // placeholders) starting at pointer % rosterSize, keeping only the
+                    // participants in roster order. The leftover cent(s) must land on the
+                    // same people the backend will charge, so we rotate over the ROSTER
+                    // (size = members.size), not over `included`.
+                    val pointer = _groups.value
+                        .find { it.id == groupId }
+                        ?.lastRemainderIndex ?: 0
+                    _pointerAtCreation = pointer
 
-                val rotated = included.drop(startIndex) + included.take(startIndex)
+                    val rosterSize = members.size
+                    val startOffset = if (rosterSize > 0) pointer % rosterSize else 0
+                    val includedIds = included.map { it.userId }.toHashSet()
 
-                _splitData.value = rotated.mapIndexed { index, member ->
+                    val walked = ArrayList<GroupMember>(included.size)
+                    for (i in 0 until rosterSize) {
+                        val m = members[(startOffset + i) % rosterSize]
+                        if (includedIds.contains(m.userId)) walked.add(m)
+                    }
+                    // Any participant not in the roster (edge case) appended last —
+                    // mirrors the backend's trailing append loop.
+                    for (m in included) {
+                        if (walked.none { it.userId == m.userId }) walked.add(m)
+                    }
+                    walked
+                } else {
+                    // NON-GROUP (direct) expense — backend assigns leftover cents
+                    // sequentially from the first participant, no pointer.
+                    _pointerAtCreation = null
+                    included
+                }
+
+                _splitData.value = ordered.mapIndexed { index, member ->
                     val amount = if (index < remainderCents) (shareCents + 1) / 100.0
                     else shareCents / 100.0
                     member.userId to amount
