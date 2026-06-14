@@ -30,3 +30,25 @@ data class ImportActionResponse(
     @SerialName("success") val success: Boolean? = null,
     @SerialName("message") val message: String? = null,
 )
+
+/**
+ * Response shape for GET /api/import/groups/{groupId}/unclaimed.
+ *
+ * The backend returns each unclaimed PLACEHOLDER as a map with these exact keys
+ * (SplitWiseImportService.getUnclaimedMembers) — NOT a GroupMemberResponse. The
+ * only fields the claim/assign UI consumes are placeholderUserId (used as the
+ * claim/assign target) and csvName (the display label); the totals are available
+ * for an optional balance preview. All fields default so a partial/extended
+ * backend response never fails deserialization.
+ */
+@Serializable
+data class UnclaimedMemberResponse(
+    @SerialName("placeholderUserId")   val placeholderUserId: String = "",
+    @SerialName("csvName")             val csvName: String = "",
+    @SerialName("expenseInvolvement")  val expenseInvolvement: Int = 0,
+    @SerialName("totalPaid")           val totalPaid: Double = 0.0,
+    @SerialName("totalOwed")           val totalOwed: Double = 0.0,
+    @SerialName("settlementPaid")      val settlementPaid: Double = 0.0,
+    @SerialName("settlementReceived")  val settlementReceived: Double = 0.0,
+    @SerialName("netBalance")          val netBalance: Double = 0.0,
+)

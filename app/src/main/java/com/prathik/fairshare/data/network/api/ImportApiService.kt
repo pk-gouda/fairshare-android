@@ -8,6 +8,7 @@ import com.prathik.fairshare.data.model.response.ApiResponse
 import com.prathik.fairshare.data.model.response.GroupMemberResponse
 import com.prathik.fairshare.data.model.response.ImportActionResponse
 import com.prathik.fairshare.data.model.response.ImportResponse
+import com.prathik.fairshare.data.model.response.UnclaimedMemberResponse
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -22,7 +23,7 @@ interface ImportApiService {
     suspend fun importFriend(@Body request: ImportRequest): ApiResponse<ImportResponse>
 
     @GET("api/import/groups/{groupId}/unclaimed")
-    suspend fun getUnclaimedMembers(@Path("groupId") groupId: String): ApiResponse<List<GroupMemberResponse>>
+    suspend fun getUnclaimedMembers(@Path("groupId") groupId: String): ApiResponse<List<UnclaimedMemberResponse>>
 
     @GET("api/import/groups/{groupId}/preview/{placeholderUserId}")
     suspend fun previewPlaceholder(
