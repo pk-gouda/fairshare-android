@@ -1,6 +1,5 @@
 package com.prathik.fairshare.data.model.request
 
-import com.prathik.fairshare.domain.model.AuthProvider
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -19,14 +18,6 @@ data class RegisterRequest(
 data class LoginRequest(
     @SerialName("email")    val email: String,
     @SerialName("password") val password: String,
-)
-
-@Serializable
-data class OAuthLoginRequest(
-    @SerialName("email")             val email: String,
-    @SerialName("fullName")          val fullName: String,
-    @SerialName("profilePictureUrl") val profilePictureUrl: String? = null,
-    @SerialName("authProvider")      val authProvider: AuthProvider,
 )
 
 @Serializable
