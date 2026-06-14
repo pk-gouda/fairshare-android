@@ -77,17 +77,29 @@ class ImportRepositoryImpl @Inject constructor(
 
     override suspend fun unclaimIdentity(
         groupId: String,
-        placeholderUserId: String,
-    ): ApiResult<Map<String, Any>> =
-        safeApiCall {
+        wrongClaimerUserId: String,
+        originalCsvName: String,
+    ): ApiResult<Map<String, Any>> {
+        // Dormant method — see ImportRepository.unclaimIdentity KDoc.
+        // These guards make a wrong wiring fail loudly at the call site rather
+        // than silently sending a payload the backend rejects.
+        require(wrongClaimerUserId.isNotBlank()) {
+            "wrongClaimerUserId must be a real active claimer ID, not blank"
+        }
+        require(originalCsvName.isNotBlank()) {
+            "originalCsvName must be the original CSV name to restore, not blank"
+        }
+        return safeApiCall {
             importService.unclaimIdentity(
                 groupId,
                 UnclaimIdentityRequest(
-                    wrongClaimerUserId = placeholderUserId,
-                    originalCsvName   = "",
+                    wrongClaimerUserId = wrongClaimerUserId,
+                    originalCsvName    = originalCsvName,
                 )
             )
         }.mapSuccess { emptyMap() }
+    }
+
     override suspend fun assignFriendPlaceholder(
         placeholderUserId: String,
         friendUserId: String,

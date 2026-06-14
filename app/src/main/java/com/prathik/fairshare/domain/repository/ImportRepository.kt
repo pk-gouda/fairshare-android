@@ -77,15 +77,24 @@ interface ImportRepository {
     ): ApiResult<Map<String, Any>>
 
     /**
-     * Reverses a wrong claim.
-     * Used when the wrong person claimed a placeholder.
+     * Reverses a wrong claim (creator only).
+     * Used when the wrong person claimed a placeholder during Splitwise import.
      *
-     * [groupId]            — the group containing the placeholder
-     * [placeholderUserId]  — the PLACEHOLDER user's ID
+     * Requires a real, active claimer user ID and the original CSV name —
+     * NOT a placeholderUserId. Do not call with a placeholder ID or a blank
+     * CSV name; the backend rejects both. This method is currently DORMANT:
+     * no UI/ViewModel calls it yet, because no backend endpoint exposes the
+     * original CSV name for an already-claimed member. Wire it up only once
+     * that claimed-member metadata is available.
+     *
+     * [groupId]            — the group containing the wrongly-claimed identity
+     * [wrongClaimerUserId] — the real user who claimed the identity by mistake
+     * [originalCsvName]    — the original CSV name to restore as a placeholder
      */
     suspend fun unclaimIdentity(
         groupId: String,
-        placeholderUserId: String,
+        wrongClaimerUserId: String,
+        originalCsvName: String,
     ): ApiResult<Map<String, Any>>
 
     suspend fun assignFriendPlaceholder(placeholderUserId: String, friendUserId: String): ApiResult<Map<String, Any>>
