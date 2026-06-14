@@ -5,7 +5,6 @@ import com.prathik.fairshare.data.model.request.ClaimIdentityRequest
 import com.prathik.fairshare.data.model.request.ImportRequest
 import com.prathik.fairshare.data.model.request.UnclaimIdentityRequest
 import com.prathik.fairshare.data.model.response.ApiResponse
-import com.prathik.fairshare.data.model.response.GroupMemberResponse
 import com.prathik.fairshare.data.model.response.ImportActionResponse
 import com.prathik.fairshare.data.model.response.ImportResponse
 import com.prathik.fairshare.data.model.response.UnclaimedMemberResponse
@@ -24,12 +23,6 @@ interface ImportApiService {
 
     @GET("api/import/groups/{groupId}/unclaimed")
     suspend fun getUnclaimedMembers(@Path("groupId") groupId: String): ApiResponse<List<UnclaimedMemberResponse>>
-
-    @GET("api/import/groups/{groupId}/preview/{placeholderUserId}")
-    suspend fun previewPlaceholder(
-        @Path("groupId") groupId: String,
-        @Path("placeholderUserId") placeholderUserId: String,
-    ): ApiResponse<GroupMemberResponse>
 
     @POST("api/import/groups/{groupId}/claim")
     suspend fun claimIdentity(
