@@ -67,3 +67,23 @@
     public static int w(...);
     public static int e(...);
 }
+
+
+# ── 4. App enum constant names ─────────────────────────────────
+#
+# Several mappers parse backend string values into app enums via
+# Enum.valueOf(wireString), e.g. SplitType.valueOf("EQUAL"),
+# GroupType.valueOf("GROUP"), SettlementStatus.valueOf("SETTLED").
+# Each call is wrapped in try/catch with a fallback default, so if
+# R8 ever renamed an enum constant the failure would be SILENT:
+# every wire value would collapse into its fallback (e.g. "GROUP"
+# → NON_GROUP, "FOOD" → OTHER) instead of crashing — a release-only
+# correctness bug invisible in debug (where minify is off).
+#
+# Keep the constant fields of the app's own enums so valueOf(...)
+# always resolves against the original names. This is intentionally
+# narrow (com.prathik.fairshare enums only) — it does NOT keep DTOs,
+# models, or any other classes.
+-keepclassmembers enum com.prathik.fairshare.** {
+    public static final ** *;
+}
