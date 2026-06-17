@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -1207,6 +1208,19 @@ fun MainShell(
 
                 val expenseId = itemAssignEntry.arguments?.getString("expenseId") ?: ""
 
+                // 7.4 F-1: while a financial save is in flight, the save runs in
+                // composition scope via saveAssignmentsBlocking(...). If the user backs
+                // out now, that scope is cancelled and the client never learns whether
+                // the edit committed (the backend @Transactional write may still have
+                // succeeded). Block back-navigation for the save window so the user
+                // cannot leave mid-save. Matches the existing "submit disabled while
+                // saving" intent; back works normally again once save completes.
+                val isSaving = saveState is EditSaveState.Loading ||
+                        itemSaveState is com.prathik.fairshare.ui.expense.SaveState.Saving
+
+                // Swallow system back while saving (enabled=false → normal back).
+                BackHandler(enabled = isSaving) { /* intentionally no-op while saving */ }
+
                 // Show assignment-save error in a Snackbar. "Retry" retries ONLY
                 // the assignItems call — the financial edit is already persisted.
                 androidx.compose.runtime.LaunchedEffect(assignError) {
@@ -1261,9 +1275,9 @@ fun MainShell(
                         members   = members,
                         currency  = currency,
                         // Disable submit button while either save is in flight
-                        isLoading = saveState is EditSaveState.Loading
-                                || itemSaveState is com.prathik.fairshare.ui.expense.SaveState.Saving,
-                        onBack    = { shellNavController.popBackStack() },
+                        isLoading = isSaving,
+                        // Block top-bar back during the save window (7.4 F-1).
+                        onBack    = { if (!isSaving) shellNavController.popBackStack() },
                         onSubmit  = {
                             if (financialSaveCompleted &&
                                 itemSaveState is com.prathik.fairshare.ui.expense.SaveState.Error) {
