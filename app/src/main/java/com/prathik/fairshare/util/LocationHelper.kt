@@ -1,6 +1,7 @@
 package com.prathik.fairshare.util
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Geocoder
@@ -54,7 +55,16 @@ class LocationHelper @Inject constructor(
      * or Geocoder fails.
      *
      * Example: "US", "IN", "JP", "DE"
+     *
+     * Lint note: getLastKnownLocation triggers a [MissingPermission] check that
+     * lint cannot satisfy statically because the permission gate is our own
+     * hasLocationPermission() helper (lint only recognises inline
+     * checkSelfPermission calls). The permission IS verified before any location
+     * API is touched, and the whole body is wrapped in a try/catch that also
+     * absorbs SecurityException, so the call is safe. The suppression is scoped
+     * to this single function only.
      */
+    @SuppressLint("MissingPermission")
     fun getCurrentCountryCode(): String? {
         if (!hasLocationPermission()) return null
 
