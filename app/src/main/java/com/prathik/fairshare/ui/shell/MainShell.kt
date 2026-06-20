@@ -1267,34 +1267,39 @@ fun MainShell(
                         androidx.compose.material3.SnackbarHost(snackbarHostState)
                     },
                     containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                ) { _ ->
-                    ReviewSubmitScreen(
-                        receipt   = syntheticReceipt,
-                        items     = items,
-                        splitData = itemAssignViewModel.buildFinalSplitData(amount),
-                        members   = members,
-                        currency  = currency,
-                        // Disable submit button while either save is in flight
-                        isLoading = isSaving,
-                        // Block top-bar back during the save window (7.4 F-1).
-                        onBack    = { if (!isSaving) shellNavController.popBackStack() },
-                        onSubmit  = {
-                            if (financialSaveCompleted &&
-                                itemSaveState is com.prathik.fairshare.ui.expense.SaveState.Error) {
-                                // Financial edit already persisted — only retry assignItems.
-                                coroutineScope.launch {
-                                    val saved = itemAssignViewModel.saveAssignmentsBlocking(expenseId)
-                                    if (saved) {
-                                        editExpenseVm.resetSaveState()
-                                        shellNavController.popBackStack(
-                                            Screen.EditExpense.route, inclusive = true)
+                ) { innerPadding ->
+                    // This Scaffold has no app bars, so innerPadding is effectively zero;
+                    // we still apply it (rather than ignoring the parameter) to satisfy the
+                    // Material3 Scaffold-padding lint and stay correct if chrome is added later.
+                    Box(Modifier.padding(innerPadding)) {
+                        ReviewSubmitScreen(
+                            receipt   = syntheticReceipt,
+                            items     = items,
+                            splitData = itemAssignViewModel.buildFinalSplitData(amount),
+                            members   = members,
+                            currency  = currency,
+                            // Disable submit button while either save is in flight
+                            isLoading = isSaving,
+                            // Block top-bar back during the save window (7.4 F-1).
+                            onBack    = { if (!isSaving) shellNavController.popBackStack() },
+                            onSubmit  = {
+                                if (financialSaveCompleted &&
+                                    itemSaveState is com.prathik.fairshare.ui.expense.SaveState.Error) {
+                                    // Financial edit already persisted — only retry assignItems.
+                                    coroutineScope.launch {
+                                        val saved = itemAssignViewModel.saveAssignmentsBlocking(expenseId)
+                                        if (saved) {
+                                            editExpenseVm.resetSaveState()
+                                            shellNavController.popBackStack(
+                                                Screen.EditExpense.route, inclusive = true)
+                                        }
                                     }
+                                } else {
+                                    editExpenseVm.save()
                                 }
-                            } else {
-                                editExpenseVm.save()
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                 }
             }
 
